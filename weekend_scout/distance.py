@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime
 from math import atan2, cos, radians, sin, sqrt
+from typing import Tuple
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -60,13 +61,26 @@ def format_drive_time(minutes: float) -> str:
     Returns:
         String such as '45min', '1h00', or '2h15'.
     """
-    pass
+    total = int(round(minutes))
+    if total < 60:
+        return f"{total}min"
+    h = total // 60
+    m = total % 60
+    return f"{h}h{m:02d}"
 
 
 def next_weekend_dates() -> tuple[str, str]:
     """Return ISO date strings for the next upcoming Saturday and Sunday.
 
+    Always returns a future weekend — if today is Saturday, returns next Saturday.
+
     Returns:
         Tuple of (saturday_iso, sunday_iso) e.g. ('2026-03-28', '2026-03-29').
     """
-    pass
+    today = datetime.date.today()
+    days_ahead = (5 - today.weekday()) % 7  # 5 = Saturday
+    if days_ahead == 0:
+        days_ahead = 7  # today is Saturday — skip to next week
+    saturday = today + datetime.timedelta(days=days_ahead)
+    sunday = saturday + datetime.timedelta(days=1)
+    return saturday.isoformat(), sunday.isoformat()
