@@ -40,14 +40,14 @@
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 3.1 | Implement cache.py: SQLite schema creation | TODO | |
-| 3.2 | Implement cache.py: save events (with dedup) | TODO | |
-| 3.3 | Implement cache.py: query events by date range | TODO | |
-| 3.4 | Implement cache.py: log searches | TODO | |
-| 3.5 | Implement cache.py: mark events as served | TODO | |
-| 3.6 | Implement cache.py: cleanup old events (30+ days) | TODO | |
-| 3.7 | Wire cache CLI commands (save, cache-query, log-search, cache-mark-served) | TODO | |
-| 3.8 | Write tests for cache.py | TODO | |
+| 3.1 | Implement cache.py: SQLite schema creation | DONE (2026-03-26) | |
+| 3.2 | Implement cache.py: save events (with dedup) | DONE (2026-03-26) | |
+| 3.3 | Implement cache.py: query events by date range | DONE (2026-03-26) | |
+| 3.4 | Implement cache.py: log searches | DONE (2026-03-26) | |
+| 3.5 | Implement cache.py: mark events as served | DONE (2026-03-26) | |
+| 3.6 | Implement cache.py: cleanup old events (30+ days) | DONE (2026-03-26) | |
+| 3.7 | Wire cache CLI commands (save, cache-query, log-search, cache-mark-served) | DONE (2026-03-26) | Wired during scaffolding |
+| 3.8 | Write tests for cache.py | DONE (2026-03-26) | |
 
 ## Phase 4: Telegram Sender
 

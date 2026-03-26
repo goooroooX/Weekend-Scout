@@ -9,6 +9,8 @@ Tables:
 
 from __future__ import annotations
 
+import datetime
+import json
 import re
 import sqlite3
 from pathlib import Path
@@ -63,25 +65,41 @@ CREATE INDEX IF NOT EXISTS idx_search_log_weekend ON search_log(target_weekend);
 def get_db_path(config: dict[str, Any]) -> Path:
     """Return the path to the SQLite database file.
 
+    Respects the `_cache_dir` override key for testing.
+
     Args:
         config: Loaded configuration dictionary.
 
     Returns:
         Path to cache.db.
     """
-    pass
+    if "_cache_dir" in config:
+        cache_dir = Path(config["_cache_dir"])
+    else:
+        from weekend_scout.config import get_cache_dir
+        cache_dir = get_cache_dir(config)
+    return cache_dir / "cache.db"
 
 
 def get_connection(config: dict[str, Any]) -> sqlite3.Connection:
     """Open (and if necessary initialise) the SQLite database.
 
+    Runs CREATE TABLE / INDEX statements on every open — all use
+    IF NOT EXISTS so this is safe to call repeatedly.
+
     Args:
         config: Loaded configuration dictionary.
 
     Returns:
-        Open sqlite3.Connection with schema applied.
+        Open sqlite3.Connection with row_factory set to sqlite3.Row.
     """
-    pass
+    db_path = get_db_path(config)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    conn.executescript(CREATE_EVENTS + CREATE_SEARCH_LOG + CREATE_INDEXES)
+    conn.commit()
+    return conn
 
 
 def dedup_key(event_name: str, city: str, start_date: str) -> str:
@@ -114,7 +132,57 @@ def save_events(
     Returns:
         Tuple of (saved_count, skipped_count).
     """
-    pass
+    saved = 0
+    skipped = 0
+    today = datetime.date.today().isoformat()
+
+    with get_connection(config) as conn:
+        for event in events:
+            key = dedup_key(
+                event["event_name"], event["city"], event["start_date"]
+            )
+            cursor = conn.execute(
+                """
+                INSERT OR IGNORE INTO events (
+                    event_name, city, country, start_date, end_date, time_info,
+                    location_name, lat, lon, category, description, free_entry,
+                    source_url, source_name, discovered_date, confidence,
+                    served, canceled, dedup_key
+                ) VALUES (
+                    :event_name, :city, :country, :start_date, :end_date, :time_info,
+                    :location_name, :lat, :lon, :category, :description, :free_entry,
+                    :source_url, :source_name, :discovered_date, :confidence,
+                    :served, :canceled, :dedup_key
+                )
+                """,
+                {
+                    "event_name": event["event_name"],
+                    "city": event["city"],
+                    "country": event.get("country", "PL"),
+                    "start_date": event["start_date"],
+                    "end_date": event.get("end_date"),
+                    "time_info": event.get("time_info"),
+                    "location_name": event.get("location_name"),
+                    "lat": event.get("lat"),
+                    "lon": event.get("lon"),
+                    "category": event.get("category"),
+                    "description": event.get("description"),
+                    "free_entry": event.get("free_entry"),
+                    "source_url": event.get("source_url"),
+                    "source_name": event.get("source_name"),
+                    "discovered_date": today,
+                    "confidence": event.get("confidence", "likely"),
+                    "served": 0,
+                    "canceled": 0,
+                    "dedup_key": key,
+                },
+            )
+            if cursor.rowcount > 0:
+                saved += 1
+            else:
+                skipped += 1
+
+    return saved, skipped
 
 
 def query_events(
@@ -131,7 +199,22 @@ def query_events(
     Returns:
         List of event dicts.
     """
-    pass
+    sunday = (
+        datetime.date.fromisoformat(saturday) + datetime.timedelta(days=1)
+    ).isoformat()
+
+    with get_connection(config) as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM events
+            WHERE (start_date IN (?, ?) OR end_date IN (?, ?))
+              AND canceled = 0
+            ORDER BY start_date, city
+            """,
+            (saturday, sunday, saturday, sunday),
+        ).fetchall()
+
+    return [dict(row) for row in rows]
 
 
 def log_search(
@@ -152,7 +235,17 @@ def log_search(
         cities_covered: City names covered by this search.
         phase: Search phase label ('broad', 'aggregator', 'targeted', 'verification').
     """
-    pass
+    today = datetime.date.today().isoformat()
+    with get_connection(config) as conn:
+        conn.execute(
+            """
+            INSERT INTO search_log
+                (query, search_date, target_weekend, result_count, cities_covered, phase)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (query, today, target_weekend, result_count,
+             json.dumps(cities_covered), phase),
+        )
 
 
 def get_searches_this_week(
@@ -167,7 +260,12 @@ def get_searches_this_week(
     Returns:
         List of query strings.
     """
-    pass
+    with get_connection(config) as conn:
+        rows = conn.execute(
+            "SELECT query FROM search_log WHERE target_weekend = ?",
+            (saturday,),
+        ).fetchall()
+    return [row["query"] for row in rows]
 
 
 def mark_served(config: dict[str, Any], saturday: str) -> int:
@@ -180,7 +278,20 @@ def mark_served(config: dict[str, Any], saturday: str) -> int:
     Returns:
         Number of rows updated.
     """
-    pass
+    sunday = (
+        datetime.date.fromisoformat(saturday) + datetime.timedelta(days=1)
+    ).isoformat()
+
+    with get_connection(config) as conn:
+        cursor = conn.execute(
+            """
+            UPDATE events SET served = 1
+            WHERE (start_date IN (?, ?) OR end_date IN (?, ?))
+              AND served = 0
+            """,
+            (saturday, sunday, saturday, sunday),
+        )
+    return cursor.rowcount
 
 
 def cleanup_old_events(config: dict[str, Any], days: int = 30) -> int:
@@ -193,4 +304,13 @@ def cleanup_old_events(config: dict[str, Any], days: int = 30) -> int:
     Returns:
         Number of rows deleted.
     """
-    pass
+    cutoff = (
+        datetime.date.today() - datetime.timedelta(days=days)
+    ).isoformat()
+
+    with get_connection(config) as conn:
+        cursor = conn.execute(
+            "DELETE FROM events WHERE start_date < ?",
+            (cutoff,),
+        )
+    return cursor.rowcount

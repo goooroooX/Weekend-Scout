@@ -1,9 +1,9 @@
 """Configuration management for Weekend Scout.
 
 Handles reading, writing, and interactive setup of the YAML config file.
-Config lives in the platform-appropriate user config directory:
-  - Linux/Mac: ~/.config/weekend-scout/config.yaml
-  - Windows:   %APPDATA%/weekend-scout/config.yaml
+Config and cache files live in the platform-appropriate user config directory:
+  - Linux/Mac: ~/.config/weekend-scout/
+  - Windows:   %APPDATA%/weekend-scout/
 """
 
 from __future__ import annotations
@@ -16,6 +16,22 @@ from platformdirs import user_config_dir
 
 
 APP_NAME = "weekend-scout"
+
+# Country code -> search language
+COUNTRY_LANGUAGE_MAP: dict[str, str] = {
+    "Poland": "pl",
+    "Germany": "de",
+    "France": "fr",
+    "Czech Republic": "cs",
+    "Slovakia": "sk",
+    "Austria": "de",
+    "Hungary": "hu",
+    "Ukraine": "uk",
+    "Lithuania": "lt",
+    "Latvia": "lv",
+    "Estonia": "et",
+    "Belarus": "be",
+}
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "home_city": "",
@@ -53,6 +69,23 @@ def get_config_path() -> Path:
     return get_config_dir() / "config.yaml"
 
 
+def get_cache_dir(config: dict[str, Any]) -> Path:
+    """Return the directory used for cache files (DB, city list JSON).
+
+    Uses the same base directory as the config file. Creates it if needed.
+
+    Args:
+        config: Loaded configuration dictionary (unused currently, reserved
+                for future per-profile cache directories).
+
+    Returns:
+        Path to the cache directory.
+    """
+    cache_dir = get_config_dir()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
+
+
 def load_config() -> dict[str, Any]:
     """Load config from disk, returning defaults merged with stored values.
 
@@ -81,6 +114,13 @@ def save_config(config: dict[str, Any]) -> None:
         yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
 
 
+def _prompt(label: str, default: str = "") -> str:
+    """Prompt the user for input, showing default in brackets."""
+    suffix = f" [{default}]" if default else ""
+    value = input(f"{label}{suffix}: ").strip()
+    return value if value else default
+
+
 def run_setup_wizard() -> dict[str, Any]:
     """Run interactive setup wizard to configure Weekend Scout.
 
@@ -89,16 +129,50 @@ def run_setup_wizard() -> dict[str, Any]:
     Returns:
         Completed configuration dictionary.
     """
-    pass
+    print("=== Weekend Scout Setup ===")
+    print(f"Config will be saved to: {get_config_path()}\n")
 
+    config = load_config()
 
-def get_cache_dir(config: dict[str, Any]) -> Path:
-    """Return the directory used for cache files (DB, city list JSON).
+    # Location
+    config["home_city"] = _prompt("Home city", config.get("home_city") or "Warsaw")
+    config["home_country"] = _prompt("Home country", config.get("home_country") or "Poland")
+    config["precise_location"] = _prompt(
+        "Precise location (address or district for trip start/end)",
+        config.get("precise_location") or config["home_city"],
+    )
 
-    Args:
-        config: Loaded configuration dictionary.
+    # Coordinates
+    print("\nHome city coordinates (used for distance calculations):")
+    default_lat = str(config.get("home_coordinates", {}).get("lat", ""))
+    default_lon = str(config.get("home_coordinates", {}).get("lon", ""))
+    lat_str = _prompt("  Latitude", default_lat)
+    lon_str = _prompt("  Longitude", default_lon)
+    try:
+        config["home_coordinates"] = {"lat": float(lat_str), "lon": float(lon_str)}
+    except ValueError:
+        print("  Invalid coordinates, keeping previous values.")
 
-    Returns:
-        Path to the cache directory (created if it does not exist).
-    """
-    pass
+    # Search radius
+    radius_str = _prompt("Search radius (km)", str(config.get("radius_km", 150)))
+    try:
+        config["radius_km"] = int(radius_str)
+    except ValueError:
+        print("  Invalid radius, keeping previous value.")
+
+    # Search language (auto-derive from country, allow override)
+    derived_lang = COUNTRY_LANGUAGE_MAP.get(config["home_country"], "en")
+    config["search_language"] = _prompt("Search language (2-letter code)", derived_lang)
+
+    # Telegram
+    print("\nTelegram settings (leave blank to skip):")
+    token = _prompt("  Bot token", config.get("telegram_bot_token") or "")
+    if token:
+        config["telegram_bot_token"] = token
+    chat_id = _prompt("  Chat ID", config.get("telegram_chat_id") or "")
+    if chat_id:
+        config["telegram_chat_id"] = chat_id
+
+    save_config(config)
+    print(f"\nConfig saved to {get_config_path()}")
+    return config

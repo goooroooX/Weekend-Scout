@@ -35,6 +35,156 @@ MONTHS: dict[str, list[str]] = {
         "Januar", "Februar", "März", "April", "Mai", "Juni",
         "Juli", "August", "September", "Oktober", "November", "Dezember",
     ],
+    "fr": [
+        "janvier", "février", "mars", "avril", "mai", "juin",
+        "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+    ],
+    "cs": [
+        "ledna", "února", "března", "dubna", "května", "června",
+        "července", "srpna", "září", "října", "listopadu", "prosince",
+    ],
+    "sk": [
+        "januára", "februára", "marca", "apríla", "mája", "júna",
+        "júla", "augusta", "septembra", "októbra", "novembra", "decembra",
+    ],
+    "hu": [
+        "január", "február", "március", "április", "május", "június",
+        "július", "augusztus", "szeptember", "október", "november", "december",
+    ],
+    "uk": [
+        "січня", "лютого", "березня", "квітня", "травня", "червня",
+        "липня", "серпня", "вересня", "жовтня", "листопада", "грудня",
+    ],
+    "lt": [
+        "sausio", "vasario", "kovo", "balandžio", "gegužės", "birželio",
+        "liepos", "rugpjūčio", "rugsėjo", "spalio", "lapkričio", "gruodžio",
+    ],
+    "lv": [
+        "janvāris", "februāris", "marts", "aprīlis", "maijs", "jūnijs",
+        "jūlijs", "augusts", "septembris", "oktobris", "novembris", "decembris",
+    ],
+    "et": [
+        "jaanuar", "veebruar", "märts", "aprill", "mai", "juuni",
+        "juuli", "august", "september", "oktoober", "november", "detsember",
+    ],
+    "be": [
+        "студзеня", "лютага", "сакавіка", "красавіка", "мая", "чэрвеня",
+        "ліпеня", "жніўня", "верасня", "кастрычніка", "лістапада", "снежня",
+    ],
+}
+
+# Search query templates keyed by language code.
+# Placeholders: {date}, {region}, {city}, {month}, {year}, {country}
+# The English entry serves as the fallback for unknown languages.
+QUERY_TEMPLATES: dict[str, dict[str, Any]] = {
+    "pl": {
+        "broad": [
+            "imprezy plenerowe weekend {date} {region}",
+            "festyny jarmarki okolice {city} {month} {year}",
+            "wydarzenia plenerowe weekend {month} {year} {country}",
+        ],
+        "targeted": "{city} imprezy plenerowe {date}",
+        "country": "Polska",
+    },
+    "de": {
+        "broad": [
+            "Veranstaltungen Freiluft Wochenende {date} {region}",
+            "Feste Märkte Umgebung {city} {month} {year}",
+            "Outdoor Events Wochenende {month} {year} {country}",
+        ],
+        "targeted": "{city} Veranstaltungen Freiluft {date}",
+        "country": "Deutschland",
+    },
+    "fr": {
+        "broad": [
+            "événements plein air week-end {date} {region}",
+            "festivals marchés environs {city} {month} {year}",
+            "événements plein air week-end {month} {year} {country}",
+        ],
+        "targeted": "{city} événements plein air {date}",
+        "country": "France",
+    },
+    "cs": {
+        "broad": [
+            "venkovní akce víkend {date} {region}",
+            "festivaly jarmarky okolí {city} {month} {year}",
+            "venkovní události víkend {month} {year} {country}",
+        ],
+        "targeted": "{city} venkovní akce {date}",
+        "country": "Česko",
+    },
+    "sk": {
+        "broad": [
+            "vonkajšie podujatia víkend {date} {region}",
+            "festivaly jarmoky okolie {city} {month} {year}",
+            "vonkajšie udalosti víkend {month} {year} {country}",
+        ],
+        "targeted": "{city} vonkajšie podujatia {date}",
+        "country": "Slovensko",
+    },
+    "hu": {
+        "broad": [
+            "szabadtéri rendezvények hétvége {date} {region}",
+            "fesztiválok vásárok {city} környéke {month} {year}",
+            "szabadtéri események hétvége {month} {year} {country}",
+        ],
+        "targeted": "{city} szabadtéri rendezvények {date}",
+        "country": "Magyarország",
+    },
+    "uk": {
+        "broad": [
+            "заходи просто неба вихідні {date} {region}",
+            "фестивалі ярмарки околиці {city} {month} {year}",
+            "події просто неба вихідні {month} {year} {country}",
+        ],
+        "targeted": "{city} заходи просто неба {date}",
+        "country": "Україна",
+    },
+    "lt": {
+        "broad": [
+            "lauko renginiai savaitgalis {date} {region}",
+            "festivaliai mugės apylinkės {city} {month} {year}",
+            "lauko renginiai savaitgalis {month} {year} {country}",
+        ],
+        "targeted": "{city} lauko renginiai {date}",
+        "country": "Lietuva",
+    },
+    "lv": {
+        "broad": [
+            "āra pasākumi nedēļas nogale {date} {region}",
+            "festivāli tirgi apkārtne {city} {month} {year}",
+            "āra pasākumi nedēļas nogale {month} {year} {country}",
+        ],
+        "targeted": "{city} āra pasākumi {date}",
+        "country": "Latvija",
+    },
+    "et": {
+        "broad": [
+            "vabaõhu üritused nädalavahetus {date} {region}",
+            "festivalid laadad ümbrus {city} {month} {year}",
+            "vabaõhu sündmused nädalavahetus {month} {year} {country}",
+        ],
+        "targeted": "{city} vabaõhu üritused {date}",
+        "country": "Eesti",
+    },
+    "be": {
+        "broad": [
+            "мерапрыемствы на адкрытым паветры выхадныя {date} {region}",
+            "фестывалі кірмашы ваколіцы {city} {month} {year}",
+            "падзеі на адкрытым паветры выхадныя {month} {year} {country}",
+        ],
+        "targeted": "{city} мерапрыемствы на адкрытым паветры {date}",
+        "country": "Беларусь",
+    },
+    "en": {
+        "broad": [
+            "outdoor events weekend {date} {region}",
+            "festivals fairs near {city} {month} {year}",
+            "outdoor events weekend {month} {year} {country}",
+        ],
+        "targeted": "{city} outdoor events {date}",
+        "country": "",  # filled from config["home_country"] at runtime
+    },
 }
 
 # Default data directory: <project_root>/data/
@@ -112,6 +262,8 @@ def parse_geonames_file(geonames_path: Path) -> list[dict[str, Any]]:
             cols = line.rstrip("\n").split("\t")
             if len(cols) < 19:
                 continue
+            if cols[7] == "PPLX":  # skip sections/districts of populated places
+                continue
             try:
                 cities.append({
                     "name": cols[2],         # asciiname
@@ -120,6 +272,9 @@ def parse_geonames_file(geonames_path: Path) -> list[dict[str, Any]]:
                     "lon": float(cols[5]),
                     "country": cols[8],
                     "population": int(cols[14]) if cols[14] else 0,
+                    "feature_code": cols[7],
+                    "admin2": cols[11],
+                    "admin3": cols[12],
                 })
             except ValueError:
                 continue
@@ -190,24 +345,43 @@ def get_city_list(config: dict[str, Any]) -> dict[str, list[str]]:
     home_lon = config["home_coordinates"]["lon"]
     all_cities = parse_geonames_file(geonames_path)
 
+    # Find the home city's GeoNames entry to get its admin codes.
+    # Used to filter city districts that share admin codes with the home city
+    # but are incorrectly tagged PPL instead of PPLX (affects Warsaw, Brussels, Madrid, etc.)
+    home_candidates = [c for c in all_cities if haversine_km(home_lat, home_lon, c["lat"], c["lon"]) < 2]
+    home_entry = min(home_candidates, key=lambda c: haversine_km(home_lat, home_lon, c["lat"], c["lon"]), default=None)
+    home_admin2 = home_entry["admin2"] if home_entry else ""
+    home_admin3 = home_entry["admin3"] if home_entry else ""
+
     nearby: list[dict[str, Any]] = []
     for city in all_cities:
         dist = haversine_km(home_lat, home_lon, city["lat"], city["lon"])
         if dist < 2 or dist > radius_km:
-            continue  # skip home city itself (< 2 km) and out-of-range cities
+            continue  # skip home city itself and out-of-range cities
+        # Skip districts: PPL entries sharing admin codes with home city, within 15 km.
+        # These are city boroughs GeoNames incorrectly tags as standalone PPL
+        # (known affected capitals: Warsaw, Brussels, Madrid, Paris, Dublin, Amsterdam, Stockholm).
+        if (home_admin2
+                and city["feature_code"] == "PPL"
+                and dist < 15
+                and city["admin2"] == home_admin2
+                and city["admin3"] == home_admin3):
+            continue
         city["distance_km"] = round(dist)
         city["tier"] = assign_tier(city["population"])
         nearby.append(city)
 
     nearby.sort(key=lambda c: c["distance_km"])
 
-    # Write cache
+    # Write cache — strip internal-only fields not needed downstream
+    _CACHE_FIELDS = {"name", "name_local", "lat", "lon", "country", "population", "distance_km", "tier"}
+    nearby_for_cache = [{k: v for k, v in c.items() if k in _CACHE_FIELDS} for c in nearby]
     cache_data = {
         "generated": datetime.datetime.now().isoformat(),
         "home_city": home_city,
         "radius_km": radius_km,
         "country": config.get("home_country", ""),
-        "cities": nearby,
+        "cities": nearby_for_cache,
     }
     cache_file.parent.mkdir(parents=True, exist_ok=True)
     cache_file.write_text(
@@ -263,11 +437,14 @@ def format_date_local(iso_date: str, lang: str) -> str:
     month_list = MONTHS.get(lang, MONTHS["en"])
     month_name = month_list[d.month - 1]
 
-    if lang == "pl":
+    # Languages that use "Day Month Year" order (no punctuation between day and month)
+    _DAY_FIRST = {"pl", "fr", "cs", "sk", "hu", "uk", "lt", "lv", "et", "be"}
+
+    if lang in _DAY_FIRST:
         return f"{d.day} {month_name} {d.year}"
     elif lang == "de":
         return f"{d.day}. {month_name} {d.year}"
-    else:  # en and fallback
+    else:  # en and unknown fallback
         return f"{month_name} {d.day}, {d.year}"
 
 
@@ -295,12 +472,17 @@ def generate_broad_queries(
     month_local = MONTHS.get(lang, MONTHS["en"])[sat_date.month - 1]
     en_sat = format_date_local(saturday, "en")
 
-    return [
-        f"imprezy plenerowe weekend {sat_str} {region}",
-        f"festyny jarmarki okolice {city} {month_local} {sat_date.year}",
-        f"wydarzenia plenerowe weekend {month_local} {sat_date.year} Polska",
-        f"outdoor festivals events Poland {en_sat} {sat_date.year}",
-    ]
+    tmpl = QUERY_TEMPLATES.get(lang, QUERY_TEMPLATES["en"])
+    country = tmpl["country"] or config.get("home_country", "")
+
+    fmt = dict(
+        date=sat_str, region=region, city=city,
+        month=month_local, year=sat_date.year, country=country,
+    )
+    queries = [t.format(**fmt) for t in tmpl["broad"]]
+    # Always append one English query for tourist-facing sites (en_sat already contains year)
+    queries.append(f"outdoor festivals events {en_sat}")
+    return queries
 
 
 def generate_targeted_queries(
@@ -317,4 +499,5 @@ def generate_targeted_queries(
         Dict mapping city name -> list of query strings.
     """
     sat_str = format_date_local(saturday, lang)
-    return {city: [f"{city} imprezy plenerowe {sat_str}"] for city in tier1_cities}
+    tmpl = QUERY_TEMPLATES.get(lang, QUERY_TEMPLATES["en"])["targeted"]
+    return {city: [tmpl.format(city=city, date=sat_str)] for city in tier1_cities}
