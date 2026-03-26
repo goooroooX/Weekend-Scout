@@ -26,6 +26,12 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# project-specific
+prompts/
+data/cities15000.txt
+*.db
+.weekend-scout/
+
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
