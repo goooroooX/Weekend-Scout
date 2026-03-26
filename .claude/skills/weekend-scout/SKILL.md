@@ -19,12 +19,12 @@ and within driving distance, then build trip options and send them to Telegram.
 Run the Python tool to load config, city list, cached events, and search suggestions:
 
 ```bash
-cd ~/weekend-scout && python -m weekend_scout init
+python -m weekend_scout init
 ```
 
 If this is the first run, guide the user through setup:
 ```bash
-cd ~/weekend-scout && python -m weekend_scout setup
+python -m weekend_scout setup
 ```
 
 If the user provided arguments, override:

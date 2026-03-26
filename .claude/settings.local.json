@@ -3,7 +3,8 @@
     "allow": [
       "Bash(pip install:*)",
       "Bash(python -m pytest tests/ -v)",
-      "Bash(python -m weekend_scout --help)"
+      "Bash(python -m weekend_scout --help)",
+      "Bash(python -m pytest tests/ -q)"
     ]
   }
 }
