@@ -24,10 +24,29 @@ def cmd_setup(args: argparse.Namespace) -> None:
 
 
 def cmd_config(args: argparse.Namespace) -> None:
-    """Print current configuration as JSON."""
-    from weekend_scout.config import load_config
+    """Print current configuration as JSON, or set a key."""
+    from weekend_scout.config import load_config, save_config
     config = load_config()
-    print(json.dumps(config, indent=2, ensure_ascii=False))
+
+    if args.key:
+        key = args.key
+        value = args.value
+        if key not in config:
+            print(json.dumps({"error": f"Unknown config key: {key}"}))
+            sys.exit(1)
+        # Coerce type to match existing value
+        existing = config[key]
+        if isinstance(existing, bool):
+            value = value.lower() in ("true", "1", "yes")
+        elif isinstance(existing, int):
+            value = int(value)
+        elif isinstance(existing, float):
+            value = float(value)
+        config[key] = value
+        save_config(config)
+        print(json.dumps({"set": {key: value}}))
+    else:
+        print(json.dumps(config, indent=2, ensure_ascii=False))
 
 
 def cmd_init(args: argparse.Namespace) -> None:
@@ -170,7 +189,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("setup", help="Interactive first-run setup wizard")
 
     # config
-    sub.add_parser("config", help="Show current configuration")
+    p_cfg = sub.add_parser("config", help="Show or set configuration")
+    p_cfg.add_argument("key", nargs="?", help="Config key to set (omit to show all)")
+    p_cfg.add_argument("value", nargs="?", help="Value to set")
 
     # init
     p_init = sub.add_parser("init", help="Load config + cities + cache for a scout run")

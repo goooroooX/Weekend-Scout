@@ -53,11 +53,11 @@
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 4.1 | Implement telegram.py: format message (Markdown) | TODO | |
-| 4.2 | Implement telegram.py: send via Bot API (requests) | TODO | |
-| 4.3 | Implement telegram.py: message splitting (>4096 chars) | TODO | |
-| 4.4 | Wire "send" CLI command | TODO | |
-| 4.5 | Write tests for telegram.py (mock HTTP) | TODO | |
+| 4.1 | Implement telegram.py: format message (Markdown) | DONE (2026-03-26) | |
+| 4.2 | Implement telegram.py: send via Bot API (requests) | DONE (2026-03-26) | |
+| 4.3 | Implement telegram.py: message splitting (>4096 chars) | DONE (2026-03-26) | |
+| 4.4 | Wire "send" CLI command | DONE (2026-03-26) | Wired during scaffolding |
+| 4.5 | Write tests for telegram.py (mock HTTP) | DONE (2026-03-26) | |
 
 ## Phase 5: Claude Code Skill
 
