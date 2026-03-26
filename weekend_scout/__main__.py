@@ -144,6 +144,13 @@ def cmd_cache_mark_served(args: argparse.Namespace) -> None:
     print(json.dumps({"marked": count}))
 
 
+def cmd_download_data(args: argparse.Namespace) -> None:
+    """Download and unzip GeoNames cities15000.zip into data/."""
+    from weekend_scout.cities import download_geonames
+    path = download_geonames(force=args.force)
+    print(json.dumps({"path": str(path)}))
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     """Print instructions for a manual /weekend-scout run."""
     print(
@@ -196,6 +203,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_cms = sub.add_parser("cache-mark-served", help="Mark weekend events as served")
     p_cms.add_argument("--date", required=True, help="ISO date (Saturday of target weekend)")
 
+    # download-data
+    p_dd = sub.add_parser("download-data", help="Download GeoNames cities15000.zip into data/")
+    p_dd.add_argument("--force", action="store_true", help="Re-download even if file already exists")
+
     # run
     sub.add_parser("run", help="Full automated run (instructions)")
 
@@ -211,6 +222,7 @@ COMMANDS = {
     "cache-query": cmd_cache_query,
     "log-search": cmd_log_search,
     "cache-mark-served": cmd_cache_mark_served,
+    "download-data": cmd_download_data,
     "run": cmd_run,
 }
 

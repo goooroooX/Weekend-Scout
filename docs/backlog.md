@@ -25,7 +25,7 @@
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 2.1 | Download and integrate GeoNames cities15000.txt | TODO | |
+| 2.1 | Add `download-data` CLI command: fetch + unzip cities15000.zip from GeoNames | TODO | https://download.geonames.org/export/dump/cities15000.zip |
 | 2.2 | Implement cities.py: parse GeoNames file | TODO | |
 | 2.3 | Implement distance.py: Haversine formula | TODO | |
 | 2.4 | Implement distance.py: driving time heuristic | TODO | |

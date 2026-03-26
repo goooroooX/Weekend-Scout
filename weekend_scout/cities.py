@@ -14,6 +14,23 @@ import json
 from pathlib import Path
 from typing import Any
 
+GEONAMES_ZIP_URL = "https://download.geonames.org/export/dump/cities15000.zip"
+GEONAMES_FILENAME = "cities15000.txt"
+
+
+def download_geonames(force: bool = False) -> Path:
+    """Download and unzip cities15000.zip from GeoNames into the data/ directory.
+
+    Skips the download if data/cities15000.txt already exists, unless force=True.
+
+    Args:
+        force: Re-download even if the file is already present.
+
+    Returns:
+        Path to the extracted cities15000.txt file.
+    """
+    pass
+
 
 def parse_geonames_file(geonames_path: Path) -> list[dict[str, Any]]:
     """Parse a GeoNames cities15000.txt file into a list of city dicts.
