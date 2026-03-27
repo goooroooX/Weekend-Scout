@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import datetime
 from math import atan2, cos, radians, sin, sqrt
-from typing import Tuple
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:

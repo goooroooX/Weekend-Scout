@@ -463,7 +463,7 @@ def generate_broad_queries(
     Returns:
         List of 4 search query strings.
     """
-    lang = config.get("search_language", "pl")
+    lang = config.get("search_language", "en")
     city = config.get("home_city", "")
     region = get_region_name(city)
 

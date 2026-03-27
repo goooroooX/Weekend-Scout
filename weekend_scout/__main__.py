@@ -34,6 +34,9 @@ def cmd_config(args: argparse.Namespace) -> None:
         if key not in config:
             print(json.dumps({"error": f"Unknown config key: {key}"}))
             sys.exit(1)
+        if value is None:
+            print(json.dumps({"error": f"Provide a value: config {key} <value>"}))
+            sys.exit(1)
         # Coerce type to match existing value
         existing = config[key]
         if isinstance(existing, bool):
@@ -72,7 +75,7 @@ def cmd_init(args: argparse.Namespace) -> None:
     searches_this_week = get_searches_this_week(config, saturday)
     broad_queries = generate_broad_queries(config, saturday, sunday)
     targeted_queries = generate_targeted_queries(
-        cities.get("tier1", []), config.get("search_language", "pl"), saturday
+        cities.get("tier1", []), config.get("search_language", "en"), saturday
     )
 
     output = {

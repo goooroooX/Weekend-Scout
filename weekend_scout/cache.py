@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     event_name TEXT NOT NULL,
     city TEXT NOT NULL,
-    country TEXT DEFAULT 'PL',
+    country TEXT DEFAULT '',
     start_date TEXT NOT NULL,
     end_date TEXT,
     time_info TEXT,
@@ -115,8 +115,8 @@ def dedup_key(event_name: str, city: str, start_date: str) -> str:
     Returns:
         Lowercase alphanumeric dedup key string.
     """
-    name = re.sub(r"[^a-z0-9]", "", event_name.lower())
-    city_clean = re.sub(r"[^a-z0-9]", "", city.lower())
+    name = re.sub(r"[^\w]", "", event_name.lower())
+    city_clean = re.sub(r"[^\w]", "", city.lower())
     return f"{name}_{city_clean}_{start_date}"
 
 
@@ -158,7 +158,7 @@ def save_events(
                 {
                     "event_name": event["event_name"],
                     "city": event["city"],
-                    "country": event.get("country", "PL"),
+                    "country": event.get("country", ""),
                     "start_date": event["start_date"],
                     "end_date": event.get("end_date"),
                     "time_info": event.get("time_info"),

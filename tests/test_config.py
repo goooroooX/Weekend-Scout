@@ -35,7 +35,7 @@ def test_load_config_returns_defaults_when_no_file(patched_config_path):
     result = load_config()
     assert result["home_city"] == ""
     assert result["radius_km"] == 150
-    assert result["search_language"] == "pl"
+    assert result["search_language"] == "en"
     assert isinstance(result["include_categories"], list)
 
 

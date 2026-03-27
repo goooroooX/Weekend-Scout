@@ -39,7 +39,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "home_coordinates": {"lat": 52.2297, "lon": 21.0122},
     "precise_location": "",
     "radius_km": 150,
-    "search_language": "pl",
+    "search_language": "en",
     "include_categories": [
         "festival", "fair", "city_days", "reenactment",
         "street_art", "food_festival", "open_air_show",
