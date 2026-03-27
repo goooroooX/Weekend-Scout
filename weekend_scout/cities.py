@@ -72,6 +72,66 @@ MONTHS: dict[str, list[str]] = {
         "студзеня", "лютага", "сакавіка", "красавіка", "мая", "чэрвеня",
         "ліпеня", "жніўня", "верасня", "кастрычніка", "лістапада", "снежня",
     ],
+    "it": [
+        "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
+        "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre",
+    ],
+    "es": [
+        "enero", "febrero", "marzo", "abril", "mayo", "junio",
+        "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+    ],
+    "pt": [
+        "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+        "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+    ],
+    "nl": [
+        "januari", "februari", "maart", "april", "mei", "juni",
+        "juli", "augustus", "september", "oktober", "november", "december",
+    ],
+    "sv": [
+        "januari", "februari", "mars", "april", "maj", "juni",
+        "juli", "augusti", "september", "oktober", "november", "december",
+    ],
+    "no": [
+        "januar", "februar", "mars", "april", "mai", "juni",
+        "juli", "august", "september", "oktober", "november", "desember",
+    ],
+    "da": [
+        "januar", "februar", "marts", "april", "maj", "juni",
+        "juli", "august", "september", "oktober", "november", "december",
+    ],
+    "fi": [
+        "tammikuuta", "helmikuuta", "maaliskuuta", "huhtikuuta", "toukokuuta", "kesäkuuta",
+        "heinäkuuta", "elokuuta", "syyskuuta", "lokakuuta", "marraskuuta", "joulukuuta",
+    ],
+    "ro": [
+        "ianuarie", "februarie", "martie", "aprilie", "mai", "iunie",
+        "iulie", "august", "septembrie", "octombrie", "noiembrie", "decembrie",
+    ],
+    "hr": [
+        "siječnja", "veljače", "ožujka", "travnja", "svibnja", "lipnja",
+        "srpnja", "kolovoza", "rujna", "listopada", "studenog", "prosinca",
+    ],
+    "bg": [
+        "януари", "февруари", "март", "април", "май", "юни",
+        "юли", "август", "септември", "октомври", "ноември", "декември",
+    ],
+    "sr": [
+        "јануар", "фебруар", "март", "април", "мај", "јун",
+        "јул", "август", "септембар", "октобар", "новембар", "децембар",
+    ],
+    "el": [
+        "Ιανουαρίου", "Φεβρουαρίου", "Μαρτίου", "Απριλίου", "Μαΐου", "Ιουνίου",
+        "Ιουλίου", "Αυγούστου", "Σεπτεμβρίου", "Οκτωβρίου", "Νοεμβρίου", "Δεκεμβρίου",
+    ],
+    "tr": [
+        "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
+        "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık",
+    ],
+    "ru": [
+        "января", "февраля", "марта", "апреля", "мая", "июня",
+        "июля", "августа", "сентября", "октября", "ноября", "декабря",
+    ],
 }
 
 # Search query templates keyed by language code.
@@ -176,6 +236,141 @@ QUERY_TEMPLATES: dict[str, dict[str, Any]] = {
         ],
         "targeted": "{city} мерапрыемствы на адкрытым паветры {date}",
         "country": "Беларусь",
+    },
+    "it": {
+        "broad": [
+            "eventi all'aperto weekend {date} {region}",
+            "festival mercato sagra {city} {month} {year}",
+            "manifestazioni all'aperto weekend {month} {year} {country}",
+        ],
+        "targeted": "eventi {city} {date}",
+        "country": "Italia",
+    },
+    "es": {
+        "broad": [
+            "eventos al aire libre fin de semana {date} {region}",
+            "festival mercado feria {city} {month} {year}",
+            "actividades al aire libre fin de semana {month} {year} {country}",
+        ],
+        "targeted": "eventos {city} {date}",
+        "country": "España",
+    },
+    "pt": {
+        "broad": [
+            "eventos ao ar livre fim de semana {date} {region}",
+            "festival mercado feira {city} {month} {year}",
+            "atividades ao ar livre fim de semana {month} {year} {country}",
+        ],
+        "targeted": "eventos {city} {date}",
+        "country": "Portugal",
+    },
+    "nl": {
+        "broad": [
+            "buitenevenementen weekend {date} {region}",
+            "festival markt kermis {city} {month} {year}",
+            "buitenactiviteiten weekend {month} {year} {country}",
+        ],
+        "targeted": "evenementen {city} {date}",
+        "country": "Nederland",
+    },
+    "sv": {
+        "broad": [
+            "utomhusevenemang helgen {date} {region}",
+            "festival marknad {city} {month} {year}",
+            "utomhusaktiviteter helgen {month} {year} {country}",
+        ],
+        "targeted": "evenemang {city} {date}",
+        "country": "Sverige",
+    },
+    "no": {
+        "broad": [
+            "utendørsarrangementer helgen {date} {region}",
+            "festival marked {city} {month} {year}",
+            "utendørsaktiviteter helgen {month} {year} {country}",
+        ],
+        "targeted": "arrangementer {city} {date}",
+        "country": "Norge",
+    },
+    "da": {
+        "broad": [
+            "udendørsbegivenheder weekend {date} {region}",
+            "festival marked {city} {month} {year}",
+            "udendørsaktiviteter weekend {month} {year} {country}",
+        ],
+        "targeted": "begivenheder {city} {date}",
+        "country": "Danmark",
+    },
+    "fi": {
+        "broad": [
+            "ulkoilmatapahtumat viikonloppu {date} {region}",
+            "festivaali tori {city} {month} {year}",
+            "ulkoilmatapahtumat viikonloppu {month} {year} {country}",
+        ],
+        "targeted": "tapahtumat {city} {date}",
+        "country": "Suomi",
+    },
+    "ro": {
+        "broad": [
+            "evenimente în aer liber weekend {date} {region}",
+            "festival târg {city} {month} {year}",
+            "activități în aer liber weekend {month} {year} {country}",
+        ],
+        "targeted": "evenimente {city} {date}",
+        "country": "România",
+    },
+    "hr": {
+        "broad": [
+            "vanjski događaji vikend {date} {region}",
+            "festival sajam {city} {month} {year}",
+            "vanjske aktivnosti vikend {month} {year} {country}",
+        ],
+        "targeted": "događaji {city} {date}",
+        "country": "Hrvatska",
+    },
+    "bg": {
+        "broad": [
+            "събития на открито уикенд {date} {region}",
+            "фестивал пазар {city} {month} {year}",
+            "открити мероприятия уикенд {month} {year} {country}",
+        ],
+        "targeted": "събития {city} {date}",
+        "country": "България",
+    },
+    "sr": {
+        "broad": [
+            "događaji na otvorenom vikend {date} {region}",
+            "festival sajam {city} {month} {year}",
+            "aktivnosti na otvorenom vikend {month} {year} {country}",
+        ],
+        "targeted": "događaji {city} {date}",
+        "country": "Srbija",
+    },
+    "el": {
+        "broad": [
+            "υπαίθριες εκδηλώσεις σαββατοκύριακο {date} {region}",
+            "φεστιβάλ αγορά {city} {month} {year}",
+            "υπαίθριες δραστηριότητες σαββατοκύριακο {month} {year} {country}",
+        ],
+        "targeted": "εκδηλώσεις {city} {date}",
+        "country": "Ελλάδα",
+    },
+    "tr": {
+        "broad": [
+            "açık hava etkinlikleri hafta sonu {date} {region}",
+            "festival pazar {city} {month} {year}",
+            "açık hava aktiviteleri hafta sonu {month} {year} {country}",
+        ],
+        "targeted": "etkinlikler {city} {date}",
+        "country": "Türkiye",
+    },
+    "ru": {
+        "broad": [
+            "мероприятия на открытом воздухе выходные {date} {region}",
+            "фестиваль ярмарка {city} {month} {year}",
+            "открытые мероприятия выходные {month} {year} {country}",
+        ],
+        "targeted": "мероприятия {city} {date}",
+        "country": "Россия",
     },
     "en": {
         "broad": [
@@ -423,12 +618,15 @@ def get_region_name(home_city: str, regions_path: Path | None = None) -> str:
 def format_date_local(iso_date: str, lang: str) -> str:
     """Format an ISO date string in the given language for use in search queries.
 
-    Supported languages: pl, en, de. Falls back to English for unknown codes.
+    Formats: "DD. Month Year" (de/no/da/hr/sr), "DD Month Year" (most European),
+    "Month DD, Year" (en, fallback). Falls back to English for unknown codes.
 
     Examples:
         format_date_local('2026-03-28', 'pl') -> '28 marca 2026'
         format_date_local('2026-03-28', 'en') -> 'March 28, 2026'
         format_date_local('2026-03-28', 'de') -> '28. März 2026'
+        format_date_local('2026-03-28', 'it') -> '28 marzo 2026'
+        format_date_local('2026-03-28', 'no') -> '28. mars 2026'
 
     Args:
         iso_date: Date string in 'YYYY-MM-DD' format.
@@ -441,15 +639,19 @@ def format_date_local(iso_date: str, lang: str) -> str:
     month_list = MONTHS.get(lang, MONTHS["en"])
     month_name = month_list[d.month - 1]
 
-    # Languages that use "Day Month Year" order (no punctuation between day and month)
-    _DAY_FIRST = {"pl", "fr", "cs", "sk", "hu", "uk", "lt", "lv", "et", "be"}
+    # Languages that use "DD. Month Year" (period after day number)
+    _PERIOD_DAY_FIRST = {"de", "no", "da", "hr", "sr"}
+    # Languages that use "DD Month Year" (no period)
+    _DAY_FIRST = {
+        "pl", "fr", "cs", "sk", "hu", "uk", "lt", "lv", "et", "be",
+        "it", "es", "pt", "nl", "sv", "fi", "ro", "bg", "el", "tr", "ru",
+    }
 
+    if lang in _PERIOD_DAY_FIRST:
+        return f"{d.day}. {month_name} {d.year}"
     if lang in _DAY_FIRST:
         return f"{d.day} {month_name} {d.year}"
-    elif lang == "de":
-        return f"{d.day}. {month_name} {d.year}"
-    else:  # en and unknown fallback
-        return f"{month_name} {d.day}, {d.year}"
+    return f"{month_name} {d.day}, {d.year}"  # en and unknown fallback
 
 
 def find_city_coords(city_name: str, geonames_path: Path) -> dict[str, Any] | None:

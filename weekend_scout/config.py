@@ -31,6 +31,21 @@ COUNTRY_LANGUAGE_MAP: dict[str, str] = {
     "Latvia": "lv",
     "Estonia": "et",
     "Belarus": "be",
+    "Italy": "it",
+    "Spain": "es",
+    "Portugal": "pt",
+    "Netherlands": "nl",
+    "Sweden": "sv",
+    "Norway": "no",
+    "Denmark": "da",
+    "Finland": "fi",
+    "Romania": "ro",
+    "Croatia": "hr",
+    "Bulgaria": "bg",
+    "Serbia": "sr",
+    "Greece": "el",
+    "Turkey": "tr",
+    "Russia": "ru",
 }
 
 # ISO 3166-1 alpha-2 -> country name (matches COUNTRY_LANGUAGE_MAP keys)
@@ -47,6 +62,21 @@ COUNTRY_CODE_MAP: dict[str, str] = {
     "LV": "Latvia",
     "EE": "Estonia",
     "BY": "Belarus",
+    "IT": "Italy",
+    "ES": "Spain",
+    "PT": "Portugal",
+    "NL": "Netherlands",
+    "SE": "Sweden",
+    "NO": "Norway",
+    "DK": "Denmark",
+    "FI": "Finland",
+    "RO": "Romania",
+    "HR": "Croatia",
+    "BG": "Bulgaria",
+    "RS": "Serbia",
+    "GR": "Greece",
+    "TR": "Turkey",
+    "RU": "Russia",
 }
 
 DEFAULT_CONFIG: dict[str, Any] = {

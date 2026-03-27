@@ -73,6 +73,21 @@ def test_format_date_local_unknown_lang_falls_back_to_english():
     assert "2026" in result
 
 
+def test_format_date_local_italian():
+    from weekend_scout.cities import format_date_local
+    assert format_date_local("2026-04-10", "it") == "10 aprile 2026"
+
+
+def test_format_date_local_norwegian():
+    from weekend_scout.cities import format_date_local
+    assert format_date_local("2026-04-10", "no") == "10. april 2026"
+
+
+def test_format_date_local_russian():
+    from weekend_scout.cities import format_date_local
+    assert format_date_local("2026-04-10", "ru") == "10 апреля 2026"
+
+
 def _make_geonames_row(
     geonameid="1234", name="Łódź", asciiname="Lodz",
     lat="51.7592", lon="19.4560", country="PL", population="672185",
@@ -248,6 +263,28 @@ def test_generate_broad_queries_french():
     assert "March" in result["vars"]["date_en"]
 
 
+def test_generate_broad_queries_italian():
+    from weekend_scout.cities import generate_broad_queries
+    config = {"home_city": "Rome", "search_language": "it", "home_country": "Italy"}
+    result = generate_broad_queries(config, "2026-04-04", "2026-04-05")
+    filled = [t.format(**result["vars"]) for t in result["templates"]]
+    combined = " ".join(filled)
+    assert "eventi" in combined
+    assert "aprile" in result["vars"]["date"]
+    assert "imprezy" not in combined
+
+
+def test_generate_broad_queries_spanish():
+    from weekend_scout.cities import generate_broad_queries
+    config = {"home_city": "Madrid", "search_language": "es", "home_country": "Spain"}
+    result = generate_broad_queries(config, "2026-04-04", "2026-04-05")
+    filled = [t.format(**result["vars"]) for t in result["templates"]]
+    combined = " ".join(filled)
+    assert "eventos" in combined
+    assert "abril" in result["vars"]["date"]
+    assert "imprezy" not in combined
+
+
 def test_generate_broad_queries_unknown_lang_falls_back_to_english():
     from weekend_scout.cities import generate_broad_queries
     config = {"home_city": "Somewhere", "search_language": "xx", "home_country": "Xland"}
@@ -273,6 +310,22 @@ def test_generate_targeted_template_german():
     assert "Veranstaltungen" in result or "Freiluft" in result
     assert "imprezy" not in result
     assert "{city}" in result
+
+
+def test_generate_targeted_template_italian():
+    from weekend_scout.cities import generate_targeted_template
+    result = generate_targeted_template("it")
+    assert "eventi" in result
+    assert "{city}" in result
+    assert "{date}" in result
+
+
+def test_generate_targeted_template_spanish():
+    from weekend_scout.cities import generate_targeted_template
+    result = generate_targeted_template("es")
+    assert "eventos" in result
+    assert "{city}" in result
+    assert "{date}" in result
 
 
 def test_generate_targeted_template_english_fallback():
