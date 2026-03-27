@@ -113,7 +113,7 @@ def test_send_telegram_success(monkeypatch):
     assert "/bot123:ABC/sendMessage" in calls[0][0]
     assert calls[0][1]["chat_id"] == "-100999"
     assert calls[0][1]["text"] == "Hello"
-    assert calls[0][1]["parse_mode"] == "Markdown"
+    assert calls[0][1]["parse_mode"] == "HTML"
     assert calls[0][1]["disable_web_page_preview"] is True
 
 
@@ -181,7 +181,7 @@ def test_format_event_block_all_fields():
     assert "Old Town Square" in result
     assert "10:00-18:00" in result
     assert "A fun outdoor festival" in result
-    assert "Free entry" in result
+    assert "Free" in result
     assert "https://example.com/event" in result
 
 
@@ -228,10 +228,10 @@ def test_format_event_block_single_day():
     assert "Sat-Sun" not in result
 
 
-def test_format_event_block_time_info_markdown_escaped():
+def test_format_event_block_time_info_html_escaped():
     from weekend_scout.telegram import format_event_block
-    result = format_event_block(_event(time_info="10:00*18:00"))
-    assert r"10:00\*18:00" in result
+    result = format_event_block(_event(time_info="10:00<18:00"))
+    assert "10:00&lt;18:00" in result
 
 
 # --- format_scout_message ---
@@ -239,7 +239,7 @@ def test_format_event_block_time_info_markdown_escaped():
 def test_format_scout_message_header():
     from weekend_scout.telegram import format_scout_message
     msg = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", [_event()], [])
-    assert msg.startswith("Weekend Scout | April 4-5, 2026")
+    assert "Weekend Scout | April 4-5, 2026" in msg
 
 
 def test_format_scout_message_city_events():
@@ -247,15 +247,15 @@ def test_format_scout_message_city_events():
     events = [_event(event_name="Fest A"), _event(event_name="Fest B")]
     msg = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", events, [])
     assert "IN WARSAW:" in msg
-    assert "1. Fest A" in msg
-    assert "2. Fest B" in msg
+    assert "1. <b>Fest A</b>" in msg
+    assert "2. <b>Fest B</b>" in msg
 
 
 def test_format_scout_message_road_trips():
     from weekend_scout.telegram import format_scout_message
     msg = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", [], [_trip()])
     assert "ROAD TRIPS:" in msg
-    assert "A. Lodz Day Trip" in msg
+    assert "A. <b>Lodz Day Trip</b>" in msg
 
 
 def test_format_scout_message_no_trips_omits_section():

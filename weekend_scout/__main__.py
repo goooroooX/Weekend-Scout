@@ -208,7 +208,7 @@ def cmd_download_data(args: argparse.Namespace) -> None:
 def cmd_format_message(args: argparse.Namespace) -> None:
     """Format a scout message and write it to a file."""
     from pathlib import Path
-    from weekend_scout.config import load_config
+    from weekend_scout.config import load_config, get_cache_dir
     from weekend_scout.telegram import format_scout_message
 
     config = load_config()
@@ -221,8 +221,9 @@ def cmd_format_message(args: argparse.Namespace) -> None:
         city_events,
         trips,
     )
-    Path(args.output).write_text(msg, encoding="utf-8")
-    print(json.dumps({"written": args.output}))
+    output_path = Path(args.output) if args.output else get_cache_dir(config) / "scout_message.txt"
+    output_path.write_text(msg, encoding="utf-8")
+    print(json.dumps({"written": str(output_path)}))
 
 
 def cmd_run(args: argparse.Namespace) -> None:
@@ -285,7 +286,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_fm.add_argument("--sunday", required=True, help="ISO date of target Sunday")
     p_fm.add_argument("--city-events", default="[]", help="JSON array of up to 3 event dicts")
     p_fm.add_argument("--trips", default="[]", help="JSON array of trip option dicts")
-    p_fm.add_argument("--output", default="scout_message.txt", help="Output file path")
+    p_fm.add_argument("--output", default=None, help="Output file path (default: app cache dir)")
 
     # download-data
     p_dd = sub.add_parser("download-data", help="Download GeoNames cities15000.zip into data/")

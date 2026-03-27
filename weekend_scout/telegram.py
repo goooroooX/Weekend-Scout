@@ -5,11 +5,16 @@ No async, no python-telegram-bot dependency.
 
 Message length limit: 4096 characters per Telegram message.
 If the message is longer, it is split at section boundaries.
+
+Formatting: HTML parse_mode (not Markdown/MarkdownV2).
+Only <, >, & need escaping via html.escape().
+Supports: <b>bold</b>, <i>italic</i>, <a href="url">text</a>
 """
 
 from __future__ import annotations
 
 import datetime
+import html
 import sys
 from typing import Any
 
@@ -24,13 +29,6 @@ _MONTHS = [
     "July", "August", "September", "October", "November", "December",
 ]
 _DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-
-_MARKDOWN_SPECIAL = str.maketrans({"_": r"\_", "*": r"\*", "`": r"\`", "[": r"\["})
-
-
-def _escape_markdown(text: str) -> str:
-    """Escape characters that break Telegram's Markdown parser."""
-    return text.translate(_MARKDOWN_SPECIAL)
 
 
 def _day_abbr(iso_date: str) -> str:
@@ -85,7 +83,7 @@ def send_telegram(config: dict[str, Any], message: str) -> bool:
     Args:
         config: Loaded configuration dictionary (must contain
                 telegram_bot_token and telegram_chat_id).
-        message: Formatted message text (Markdown).
+        message: Formatted message text (HTML).
 
     Returns:
         True if all parts were sent successfully, False otherwise.
@@ -107,7 +105,7 @@ def send_telegram(config: dict[str, Any], message: str) -> bool:
                 json={
                     "chat_id": chat_id,
                     "text": part,
-                    "parse_mode": "Markdown",
+                    "parse_mode": "HTML",
                     "disable_web_page_preview": True,
                 },
                 timeout=30,
@@ -121,22 +119,22 @@ def send_telegram(config: dict[str, Any], message: str) -> bool:
 
 
 def format_event_block(event: dict[str, Any]) -> str:
-    """Format a single event as a Telegram message block.
+    """Format a single event as a Telegram HTML message block.
 
     Args:
         event: Event dict from the cache (or with the same keys).
 
     Returns:
-        Formatted string block for the event (no leading number/letter).
+        Formatted HTML string block for the event (no leading number/letter).
     """
     lines: list[str] = []
 
-    name = _escape_markdown(event.get("event_name") or "")
-    lines.append(name)
+    name = html.escape(event.get("event_name") or "")
+    lines.append(f"<b>{name}</b>")
 
     # Venue | Day(s) Time
-    venue = event.get("location_name") or ""
-    time_info = _escape_markdown(event.get("time_info") or "")
+    venue = html.escape(event.get("location_name") or "")
+    time_info = html.escape(event.get("time_info") or "")
     start_date = event.get("start_date") or ""
     end_date = event.get("end_date") or ""
 
@@ -148,31 +146,37 @@ def format_event_block(event: dict[str, Any]) -> str:
 
     venue_time_parts = []
     if venue:
-        venue_time_parts.append(_escape_markdown(venue))
+        venue_time_parts.append(venue)
     day_time = " ".join(filter(None, [day_str, time_info]))
     if day_time:
         venue_time_parts.append(day_time)
     if venue_time_parts:
-        lines.append("   " + " | ".join(venue_time_parts))
+        lines.append("   📍 " + " | ".join(venue_time_parts))
 
     # Description (truncated)
     desc = event.get("description") or ""
     if desc:
         if len(desc) > 120:
             desc = desc[:117] + "..."
-        lines.append("   " + _escape_markdown(desc))
+        lines.append("   " + html.escape(desc))
 
-    # Cost
+    # Cost + URL on one line
     free_entry = event.get("free_entry")
-    if free_entry is True or free_entry == 1:
-        lines.append("   Free entry")
-    elif free_entry is False or free_entry == 0:
-        lines.append("   Paid")
-
-    # URL (not escaped — URLs should remain as-is)
     url = event.get("source_url") or ""
+
+    cost_str = ""
+    if free_entry is True or free_entry == 1:
+        cost_str = "✅ Free"
+    elif free_entry is False or free_entry == 0:
+        cost_str = "💰 Paid"
+
+    footer_parts = []
+    if cost_str:
+        footer_parts.append(cost_str)
     if url:
-        lines.append("   " + url)
+        footer_parts.append(f'<a href="{html.escape(url)}">source</a>')
+    if footer_parts:
+        lines.append("   " + "  •  ".join(footer_parts))
 
     return "\n".join(lines)
 
@@ -184,7 +188,7 @@ def format_scout_message(
     city_events: list[dict[str, Any]],
     trip_options: list[dict[str, Any]],
 ) -> str:
-    """Format the full Weekend Scout message.
+    """Format the full Weekend Scout message as HTML.
 
     Args:
         home_city: Name of the home city.
@@ -196,7 +200,7 @@ def format_scout_message(
               name (str), route (str), events (str), timing (str).
 
     Returns:
-        Fully formatted message string.
+        Fully formatted HTML message string.
     """
     sat = datetime.date.fromisoformat(saturday)
     sun = datetime.date.fromisoformat(sunday)
@@ -207,45 +211,43 @@ def format_scout_message(
         sun_month = _MONTHS[sun.month - 1]
         date_range = f"{month} {sat.day} - {sun_month} {sun.day}, {sat.year}"
 
-    header = f"Weekend Scout | {date_range}"
+    header = f"<b>🗓 Weekend Scout | {date_range}</b>"
 
     if not city_events and not trip_options:
         return (
             f"{header}\n\n"
             "No events found for this weekend.\n\n"
-            "---\nScouted by Weekend Scout"
+            "<i>— Scouted by Weekend Scout</i>"
         )
 
     sections: list[str] = [header]
 
     if city_events:
-        sections.append(f"\nIN {home_city.upper()}:\n")
+        sections.append(f"<b>🏙 IN {html.escape(home_city.upper())}:</b>")
         for i, event in enumerate(city_events[:3], 1):
             block = format_event_block(event)
-            # Indent all lines after the first (which gets the number prefix)
+            # Prepend number to the first line (which has the <b>name</b>)
             block_lines = block.split("\n")
-            numbered = f"{i}. {block_lines[0]}"
-            if len(block_lines) > 1:
-                numbered += "\n" + "\n".join(block_lines[1:])
-            sections.append(numbered)
+            block_lines[0] = f"{i}. {block_lines[0]}"
+            sections.append("\n".join(block_lines))
 
     if trip_options:
-        sections.append("\nROAD TRIPS:\n")
+        sections.append("<b>🚗 ROAD TRIPS:</b>")
         letters = "ABCDEFGHIJ"
         for i, trip in enumerate(trip_options[:3]):
             letter = letters[i]
-            name = _escape_markdown(trip.get("name") or "")
-            route = _escape_markdown(trip.get("route") or "")
-            events_text = _escape_markdown(trip.get("events") or "")
-            timing = _escape_markdown(trip.get("timing") or "")
-            parts = [f"{letter}. {name}"]
+            name = html.escape(trip.get("name") or "")
+            route = html.escape(trip.get("route") or "")
+            events_text = html.escape(trip.get("events") or "")
+            timing = html.escape(trip.get("timing") or "")
+            parts = [f"{letter}. <b>{name}</b>"]
             if route:
-                parts.append(f"   {route}")
+                parts.append(f"   🗺 {route}")
             if events_text:
-                parts.append(f"   {events_text}")
+                parts.append(f"   🎪 {events_text}")
             if timing:
-                parts.append(f"   {timing}")
+                parts.append(f"   🕘 {timing}")
             sections.append("\n".join(parts))
 
-    sections.append("\n---\nScouted by Weekend Scout")
+    sections.append("<i>— Scouted by Weekend Scout</i>")
     return "\n\n".join(sections)

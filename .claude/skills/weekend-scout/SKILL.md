@@ -3,12 +3,15 @@ name: weekend-scout
 description: >
   Scout outdoor events, festivals, and fairs happening next weekend
   in your city and nearby cities. Builds trip options and posts to Telegram.
-argument-hint: [city] [radius-km]
+argument-hint: [city] [radius-km] [--cached-only]
 allowed-tools: Bash, Read, Write, WebSearch, WebFetch
 disable-model-invocation: true
 ---
 
 ## Weekend Scout
+
+> Note: `weekend_scout` is a Python package — `python -m weekend_scout` works from any
+> directory. Do **not** prefix commands with `cd <path> &&`.
 
 ### Step 1: Initialize
 
@@ -32,6 +35,9 @@ tgt_tmpl  = output.suggested_queries.targeted_template  ({city} and {date} are p
 ```
 
 ### Step 2: Search for Events
+
+**If invoked with `--cached-only`**: skip this entire step. Proceed directly to Step 3
+using only the `cached` events from Step 1.
 
 **Offline pre-check (no tool calls):** Review `cached`. If it already has events for
 every city in `tier1` for the target weekend, skip directly to Step 3.
@@ -136,10 +142,10 @@ Back-calculate departure time from the first event start time.
 python -m weekend_scout format-message \
   --saturday "<saturday>" --sunday "<sunday>" \
   --city-events '<top_3_city_events_json>' \
-  --trips '<trip_options_json>' \
-  --output scout_message.txt
+  --trips '<trip_options_json>'
+# → {"written": "<path>"}  — use this path for send:
 
-python -m weekend_scout send --file scout_message.txt
+python -m weekend_scout send --file "<path from written>"
 ```
 
 If `{"sent": false}`: check that `telegram_bot_token` and `telegram_chat_id` are set in
