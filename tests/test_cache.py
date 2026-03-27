@@ -1,6 +1,7 @@
 """Tests for weekend_scout.cache."""
 
 import datetime
+import json
 import pytest
 
 
@@ -217,3 +218,49 @@ def test_cleanup_old_events_keeps_recent(cfg):
     save_events(cfg, [_event(start_date="2026-04-04")])
     deleted = cleanup_old_events(cfg, days=30)
     assert deleted == 0
+
+
+# --- log_action ---
+
+def test_log_action_creates_file(cfg, tmp_path):
+    from weekend_scout.cache import log_action
+    log_action(cfg, "test_action", target_weekend="2026-04-04")
+    log_file = tmp_path / "action_log.jsonl"
+    assert log_file.exists()
+
+
+def test_log_action_appends(cfg, tmp_path):
+    from weekend_scout.cache import log_action
+    log_action(cfg, "action_one")
+    log_action(cfg, "action_two")
+    lines = (tmp_path / "action_log.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 2
+
+
+def test_log_action_valid_json(cfg, tmp_path):
+    from weekend_scout.cache import log_action
+    log_action(cfg, "phase_start", phase="A", run_id="2026-04-04_1200",
+               source="skill", target_weekend="2026-04-04",
+               detail={"events_found": 3})
+    line = (tmp_path / "action_log.jsonl").read_text(encoding="utf-8").strip()
+    entry = json.loads(line)
+    assert entry["action"] == "phase_start"
+    assert entry["phase"] == "A"
+    assert entry["run_id"] == "2026-04-04_1200"
+    assert entry["source"] == "skill"
+    assert entry["target_weekend"] == "2026-04-04"
+    assert entry["detail"]["events_found"] == 3
+    assert "ts" in entry
+
+
+def test_log_search_also_writes_jsonl(cfg, tmp_path):
+    from weekend_scout.cache import log_search
+    log_search(cfg, "test query", "2026-04-04", 5, ["Warsaw"], "broad",
+               run_id="2026-04-04_1200")
+    log_file = tmp_path / "action_log.jsonl"
+    assert log_file.exists()
+    entry = json.loads(log_file.read_text(encoding="utf-8").strip())
+    assert entry["action"] == "search"
+    assert entry["phase"] == "broad"
+    assert entry["detail"]["query"] == "test query"
+    assert entry["detail"]["result_count"] == 5

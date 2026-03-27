@@ -224,8 +224,11 @@ def log_search(
     result_count: int,
     cities_covered: list[str],
     phase: str,
+    run_id: str | None = None,
 ) -> None:
     """Record a completed web search in the search log.
+
+    Also appends a structured entry to action_log.jsonl.
 
     Args:
         config: Loaded configuration dictionary.
@@ -234,6 +237,7 @@ def log_search(
         result_count: Number of results the search returned.
         cities_covered: City names covered by this search.
         phase: Search phase label ('broad', 'aggregator', 'targeted', 'verification').
+        run_id: Optional run identifier for grouping log entries.
     """
     today = datetime.date.today().isoformat()
     with get_connection(config) as conn:
@@ -246,6 +250,51 @@ def log_search(
             (query, today, target_weekend, result_count,
              json.dumps(cities_covered), phase),
         )
+    action = "fetch" if phase in ("aggregator", "verification") else "search"
+    log_action(config, action, phase=phase, run_id=run_id, source="skill",
+               target_weekend=target_weekend,
+               detail={"query": query, "result_count": result_count,
+                       "cities": cities_covered or []})
+
+
+def log_action(
+    config: dict[str, Any],
+    action: str,
+    *,
+    phase: str | None = None,
+    detail: dict[str, Any] | None = None,
+    run_id: str | None = None,
+    source: str = "python",
+    target_weekend: str | None = None,
+) -> None:
+    """Append one structured entry to action_log.jsonl in the cache dir.
+
+    Args:
+        config: Loaded configuration dictionary.
+        action: Action type string (e.g. 'run_init', 'search', 'events_saved').
+        phase: Optional search phase context (e.g. 'A', 'B', 'broad').
+        detail: Optional dict with action-specific data.
+        run_id: Run identifier for grouping entries from one execution.
+        source: Who is logging — 'python' (auto) or 'skill' (via CLI).
+        target_weekend: ISO date of target Saturday for filtering.
+    """
+    if "_cache_dir" in config:
+        cache_dir = Path(config["_cache_dir"])
+    else:
+        from weekend_scout.config import get_cache_dir
+        cache_dir = get_cache_dir(config)
+    log_file = cache_dir / "action_log.jsonl"
+    entry = {
+        "ts": datetime.datetime.now().isoformat(timespec="seconds"),
+        "run_id": run_id,
+        "source": source,
+        "action": action,
+        "phase": phase,
+        "target_weekend": target_weekend,
+        "detail": detail or {},
+    }
+    with log_file.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
 def get_searches_this_week(

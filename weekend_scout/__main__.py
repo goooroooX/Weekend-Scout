@@ -63,12 +63,13 @@ def cmd_config(args: argparse.Namespace) -> None:
 
 def cmd_init(args: argparse.Namespace) -> None:
     """Load config, city list, cache state, and query suggestions. Output JSON."""
+    import datetime
     from weekend_scout.config import load_config, COUNTRY_CODE_MAP, COUNTRY_LANGUAGE_MAP
     from weekend_scout.cities import (
         get_city_list, generate_broad_queries, generate_targeted_template,
         find_city_coords, _DATA_DIR, GEONAMES_FILENAME,
     )
-    from weekend_scout.cache import query_events, get_searches_this_week
+    from weekend_scout.cache import query_events, get_searches_this_week, log_action
     from weekend_scout.distance import next_weekend_dates
 
     config = load_config()
@@ -99,6 +100,7 @@ def cmd_init(args: argparse.Namespace) -> None:
 
     saturday, sunday = next_weekend_dates()
     target_weekend = {"saturday": saturday, "sunday": sunday}
+    run_id = f"{saturday}_{datetime.datetime.now().strftime('%H%M')}"
 
     cities = get_city_list(config, bypass_cache=args.city is not None)
     cached_events = query_events(config, saturday)
@@ -116,6 +118,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         config_block["city_geocoded"] = city_geocoded
 
     output = {
+        "run_id": run_id,
         "config": config_block,
         "cities": cities,
         "cached_events": cached_events,
@@ -126,17 +129,23 @@ def cmd_init(args: argparse.Namespace) -> None:
             "targeted_template": targeted_tmpl,
         },
     }
+    log_action(config, "run_init", run_id=run_id, target_weekend=saturday,
+               detail={"home_city": config.get("home_city"),
+                       "radius_km": config.get("radius_km"),
+                       "cached_count": len(cached_events),
+                       "tier1": cities.get("tier1", [])})
     print(json.dumps(output, indent=2, ensure_ascii=False))
 
 
 def cmd_save(args: argparse.Namespace) -> None:
     """Save events (JSON array) to the cache."""
     from weekend_scout.config import load_config
-    from weekend_scout.cache import save_events
+    from weekend_scout.cache import save_events, log_action
 
     config = load_config()
     events = json.loads(args.events)
     saved, skipped = save_events(config, events)
+    log_action(config, "events_saved", detail={"saved": saved, "skipped": skipped})
     print(json.dumps({"saved": saved, "skipped": skipped}))
 
 
@@ -144,6 +153,7 @@ def cmd_send(args: argparse.Namespace) -> None:
     """Send a formatted message to Telegram."""
     from weekend_scout.config import load_config
     from weekend_scout.telegram import send_telegram
+    from weekend_scout.cache import log_action
 
     config = load_config()
 
@@ -157,6 +167,7 @@ def cmd_send(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     success = send_telegram(config, message)
+    log_action(config, "telegram_send", detail={"success": success, "char_count": len(message)})
     print(json.dumps({"sent": success}))
 
 
@@ -184,6 +195,26 @@ def cmd_log_search(args: argparse.Namespace) -> None:
         result_count=args.result_count,
         cities_covered=cities,
         phase=args.phase,
+        run_id=args.run_id,
+    )
+    print(json.dumps({"logged": True}))
+
+
+def cmd_log_action(args: argparse.Namespace) -> None:
+    """Append a structured action log entry to action_log.jsonl."""
+    from weekend_scout.config import load_config
+    from weekend_scout.cache import log_action
+
+    config = load_config()
+    detail = json.loads(args.detail) if args.detail else {}
+    log_action(
+        config,
+        args.action,
+        phase=args.phase,
+        detail=detail,
+        run_id=args.run_id,
+        source=args.source,
+        target_weekend=args.target_weekend,
     )
     print(json.dumps({"logged": True}))
 
@@ -191,10 +222,11 @@ def cmd_log_search(args: argparse.Namespace) -> None:
 def cmd_cache_mark_served(args: argparse.Namespace) -> None:
     """Mark all events for the given weekend date as served."""
     from weekend_scout.config import load_config
-    from weekend_scout.cache import mark_served
+    from weekend_scout.cache import mark_served, log_action
 
     config = load_config()
     count = mark_served(config, args.date)
+    log_action(config, "events_served", target_weekend=args.date, detail={"count": count})
     print(json.dumps({"marked": count}))
 
 
@@ -210,6 +242,7 @@ def cmd_format_message(args: argparse.Namespace) -> None:
     from pathlib import Path
     from weekend_scout.config import load_config, get_cache_dir
     from weekend_scout.telegram import format_scout_message
+    from weekend_scout.cache import log_action
 
     config = load_config()
     city_events = json.loads(args.city_events)
@@ -223,6 +256,9 @@ def cmd_format_message(args: argparse.Namespace) -> None:
     )
     output_path = Path(args.output) if args.output else get_cache_dir(config) / "scout_message.txt"
     output_path.write_text(msg, encoding="utf-8")
+    log_action(config, "message_formatted", target_weekend=args.saturday,
+               detail={"city_events": len(city_events), "trips": len(trips),
+                       "char_count": len(msg)})
     print(json.dumps({"written": str(output_path)}))
 
 
@@ -275,6 +311,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_ls.add_argument("--result-count", type=int, default=0, help="Number of results returned")
     p_ls.add_argument("--cities", help="JSON array of city names covered")
     p_ls.add_argument("--phase", default="broad", choices=["broad", "aggregator", "targeted", "verification"])
+    p_ls.add_argument("--run-id", default=None, dest="run_id", help="Run identifier from init")
+
+    # log-action
+    p_la = sub.add_parser("log-action", help="Append a structured action log entry")
+    p_la.add_argument("--action", required=True, help="Action type (phase_start, score_summary, ...)")
+    p_la.add_argument("--phase", default=None, help="Search phase context (A, B, C, D, ...)")
+    p_la.add_argument("--detail", default=None, help="JSON object with action-specific data")
+    p_la.add_argument("--run-id", default=None, dest="run_id", help="Run identifier from init")
+    p_la.add_argument("--source", default="skill", help="Source: skill or python")
+    p_la.add_argument("--target-weekend", default=None, dest="target_weekend", help="ISO Saturday date")
 
     # cache-mark-served
     p_cms = sub.add_parser("cache-mark-served", help="Mark weekend events as served")
@@ -306,6 +352,7 @@ COMMANDS = {
     "send": cmd_send,
     "cache-query": cmd_cache_query,
     "log-search": cmd_log_search,
+    "log-action": cmd_log_action,
     "cache-mark-served": cmd_cache_mark_served,
     "format-message": cmd_format_message,
     "download-data": cmd_download_data,

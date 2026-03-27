@@ -26,10 +26,12 @@ Extract these fields from the JSON output and keep them in mind throughout:
 
 ```
 saturday  = output.config.target_weekend.saturday   (ISO date)
+sunday    = output.config.target_weekend.sunday     (ISO date)
 home_city = output.config.home_city                 (departure/arrival label for trip routes)
 tier1     = output.cities.tier1                     (must all be covered)
 cached    = output.cached_events                    (already in cache — skip re-discovering)
 done_q    = output.searches_this_week               (queries already run this week — skip)
+run_id    = output.run_id                           (pass to all log-search and log-action calls)
 qvars     = output.suggested_queries.vars           (substitution variables for templates)
 broad_q   = output.suggested_queries.broad          (4 templates — fill {placeholders} from qvars)
 tgt_tmpl  = output.suggested_queries.targeted_template  ({city} and {date} are placeholders)
@@ -52,7 +54,8 @@ python -m weekend_scout log-search \
   --query "<query_or_url>" --target-weekend "<saturday>" \
   --cities '["<city>"]' \
   --phase <broad|aggregator|targeted|verification> \
-  --result-count <N>
+  --result-count <N> \
+  --run-id "<run_id>"
 ```
 
 **Event schema** — required fields for `save` (optional fields improve scoring):
@@ -66,6 +69,9 @@ Optional: end_date, time_info, location_name, lat, lon, description, country
 ---
 
 **Phase A — Broad sweep (3–5 searches):**
+```bash
+python -m weekend_scout log-action --run-id "<run_id>" --action phase_start --phase A --target-weekend "<saturday>"
+```
 For each template in `broad_q`: fill it → `query = template.format(**qvars)`.
 Skip if `query` is already in `done_q`. Run WebSearch(query).
 
@@ -77,6 +83,9 @@ After each search, examine results:
 Log each search with `--phase broad`.
 
 **Phase B — Aggregator deep-dive (3–8 fetches):**
+```bash
+python -m weekend_scout log-action --run-id "<run_id>" --action phase_start --phase B --target-weekend "<saturday>"
+```
 Fetch the most promising aggregator URLs. Use this prompt:
 
 > "List ALL outdoor events, festivals, fairs, markets, city days, reenactments, food
@@ -87,6 +96,9 @@ Fetch the most promising aggregator URLs. Use this prompt:
 Log each fetch with `--phase aggregator`.
 
 **Phase C — Targeted city searches (only if needed):**
+```bash
+python -m weekend_scout log-action --run-id "<run_id>" --action phase_start --phase C --target-weekend "<saturday>"
+```
 For each city in `tier1` with zero events (across `cached` + Phase A+B results):
 fill → `query = tgt_tmpl.format(city=city_name, date=qvars["date"])`.
 Skip if `query` is in `done_q`. Run WebSearch(query).
@@ -94,6 +106,9 @@ Same formula for any city discovered mid-search that isn't in tier1.
 Log with `--phase targeted`.
 
 **Phase D — Verification (1–3 fetches):**
+```bash
+python -m weekend_scout log-action --run-id "<run_id>" --action phase_start --phase D --target-weekend "<saturday>"
+```
 For your top 5 candidate events, fetch the official source to confirm dates and details.
 Update `confidence` to `"confirmed"`. Log with `--phase verification`.
 
@@ -116,6 +131,12 @@ Score each event 1–10:
 
 Pool: combine `cached` events + newly saved events.
 Select: top 3 in home city + up to 3 road trip options from nearby cities.
+
+```bash
+python -m weekend_scout log-action --run-id "<run_id>" --action score_summary \
+  --target-weekend "<saturday>" \
+  --detail '{"total_pool": <N>, "city_events_selected": <N>, "trip_options": <N>}'
+```
 
 ### Step 4: Build Trip Options
 
