@@ -74,6 +74,14 @@ def test_split_hard_cutoff_no_newlines():
     assert len(result[1]) == 904
 
 
+def test_split_all_whitespace_returns_nonempty_list():
+    from weekend_scout.telegram import split_message
+    # All-whitespace message longer than max_length must not return []
+    message = "\n\n" * 2100  # 4200 chars, > 4096
+    result = split_message(message, max_length=4096)
+    assert len(result) >= 1
+
+
 def test_split_multiple_parts_all_within_limit():
     from weekend_scout.telegram import split_message
     # Build a message that will need 3+ splits

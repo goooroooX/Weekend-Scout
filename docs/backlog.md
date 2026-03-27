@@ -63,8 +63,8 @@
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 5.1 | Write SKILL.md with full search strategy prompt | TODO | |
-| 5.2 | Test /weekend-scout with real web searches | TODO | |
+| 5.1 | Write SKILL.md with full search strategy prompt | DONE (2026-03-27) | Implemented in .claude/skills/weekend-scout/SKILL.md (177 lines, 6 steps) |
+| 5.2 | Test /weekend-scout with real web searches | IN PROGRESS | |
 | 5.3 | Iterate on search queries based on result quality | TODO | |
 | 5.4 | Iterate on scoring rubric | TODO | |
 | 5.5 | End-to-end test: init -> search -> save -> send | TODO | |
@@ -73,7 +73,7 @@
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 6.1 | Add region mappings beyond Mazowsze | TODO | |
+| 6.1 | Add region mappings beyond Mazowsze | DONE (2026-03-27) | data/regions.json expanded to ~80 EU cities (Berlin, Paris, Vienna, Budapest, Brussels, etc.) |
 | 6.2 | Handle "no events found" gracefully | TODO | |
 | 6.3 | Add cron/scheduled execution instructions to README | TODO | |
 | 6.4 | Cross-platform testing (Windows native, WSL) | TODO | |

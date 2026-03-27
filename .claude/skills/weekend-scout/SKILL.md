@@ -10,167 +10,150 @@ disable-model-invocation: true
 
 ## Weekend Scout
 
-You are a weekend trip scout. Your job is to find interesting outdoor events
-happening NEXT weekend (the upcoming Saturday and Sunday) in the user's city
-and within driving distance, then build trip options and send them to Telegram.
-
 ### Step 1: Initialize
 
-Run the Python tool to load config, city list, cached events, and search suggestions:
-
 ```bash
-python -m weekend_scout init
+python -m weekend_scout init [--city CITY] [--radius KM]
 ```
 
-If this is the first run, guide the user through setup:
-```bash
-python -m weekend_scout setup
+First run: `python -m weekend_scout setup` then re-run init.
+
+Extract these fields from the JSON output and keep them in mind throughout:
+
 ```
-
-If the user provided arguments, override:
-- First arg: home city
-- Second arg: radius in km
-
-Review the init output. Note:
-- How many cached events exist for next weekend
-- Which cities are Tier 1 (must be covered)
-- Which searches were already run this week
-- The suggested search queries
+saturday  = output.config.target_weekend.saturday   (ISO date)
+tier1     = output.cities.tier1                     (must all be covered)
+cached    = output.cached_events                    (already in cache — skip re-discovering)
+done_q    = output.searches_this_week               (queries already run this week — skip)
+broad_q   = output.suggested_queries.broad          (4 ready-to-use language-aware queries)
+target_q  = output.suggested_queries.targeted       (per-city queries: {city: [query]})
+```
 
 ### Step 2: Search for Events
 
-Follow this search strategy strictly. Do NOT exceed the budget.
-
 **Budget: max 8 searches + max 10 fetches = 18 tool calls.**
 
-**Phase A - Broad sweep (3-5 searches):**
-Run the suggested broad queries from init output. Skip any already in search log.
-Queries should be in the local language (from config). Include 1 English query.
-
-After each search, examine titles and URLs:
-- If a title reveals a specific event (name + city + date), record it immediately
-- If a URL points to an aggregator listing many events, queue it for fetching
-- Skip anything clearly irrelevant (museums, indoor events, wrong dates)
-
-**Phase B - Aggregator deep-dive (3-8 fetches):**
-Fetch the most promising aggregator URLs. Use this prompt template:
-
-"List ALL outdoor events, festivals, fairs, markets (jarmark), city days
-(Dni Miasta), reenactments, food festivals, and street events happening
-on [DATES] within the area covered by this page. For each: event name,
-city, venue, dates/times, 1-sentence description, free entry or not.
-Exclude: museums, galleries, theaters, cinemas, indoor events, weekly markets."
-
-**Phase C - Targeted city searches (only if needed):**
-Check which Tier 1 cities have zero events after Phase A+B.
-For each uncovered Tier 1 city, run one search in local language.
-Fetch only if results look promising.
-
-**Phase D - Verification (1-3 fetches):**
-For your top 5 candidate events, fetch the official source to confirm
-dates and get details. Update confidence to "confirmed".
-
-After all searching, save ALL discovered events to cache (including events
-for future weekends that you noticed along the way):
-
+**Log pattern** — call after every search or aggregator fetch:
 ```bash
-python -m weekend_scout save --events '<JSON array of events>'
+python -m weekend_scout log-search \
+  --query "<query_or_url>" --target-weekend "<saturday>" \
+  --cities '["<city>"]' \
+  --phase <broad|aggregator|targeted|verification> \
+  --result-count <N>
 ```
 
-Log each search:
+**Event schema** — required fields for `save` (optional fields improve scoring):
+```
+Required: event_name (str), city (str), start_date (YYYY-MM-DD)
+Scoring:  confidence ("confirmed"|"likely"|"unverified"), category (str),
+          free_entry (bool), source_url (str), source_name (str)
+Optional: end_date, time_info, location_name, lat, lon, description, country
+```
+
+---
+
+**Phase A — Broad sweep (3–5 searches):**
+Run each query in `broad_q` in order. Skip any that are already in `done_q`.
+
+After each search, examine results:
+- Specific event title (name + city + date) → record it immediately
+- Aggregator URL listing many events → queue for Phase B
+- Irrelevant (museums, indoor, wrong dates) → skip
+
+Log each search with `--phase broad`.
+
+**Phase B — Aggregator deep-dive (3–8 fetches):**
+Fetch the most promising aggregator URLs. Use this prompt:
+
+> "List ALL outdoor events, festivals, fairs, markets, city days, reenactments, food
+> festivals, and street events happening on [DATES] within the area covered by this page.
+> For each: event name, city, venue, dates/times, 1-sentence description, free entry or not.
+> Exclude: museums, galleries, theaters, cinemas, indoor events, weekly markets."
+
+Log each fetch with `--phase aggregator`.
+
+**Phase C — Targeted city searches (only if needed):**
+For each city in `tier1` that still has zero events after Phase A+B:
+use `target_q[city_name][0]` as the search query.
+Log with `--phase targeted`.
+
+**Phase D — Verification (1–3 fetches):**
+For your top 5 candidate events, fetch the official source to confirm dates and details.
+Update `confidence` to `"confirmed"`. Log with `--phase verification`.
+
+---
+
+Save ALL discovered events (including future-weekend finds):
 ```bash
-python -m weekend_scout log-search --query "..." --target-weekend "2026-03-28" \
-  --cities '["city1", "city2"]' --phase broad --result-count N
+python -m weekend_scout save --events '<JSON array>'
 ```
 
 ### Step 3: Score and Rank
 
-Score each event 1-10 using these criteria:
-- Category match (festival/fair = high, generic event = low): 0-3
-- Scale (city-wide = high, small local = low): 0-2
-- Uniqueness (annual event = high, monthly = low): 0-2
-- Confidence (confirmed = 1, likely = 0.5, unverified = 0): 0-1
-- Free entry: 0-1
-- Source quality (official site = 1, aggregator = 0.5): 0-1
+Score each event 1–10:
+- Category match (festival/fair = high, generic = low): 0–3
+- Scale (city-wide = high, small local = low): 0–2  *(infer from description)*
+- Uniqueness (annual = high, recurring = low): 0–2  *(infer from description)*
+- Confidence (confirmed=1, likely=0.5, unverified=0): 0–1
+- Free entry: 0–1
+- Source quality (official=1, aggregator=0.5): 0–1
 
-Select:
-- Top 3 events in the home city
-- Up to 3 road trip options from nearby cities
+Select: top 3 events in home city + up to 3 road trip options from nearby cities.
 
 ### Step 4: Build Trip Options
 
-For home city: list top 3 events with details.
-
-For road trips, build options using city distances from the init data:
+For road trips, use city distances from the init data:
 - Option A: Easy day trip (single city, under 2h drive)
-- Option B: Full day trip (1-2 cities in a loop)
+- Option B: Full day trip (1–2 cities in a loop)
 - Option C: Longer trip (farther city or multi-stop)
 
-For each trip option include:
-- Route: Home -> City A (X km, ~Yh) -> [City B] -> Home
-- Events at each stop with times
-- Recommended departure time (back-calculate from first event)
-- Estimated return time
-- Use the user's precise_location as the start/end point name
+For each trip option, build a dict for `format-message`:
+```json
+{
+  "name":   "Łódź Day Trip",
+  "route":  "Warsaw → Łódź (130 km, ~1h45) → Warsaw",
+  "events": "Festiwal Czterech Kultur | ul. Piotrkowska | Sat–Sun all day",
+  "timing": "Leave by: 09:00 | Back by: ~20:00"
+}
+```
+
+Use `precise_location` from config as the start/end point name.
+Back-calculate departure time from the first event start time.
 
 ### Step 5: Format and Send
 
-Format the message following this template:
-
-```
-Weekend Scout | [Date Range]
-
-IN [HOME CITY]:
-
-1. [Event Name]
-   [Venue] | [Day] [Times]
-   [1-line description]
-   [Free/Paid]
-   [URL]
-
-ROAD TRIPS:
-
-A. [Trip Name]
-   [Start] -> [City] ([distance], ~[time])
-   [Event details]
-   -> [next stop or home]
-   Leave by: [time] | Back by: ~[time]
-
----
-Scouted by Weekend Scout
-```
-
-Send via Python:
 ```bash
-python -m weekend_scout send --file /tmp/scout_message.txt
+python -m weekend_scout format-message \
+  --saturday "<saturday>" --sunday "<sunday>" \
+  --city-events '<top_3_city_events_json>' \
+  --trips '<trip_options_json>' \
+  --output scout_message.txt
+
+python -m weekend_scout send --file scout_message.txt
 ```
 
-If no Telegram is configured, just display the message.
+If `{"sent": false}`: check that `telegram_bot_token` and `telegram_chat_id` are set in
+config. If Telegram is not configured, display the message contents directly to the user.
 
-### Step 6: Report
+### Step 6: Mark Served and Report
+
+```bash
+python -m weekend_scout cache-mark-served --date "<saturday>"
+```
 
 Tell the user:
-- How many events were found
-- How many are new (not in cache before)
-- How many searches/fetches were used (vs budget)
-- Any Tier 1 cities with zero coverage (flag for next time)
+- How many events were found / how many are new vs cached
+- Searches and fetches used (vs budget)
+- Any Tier 1 cities with zero coverage (flag for next run)
 
-### What counts as a good event
+---
 
-INCLUDE:
-- Open-air festivals (music, food, craft, cultural)
-- City Days (Dni Miasta), town celebrations
-- Large fairs and markets (jarmark, kiermasz, fair)
-- Historical reenactments, outdoor spectacles
-- Street art and performer festivals
-- Food truck rallies, beer festivals, wine festivals
-- Outdoor concerts, open-air cinema
-- Large sporting events with public attendance
+### Event filter (reference)
 
-EXCLUDE:
-- Museum openings, gallery exhibitions
-- Indoor theater, cinema, opera, conferences
-- Small recurring weekly farmers markets
-- Private corporate events
-- Ticketed indoor concerts
-- Religious services (but religious festivals/processions are OK)
+**Include:** open-air festivals (music, food, craft, cultural), City Days, large fairs and
+markets, historical reenactments, street art festivals, food truck rallies, beer/wine festivals,
+outdoor concerts, open-air cinema, large sporting events with public attendance.
+
+**Exclude:** museum openings, indoor theater/cinema/opera, conferences, small recurring weekly
+farmers markets, private corporate events, ticketed indoor concerts.
+Religious services are excluded, but religious festivals and processions are included.

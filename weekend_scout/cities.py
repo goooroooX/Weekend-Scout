@@ -479,7 +479,7 @@ def generate_broad_queries(
         date=sat_str, region=region, city=city,
         month=month_local, year=sat_date.year, country=country,
     )
-    queries = [t.format(**fmt) for t in tmpl["broad"]]
+    queries = [" ".join(t.format(**fmt).split()) for t in tmpl["broad"]]
     # Always append one English query for tourist-facing sites (en_sat already contains year)
     queries.append(f"outdoor festivals events {en_sat}")
     return queries

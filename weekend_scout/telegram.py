@@ -74,7 +74,7 @@ def split_message(message: str, max_length: int = TELEGRAM_MAX_LENGTH) -> list[s
     parts = [head] if head else []
     if tail:
         parts.extend(split_message(tail, max_length))
-    return parts
+    return parts if parts else [""]
 
 
 def send_telegram(config: dict[str, Any], message: str) -> bool:
@@ -235,9 +235,9 @@ def format_scout_message(
         for i, trip in enumerate(trip_options[:3]):
             letter = letters[i]
             name = _escape_markdown(trip.get("name") or "")
-            route = trip.get("route") or ""
-            events_text = trip.get("events") or ""
-            timing = trip.get("timing") or ""
+            route = _escape_markdown(trip.get("route") or "")
+            events_text = _escape_markdown(trip.get("events") or "")
+            timing = _escape_markdown(trip.get("timing") or "")
             parts = [f"{letter}. {name}"]
             if route:
                 parts.append(f"   {route}")

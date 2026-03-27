@@ -9,6 +9,7 @@ Provides subcommands:
   cache-query       -- query cached events for a weekend date
   log-search        -- log a completed search to the search log
   cache-mark-served -- mark events as sent to Telegram
+  format-message    -- format scout message and write to file
   run               -- full automated run
 """
 
@@ -35,16 +36,20 @@ def cmd_config(args: argparse.Namespace) -> None:
             print(json.dumps({"error": f"Unknown config key: {key}"}))
             sys.exit(1)
         if value is None:
-            print(json.dumps({"error": f"Provide a value: config {key} <value>"}))
-            sys.exit(1)
+            print(json.dumps({key: config[key]}, ensure_ascii=False))
+            return
         # Coerce type to match existing value
         existing = config[key]
-        if isinstance(existing, bool):
-            value = value.lower() in ("true", "1", "yes")
-        elif isinstance(existing, int):
-            value = int(value)
-        elif isinstance(existing, float):
-            value = float(value)
+        try:
+            if isinstance(existing, bool):
+                value = value.lower() in ("true", "1", "yes")
+            elif isinstance(existing, int):
+                value = int(value)
+            elif isinstance(existing, float):
+                value = float(value)
+        except (ValueError, TypeError):
+            print(json.dumps({"error": f"Invalid value for {key}: expected {type(existing).__name__}"}))
+            sys.exit(1)
         config[key] = value
         save_config(config)
         print(json.dumps({"set": {key: value}}))
@@ -65,7 +70,11 @@ def cmd_init(args: argparse.Namespace) -> None:
     if args.city:
         config["home_city"] = args.city
     if args.radius:
-        config["radius_km"] = int(args.radius)
+        try:
+            config["radius_km"] = int(args.radius)
+        except ValueError:
+            print(json.dumps({"error": "radius must be an integer"}))
+            sys.exit(1)
 
     saturday, sunday = next_weekend_dates()
     target_weekend = {"saturday": saturday, "sunday": sunday}
@@ -173,12 +182,32 @@ def cmd_download_data(args: argparse.Namespace) -> None:
     print(json.dumps({"path": str(path)}))
 
 
+def cmd_format_message(args: argparse.Namespace) -> None:
+    """Format a scout message and write it to a file."""
+    from pathlib import Path
+    from weekend_scout.config import load_config
+    from weekend_scout.telegram import format_scout_message
+
+    config = load_config()
+    city_events = json.loads(args.city_events)
+    trips = json.loads(args.trips)
+    msg = format_scout_message(
+        config.get("home_city", ""),
+        args.saturday,
+        args.sunday,
+        city_events,
+        trips,
+    )
+    Path(args.output).write_text(msg, encoding="utf-8")
+    print(json.dumps({"written": args.output}))
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     """Print instructions for a manual /weekend-scout run."""
-    print(
-        "Run /weekend-scout in Claude Code to start an automated scout.\n"
-        "Full programmatic automation (cron + Claude Code SDK) is planned for a future release."
-    )
+    print(json.dumps({
+        "message": "Run /weekend-scout in Claude Code to start an automated scout.",
+        "automation": "planned",
+    }))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -227,6 +256,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_cms = sub.add_parser("cache-mark-served", help="Mark weekend events as served")
     p_cms.add_argument("--date", required=True, help="ISO date (Saturday of target weekend)")
 
+    # format-message
+    p_fm = sub.add_parser("format-message", help="Format scout message and write to file")
+    p_fm.add_argument("--saturday", required=True, help="ISO date of target Saturday")
+    p_fm.add_argument("--sunday", required=True, help="ISO date of target Sunday")
+    p_fm.add_argument("--city-events", default="[]", help="JSON array of up to 3 event dicts")
+    p_fm.add_argument("--trips", default="[]", help="JSON array of trip option dicts")
+    p_fm.add_argument("--output", default="scout_message.txt", help="Output file path")
+
     # download-data
     p_dd = sub.add_parser("download-data", help="Download GeoNames cities15000.zip into data/")
     p_dd.add_argument("--force", action="store_true", help="Re-download even if file already exists")
@@ -246,6 +283,7 @@ COMMANDS = {
     "cache-query": cmd_cache_query,
     "log-search": cmd_log_search,
     "cache-mark-served": cmd_cache_mark_served,
+    "format-message": cmd_format_message,
     "download-data": cmd_download_data,
     "run": cmd_run,
 }

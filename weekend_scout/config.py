@@ -3,7 +3,7 @@
 Handles reading, writing, and interactive setup of the YAML config file.
 Config and cache files live in the platform-appropriate user config directory:
   - Linux/Mac: ~/.config/weekend-scout/
-  - Windows:   %APPDATA%/weekend-scout/
+  - Windows:   %LOCALAPPDATA%\\weekend-scout\\weekend-scout\\
 """
 
 from __future__ import annotations
