@@ -136,7 +136,7 @@ def format_event_block(event: dict[str, Any]) -> str:
 
     # Venue | Day(s) Time
     venue = event.get("location_name") or ""
-    time_info = event.get("time_info") or ""
+    time_info = _escape_markdown(event.get("time_info") or "")
     start_date = event.get("start_date") or ""
     end_date = event.get("end_date") or ""
 

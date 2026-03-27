@@ -47,7 +47,11 @@ def cmd_config(args: argparse.Namespace) -> None:
                 value = int(value)
             elif isinstance(existing, float):
                 value = float(value)
-        except (ValueError, TypeError):
+            elif isinstance(existing, (dict, list)):
+                value = json.loads(value)
+                if not isinstance(value, type(existing)):
+                    raise ValueError
+        except (ValueError, TypeError, json.JSONDecodeError):
             print(json.dumps({"error": f"Invalid value for {key}: expected {type(existing).__name__}"}))
             sys.exit(1)
         config[key] = value

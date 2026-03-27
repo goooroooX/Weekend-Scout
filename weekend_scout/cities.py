@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import sys
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -209,19 +210,19 @@ def download_geonames(force: bool = False) -> Path:
     _DATA_DIR.mkdir(parents=True, exist_ok=True)
     zip_path = _DATA_DIR / "cities15000.zip"
 
-    print(f"Downloading {GEONAMES_ZIP_URL} ...")
+    print(f"Downloading {GEONAMES_ZIP_URL} ...", file=sys.stderr)
     response = requests.get(GEONAMES_ZIP_URL, stream=True, timeout=120)
     response.raise_for_status()
     with zip_path.open("wb") as f:
         for chunk in response.iter_content(chunk_size=65536):
             f.write(chunk)
 
-    print("Extracting ...")
+    print("Extracting ...", file=sys.stderr)
     with zipfile.ZipFile(zip_path) as zf:
         zf.extract(GEONAMES_FILENAME, _DATA_DIR)
 
     zip_path.unlink()
-    print(f"Saved to {txt_path}")
+    print(f"Saved to {txt_path}", file=sys.stderr)
     return txt_path
 
 

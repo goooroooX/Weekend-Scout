@@ -158,6 +158,29 @@ def test_cmd_config_set_float_invalid_value_returns_error(tmp_path, monkeypatch)
     assert "error" in result
 
 
+def test_cmd_config_set_dict_value_parses_json(tmp_path, monkeypatch):
+    result = _run_config(
+        ["home_coordinates", '{"lat": 52.20, "lon": 20.91}'],
+        tmp_path, monkeypatch,
+    )
+    assert result == {"set": {"home_coordinates": {"lat": 52.20, "lon": 20.91}}}
+    # Verify the stored value is a dict, not a string
+    stored = _run_config(["home_coordinates"], tmp_path, monkeypatch)
+    assert isinstance(stored["home_coordinates"], dict)
+    assert stored["home_coordinates"]["lat"] == 52.20
+
+
+def test_cmd_config_set_dict_invalid_json_returns_error(tmp_path, monkeypatch):
+    result = _run_config(["home_coordinates", "notjson"], tmp_path, monkeypatch)
+    assert "error" in result
+
+
+def test_cmd_config_set_dict_wrong_type_returns_error(tmp_path, monkeypatch):
+    # home_coordinates expects a dict; passing a JSON list should fail
+    result = _run_config(["home_coordinates", "[1, 2, 3]"], tmp_path, monkeypatch)
+    assert "error" in result
+
+
 # --- cmd_init ---
 
 def _run_cmd(name: str, args: list[str], tmp_path, monkeypatch) -> str:

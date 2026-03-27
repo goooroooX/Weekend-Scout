@@ -228,6 +228,12 @@ def test_format_event_block_single_day():
     assert "Sat-Sun" not in result
 
 
+def test_format_event_block_time_info_markdown_escaped():
+    from weekend_scout.telegram import format_event_block
+    result = format_event_block(_event(time_info="10:00*18:00"))
+    assert r"10:00\*18:00" in result
+
+
 # --- format_scout_message ---
 
 def test_format_scout_message_header():
