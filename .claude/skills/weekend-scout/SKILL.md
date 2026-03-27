@@ -20,16 +20,54 @@ model: haiku
 python -m weekend_scout init [--city CITY] [--radius KM]
 ```
 
-**Check for unconfigured state first** — if the output contains `"needs_setup": true`, stop
-immediately and tell the user:
+**Check for setup issues before extracting variables:**
 
-> Weekend Scout is not configured yet. Please run the setup wizard in a terminal:
-> ```
-> python -m weekend_scout setup
-> ```
-> Then run `/weekend-scout` again.
+- If `"needs_setup": true` → city not configured; run the **full setup flow** below.
+- If `output.warnings` contains `"coordinates_not_set"` → city set but coords missing;
+  run the **auto-fix flow** below.
+- Otherwise → proceed directly to variable extraction.
 
-Do **not** proceed to Step 2 in this case.
+---
+
+**Full setup flow** (`needs_setup: true` — no city configured):
+
+Ask the user:
+
+> "Weekend Scout needs a quick one-time setup.
+> What city do you live in? (Include the country if the name is common across countries,
+> e.g. 'Lyon, France'.) How far are you willing to drive for a day trip? (default: 150 km)"
+
+Wait for the reply. Parse: `setup_city`, optional `setup_country`, `setup_radius` (default 150).
+
+**Auto-fix flow** (`coordinates_not_set` — city known, coords missing):
+
+Set `setup_city = output.config.home_city`, `setup_country = output.config.home_country`,
+`setup_radius = output.config.radius_km`. No user question needed — tell the user:
+*"Resolving coordinates for `<setup_city>`..."*
+
+---
+
+**Resolve coordinates** (used by both flows above):
+
+```bash
+python -m weekend_scout find-city --name "<setup_city>" [--country "<setup_country>"]
+```
+
+- **No matches** or `"warning"` in output: WebSearch
+  `"<setup_city> city coordinates latitude longitude"` → extract lat, lon, country.
+- **Exactly 1 match**: use it.
+- **Multiple matches** (different countries): list them and ask the user which country;
+  use the chosen result.
+
+Once resolved:
+```bash
+python -m weekend_scout setup --json '{"home_city":"<name>","home_country":"<country>","home_coordinates":{"lat":<lat>,"lon":<lon>},"radius_km":<radius>,"search_language":"<lang>"}'
+```
+
+Tell the user: *"Configured — scouting near <city>, <country>."*
+Then re-run `python -m weekend_scout init` and continue from variable extraction below.
+
+---
 
 The `init` JSON contains all config fields you need — do **not** run `config` separately.
 
@@ -214,8 +252,24 @@ python -m weekend_scout format-message \
 python -m weekend_scout send --file "<path from written>"
 ```
 
-If `{"sent": false}`: check that `telegram_bot_token` and `telegram_chat_id` are set in
-config. If Telegram is not configured, display the message contents directly to the user.
+**Always display the message to the user** — read the written file and show its contents
+in the conversation (strip HTML tags when presenting; the content reads fine as plain text).
+
+If `{"sent": true}`: tell the user the digest was sent to Telegram.
+
+If `{"sent": false}`:
+- **Telegram not configured** (`telegram_bot_token` or `telegram_chat_id` blank in config):
+  Tell the user:
+
+  > Telegram is not configured. To set it up, run:
+  > ```
+  > python -m weekend_scout config telegram_bot_token YOUR_BOT_TOKEN
+  > python -m weekend_scout config telegram_chat_id YOUR_CHAT_ID
+  > ```
+  > Then run `/weekend-scout` again to send this weekend's digest.
+
+- **Telegram configured but send failed**: report the error and suggest verifying
+  the token and chat ID with `python -m weekend_scout config`.
 
 ### Step 6: Mark Served and Report
 

@@ -92,3 +92,14 @@
 | 7.8 | Expand language/country support to 27 countries | DONE (2026-03-27) | Added IT/ES/PT/NL/SE/NO/DK/FI/RO/HR/BG/RS/GR/TR/RU with month names and query templates |
 | 7.9 | Fix first-run onboarding: needs_setup guard in init + SKILL.md gate | DONE (2026-03-27) | init returns needs_setup:true when home_city blank; SKILL.md shows setup msg and stops |
 | 7.10 | Fix --events-discovered CLI type error (int vs list) | DONE (2026-03-27) | SKILL.md log pattern clarified: integer count, not a list |
+
+## Phase 8: Onboarding & UX
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 8.1 | Redesign setup wizard: city-only input, auto-geocode from GeoNames | DONE (2026-03-27) | run_setup_wizard asks only city + radius; auto-fills coords/country/lang; multi-country disambiguation; testable via _geonames_path param |
+| 8.2 | Add find-city CLI command | DONE (2026-03-27) | python -m weekend_scout find-city --name X [--country Y]; returns JSON matches from GeoNames; no-file warning |
+| 8.3 | Add setup --json flag for skill-driven config | DONE (2026-03-27) | python -m weekend_scout setup --json '{...}'; merges into config, invalidates stale city cache |
+| 8.4 | Fix DEFAULT_CONFIG: remove hardcoded Poland/Warsaw defaults | DONE (2026-03-27) | home_country:"", home_coordinates:{lat:0.0,lon:0.0}; 0,0 is the unset sentinel |
+| 8.5 | SKILL.md: full in-chat onboarding flow (find-city + WebSearch fallback + setup --json) | DONE (2026-03-27) | Handles needs_setup + coordinates_not_set; no manual terminal setup needed |
+| 8.6 | SKILL.md: always display message to user; improved Telegram unconfigured guidance | DONE (2026-03-27) | Message shown in chat; config commands suggested when Telegram not set |

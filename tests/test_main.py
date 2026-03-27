@@ -203,13 +203,28 @@ def _run_cmd(name: str, args: list[str], tmp_path, monkeypatch) -> str:
     return captured[-1] if captured else ""
 
 
+def _write_minimal_config(tmp_path) -> None:
+    """Write a minimal valid config so cmd_init doesn't hit the needs_setup guard."""
+    import yaml
+    cfg = {
+        "home_city": "Warsaw",
+        "home_country": "Poland",
+        "home_coordinates": {"lat": 52.2297, "lon": 21.0122},
+        "radius_km": 150,
+        "search_language": "pl",
+    }
+    (tmp_path / "config.yaml").write_text(yaml.dump(cfg), encoding="utf-8")
+
+
 def test_cmd_init_radius_invalid_returns_error(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
     output = _run_cmd("init", ["--radius", "abc"], tmp_path, monkeypatch)
     result = json.loads(output)
     assert "error" in result
 
 
 def test_cmd_init_returns_json(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
     # Patch get_city_list to avoid needing GeoNames file
     import weekend_scout.cities as cities_module
     monkeypatch.setattr(cities_module, "get_city_list",

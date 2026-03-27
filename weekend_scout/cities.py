@@ -653,6 +653,75 @@ def format_date_local(iso_date: str, lang: str) -> str:
     return f"{month_name} {d.day}, {d.year}"  # en and unknown fallback
 
 
+def find_city_candidates(
+    city_name: str, geonames_path: Path, country_filter: str | None = None
+) -> list[dict[str, Any]]:
+    """Find cities matching a name in GeoNames, grouped by country.
+
+    Returns one entry per country (highest-population match), sorted by
+    population descending. Results are limited to supported countries
+    (those present in COUNTRY_CODE_MAP).
+
+    Args:
+        city_name: City name to search (case-insensitive; checked against
+                   both ASCII name and native name columns).
+        geonames_path: Path to cities15000.txt.
+        country_filter: Optional country name (full English name, case-insensitive)
+                        to restrict results.
+
+    Returns:
+        List of dicts with keys: name, ascii_name, country_code, country_name,
+        language, lat, lon, population.
+    """
+    from weekend_scout.config import COUNTRY_CODE_MAP, COUNTRY_LANGUAGE_MAP
+
+    lower = city_name.lower()
+    all_cities = parse_geonames_file(geonames_path)
+    matches = [
+        c for c in all_cities
+        if c["name"].lower() == lower or (c["name_local"] and c["name_local"].lower() == lower)
+    ]
+
+    # Limit to supported countries
+    supported = set(COUNTRY_CODE_MAP.keys())
+    matches = [c for c in matches if c["country"] in supported]
+
+    # Optional country filter
+    if country_filter:
+        cf_lower = country_filter.lower()
+        filtered = [
+            c for c in matches
+            if COUNTRY_CODE_MAP.get(c["country"], "").lower() == cf_lower
+        ]
+        if filtered:
+            matches = filtered
+
+    # Deduplicate by country — keep highest-population entry per country
+    by_country: dict[str, dict[str, Any]] = {}
+    for c in matches:
+        code = c["country"]
+        if code not in by_country or c["population"] > by_country[code]["population"]:
+            by_country[code] = c
+
+    deduped = sorted(by_country.values(), key=lambda c: c["population"], reverse=True)
+
+    return [
+        {
+            "name": c["name_local"] or c["name"],
+            "ascii_name": c["name"],
+            "country_code": c["country"],
+            "country_name": COUNTRY_CODE_MAP.get(c["country"], c["country"]),
+            "language": COUNTRY_LANGUAGE_MAP.get(
+                COUNTRY_CODE_MAP.get(c["country"], ""), "en"
+            ),
+            "lat": c["lat"],
+            "lon": c["lon"],
+            "population": c["population"],
+        }
+        for c in deduped
+    ]
+
+
 def find_city_coords(city_name: str, geonames_path: Path) -> dict[str, Any] | None:
     """Find a city's coordinates by name in a GeoNames file.
 

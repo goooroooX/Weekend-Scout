@@ -4,6 +4,7 @@ Provides subcommands:
   setup             -- interactive first-run setup wizard
   config            -- show current configuration
   init              -- load config + cities + cache for a scout run (JSON)
+  find-city         -- look up a city in the GeoNames database
   save              -- save discovered events to cache
   send              -- send formatted message to Telegram
   cache-query       -- query cached events for a weekend date
@@ -19,9 +20,47 @@ import sys
 
 
 def cmd_setup(args: argparse.Namespace) -> None:
-    """Run interactive setup wizard."""
-    from weekend_scout.config import run_setup_wizard
-    run_setup_wizard()
+    """Run interactive setup wizard, or apply a JSON config payload directly."""
+    if args.json_data:
+        from weekend_scout.config import load_config, save_config, get_config_path, get_cache_dir
+        from pathlib import Path as _P
+        incoming = json.loads(args.json_data)
+        old_config = load_config()
+        config = dict(old_config)
+        config.update(incoming)
+        save_config(config)
+        # Invalidate city cache when city name or coordinates change
+        old_city = old_config.get("home_city", "")
+        new_city = config.get("home_city", "")
+        old_coords = old_config.get("home_coordinates", {})
+        new_coords = config.get("home_coordinates", {})
+        if old_city != new_city or old_coords != new_coords:
+            cache_dir = get_cache_dir(config)
+            for city in {old_city, new_city} - {""}:
+                for radius in {old_config.get("radius_km", 150), config.get("radius_km", 150)}:
+                    stale = _P(cache_dir) / f"cities_{city}_{radius}.json"
+                    if stale.exists():
+                        stale.unlink()
+        print(json.dumps({"saved": True, "config_path": str(get_config_path())}, ensure_ascii=False))
+    else:
+        from weekend_scout.config import run_setup_wizard
+        run_setup_wizard()
+
+
+def cmd_find_city(args: argparse.Namespace) -> None:
+    """Look up a city in the GeoNames database and return matching entries."""
+    from weekend_scout.cities import find_city_candidates, _DATA_DIR, GEONAMES_FILENAME
+
+    geonames_path = _DATA_DIR / GEONAMES_FILENAME
+    if not geonames_path.exists():
+        print(json.dumps({
+            "matches": [],
+            "warning": "GeoNames file not found. Run: python -m weekend_scout download-data",
+        }, ensure_ascii=False))
+        return
+
+    matches = find_city_candidates(args.name, geonames_path, country_filter=args.country)
+    print(json.dumps({"matches": matches}, ensure_ascii=False))
 
 
 def cmd_config(args: argparse.Namespace) -> None:
@@ -111,7 +150,17 @@ def cmd_init(args: argparse.Namespace) -> None:
     target_weekend = {"saturday": saturday, "sunday": sunday}
     run_id = f"{saturday}_{datetime.datetime.now().strftime('%H%M')}"
 
-    cities = get_city_list(config, bypass_cache=args.city is not None)
+    # Skip city list when coordinates are unset (0,0 sentinel) to avoid a
+    # pointless GeoNames parse and prevent overwriting a valid cache with
+    # an empty one.
+    coords = config.get("home_coordinates", {})
+    coords_valid = not (coords.get("lat", 0.0) == 0.0 and coords.get("lon", 0.0) == 0.0)
+
+    if coords_valid:
+        cities = get_city_list(config, bypass_cache=args.city is not None)
+    else:
+        cities = {"tier1": [], "tier2": [], "tier3": []}
+
     cached_events = query_events(config, saturday)
     searches_this_week = get_searches_this_week(config, saturday)
     broad_result = generate_broad_queries(config, saturday, sunday)
@@ -119,6 +168,7 @@ def cmd_init(args: argparse.Namespace) -> None:
 
     config_block: dict = {
         "home_city": config.get("home_city"),
+        "home_country": config.get("home_country", ""),
         "radius_km": config.get("radius_km"),
         "search_language": config.get("search_language"),
         "target_weekend": target_weekend,
@@ -138,6 +188,8 @@ def cmd_init(args: argparse.Namespace) -> None:
             "targeted_template": targeted_tmpl,
         },
     }
+    if not coords_valid:
+        output["warnings"] = ["coordinates_not_set: nearby city suggestions disabled"]
     log_action(config, "run_init", run_id=run_id, target_weekend=saturday,
                detail={"home_city": config.get("home_city"),
                        "radius_km": config.get("radius_km"),
@@ -293,7 +345,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     # setup
-    sub.add_parser("setup", help="Interactive first-run setup wizard")
+    p_setup = sub.add_parser("setup", help="Interactive first-run setup wizard")
+    p_setup.add_argument(
+        "--json", dest="json_data", default=None, metavar="JSON",
+        help="Apply JSON config payload directly (no wizard)",
+    )
 
     # config
     p_cfg = sub.add_parser("config", help="Show or set configuration")
@@ -352,6 +408,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_fm.add_argument("--trips", default="[]", help="JSON array of trip option dicts")
     p_fm.add_argument("--output", default=None, help="Output file path (default: app cache dir)")
 
+    # find-city
+    p_fc = sub.add_parser("find-city", help="Look up a city in the GeoNames database")
+    p_fc.add_argument("--name", required=True, help="City name to search")
+    p_fc.add_argument("--country", default=None, help="Optional country filter (full English name)")
+
     # download-data
     p_dd = sub.add_parser("download-data", help="Download GeoNames cities15000.zip into data/")
     p_dd.add_argument("--force", action="store_true", help="Re-download even if file already exists")
@@ -366,6 +427,7 @@ COMMANDS = {
     "setup": cmd_setup,
     "config": cmd_config,
     "init": cmd_init,
+    "find-city": cmd_find_city,
     "save": cmd_save,
     "send": cmd_send,
     "cache-query": cmd_cache_query,

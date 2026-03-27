@@ -105,31 +105,50 @@ def test_get_cache_dir_creates_directory(tmp_path, monkeypatch):
 
 # --- run_setup_wizard ---
 
-def test_run_setup_wizard_saves_config(patched_config_path, monkeypatch):
+def test_run_setup_wizard_saves_config(patched_config_path, tmp_path, monkeypatch):
+    # Pass a non-existent geonames path so geocoding is skipped
+    fake_geonames = tmp_path / "cities15000.txt"
     inputs = iter([
-        "Warsaw",       # home_city
-        "Poland",       # home_country
-        "52.2297",      # lat
-        "21.0122",      # lon
-        "150",          # radius_km
-        "pl",           # search_language
-        "",             # telegram token (skip)
-        "",             # telegram chat_id (skip)
+        "Warsaw",   # home_city (not found → no geocoding)
+        "150",      # radius_km
+        "",         # telegram token (skip)
+        "",         # telegram chat_id (skip)
     ])
     monkeypatch.setattr("builtins.input", lambda _: next(inputs))
     from weekend_scout.config import run_setup_wizard
-    result = run_setup_wizard()
+    result = run_setup_wizard(_geonames_path=fake_geonames)
     assert result["home_city"] == "Warsaw"
-    assert result["search_language"] == "pl"
     assert patched_config_path.exists()
 
 
-def test_run_setup_wizard_returns_dict(patched_config_path, monkeypatch):
-    inputs = iter(["Krakow", "Poland", "50.06", "19.94", "120", "pl", "", ""])
+def test_run_setup_wizard_returns_dict(patched_config_path, tmp_path, monkeypatch):
+    fake_geonames = tmp_path / "cities15000.txt"
+    inputs = iter(["Krakow", "120", "", ""])
     monkeypatch.setattr("builtins.input", lambda _: next(inputs))
     from weekend_scout.config import run_setup_wizard
-    result = run_setup_wizard()
+    result = run_setup_wizard(_geonames_path=fake_geonames)
     assert isinstance(result, dict)
     assert result["home_city"] == "Krakow"
     assert result["radius_km"] == 120
+
+
+def test_run_setup_wizard_geocodes_city(patched_config_path, tmp_path, monkeypatch):
+    # Simulate GeoNames returning a single match for "Krakow"
+    fake_geonames = tmp_path / "cities15000.txt"
+    fake_geonames.write_text("placeholder\n", encoding="utf-8")  # exists check passes
+    mock_candidates = [{
+        "name": "Kraków", "ascii_name": "Krakow", "country_code": "PL",
+        "country_name": "Poland", "language": "pl",
+        "lat": 50.06, "lon": 19.94, "population": 800000,
+    }]
+    monkeypatch.setattr("weekend_scout.cities.find_city_candidates",
+                        lambda *a, **kw: mock_candidates)
+    inputs = iter(["Krakow", "120", "", ""])
+    monkeypatch.setattr("builtins.input", lambda _: next(inputs))
+    from weekend_scout.config import run_setup_wizard
+    result = run_setup_wizard(_geonames_path=fake_geonames)
+    assert result["home_city"] == "Kraków"
     assert result["home_coordinates"] == {"lat": 50.06, "lon": 19.94}
+    assert result["home_country"] == "Poland"
+    assert result["search_language"] == "pl"
+    assert result["radius_km"] == 120

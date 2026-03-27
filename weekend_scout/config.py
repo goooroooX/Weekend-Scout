@@ -81,8 +81,8 @@ COUNTRY_CODE_MAP: dict[str, str] = {
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "home_city": "",
-    "home_country": "Poland",
-    "home_coordinates": {"lat": 52.2297, "lon": 21.0122},
+    "home_country": "",                               # populated during setup
+    "home_coordinates": {"lat": 0.0, "lon": 0.0},   # 0,0 = unset sentinel
     "radius_km": 150,
     "search_language": "en",
     "include_categories": [
@@ -166,10 +166,15 @@ def _prompt(label: str, default: str = "") -> str:
     return value if value else default
 
 
-def run_setup_wizard() -> dict[str, Any]:
+def run_setup_wizard(_geonames_path: "Path | None" = None) -> dict[str, Any]:
     """Run interactive setup wizard to configure Weekend Scout.
 
-    Prompts the user for required settings and saves them to disk.
+    Asks only for city name and radius. Coordinates, country, and search
+    language are resolved automatically from the GeoNames database.
+    If the city is not found, the user is prompted for coordinates.
+
+    Args:
+        _geonames_path: Override GeoNames file path (used in tests).
 
     Returns:
         Completed configuration dictionary.
@@ -179,41 +184,82 @@ def run_setup_wizard() -> dict[str, Any]:
 
     config = load_config()
 
-    # Location
-    config["home_city"] = _prompt("Home city", config.get("home_city") or "Warsaw")
-    config["home_country"] = _prompt("Home country", config.get("home_country") or "Poland")
+    # -- City --
+    while True:
+        city = input("Home city: ").strip()
+        if city:
+            break
+        print("  City name is required.")
 
-    # Coordinates
-    print("\nHome city coordinates (used for distance calculations):")
-    default_lat = str(config.get("home_coordinates", {}).get("lat", ""))
-    default_lon = str(config.get("home_coordinates", {}).get("lon", ""))
-    lat_str = _prompt("  Latitude", default_lat)
-    lon_str = _prompt("  Longitude", default_lon)
-    try:
-        config["home_coordinates"] = {"lat": float(lat_str), "lon": float(lon_str)}
-    except ValueError:
-        print("  Invalid coordinates, keeping previous values.")
+    config["home_city"] = city
 
-    # Search radius
-    radius_str = _prompt("Search radius (km)", str(config.get("radius_km", 150)))
-    try:
-        config["radius_km"] = int(radius_str)
-    except ValueError:
-        print("  Invalid radius, keeping previous value.")
+    # -- Auto-geocode from GeoNames --
+    if _geonames_path is None:
+        from weekend_scout.cities import _DATA_DIR, GEONAMES_FILENAME
+        _geonames_path = _DATA_DIR / GEONAMES_FILENAME
 
-    # Search language (auto-derive from country, allow override)
-    derived_lang = COUNTRY_LANGUAGE_MAP.get(config["home_country"], "en")
-    config["search_language"] = _prompt("Search language (2-letter code)", derived_lang)
+    if _geonames_path.exists():
+        from weekend_scout.cities import find_city_candidates
+        candidates = find_city_candidates(city, _geonames_path)
+        if len(candidates) == 1:
+            c = candidates[0]
+            print(f"  Found: {c['name']}, {c['country_name']} (pop. {c['population']:,})")
+            config["home_city"] = c["name"]
+            config["home_coordinates"] = {"lat": c["lat"], "lon": c["lon"]}
+            config["home_country"] = c["country_name"]
+            config["search_language"] = c["language"]
+        elif len(candidates) > 1:
+            print(f"  '{city}' found in multiple countries:")
+            for i, c in enumerate(candidates, 1):
+                print(f"    {i}. {c['name']}, {c['country_name']} (pop. {c['population']:,})")
+            while True:
+                choice = input("  Enter number [1]: ").strip() or "1"
+                try:
+                    idx = int(choice) - 1
+                    if 0 <= idx < len(candidates):
+                        c = candidates[idx]
+                        config["home_city"] = c["name"]
+                        config["home_coordinates"] = {"lat": c["lat"], "lon": c["lon"]}
+                        config["home_country"] = c["country_name"]
+                        config["search_language"] = c["language"]
+                        break
+                    print("  Invalid choice, try again.")
+                except ValueError:
+                    print("  Please enter a number.")
+        else:
+            print(f"  '{city}' not found in local database.")
+            print("  Enter coordinates manually (or press Enter to skip):")
+            lat_str = input("  Latitude: ").strip()
+            lon_str = input("  Longitude: ").strip()
+            if lat_str and lon_str:
+                try:
+                    config["home_coordinates"] = {"lat": float(lat_str), "lon": float(lon_str)}
+                except ValueError:
+                    print("  Invalid coordinates — skipping.")
+            country = input("  Country name: ").strip()
+            if country:
+                config["home_country"] = country
+                config["search_language"] = COUNTRY_LANGUAGE_MAP.get(country, "en")
+    else:
+        print("  Tip: Run 'python -m weekend_scout download-data' to enable nearby city suggestions.\n")
 
-    # Telegram
-    print("\nTelegram settings (leave blank to skip):")
-    token = _prompt("  Bot token", config.get("telegram_bot_token") or "")
+    # -- Radius --
+    radius_str = input(f"Search radius in km [{config.get('radius_km', 150)}]: ").strip()
+    if radius_str:
+        try:
+            config["radius_km"] = int(radius_str)
+        except ValueError:
+            print("  Invalid radius, keeping default.")
+
+    # -- Telegram (optional) --
+    print("\nTelegram settings (press Enter to skip — configure later with 'config' command):")
+    token = input("  Bot token: ").strip()
     if token:
         config["telegram_bot_token"] = token
-    chat_id = _prompt("  Chat ID", config.get("telegram_chat_id") or "")
+    chat_id = input("  Chat ID: ").strip()
     if chat_id:
         config["telegram_chat_id"] = chat_id
 
     save_config(config)
-    print(f"\nConfig saved to {get_config_path()}")
+    print(f"\nConfig saved. Run /weekend-scout to start scouting!")
     return config
