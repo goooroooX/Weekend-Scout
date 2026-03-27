@@ -64,7 +64,7 @@ def cmd_config(args: argparse.Namespace) -> None:
 def cmd_init(args: argparse.Namespace) -> None:
     """Load config, city list, cache state, and query suggestions. Output JSON."""
     import datetime
-    from weekend_scout.config import load_config, COUNTRY_CODE_MAP, COUNTRY_LANGUAGE_MAP
+    from weekend_scout.config import load_config, get_config_path, COUNTRY_CODE_MAP, COUNTRY_LANGUAGE_MAP
     from weekend_scout.cities import (
         get_city_list, generate_broad_queries, generate_targeted_template,
         find_city_coords, _DATA_DIR, GEONAMES_FILENAME,
@@ -73,6 +73,15 @@ def cmd_init(args: argparse.Namespace) -> None:
     from weekend_scout.distance import next_weekend_dates
 
     config = load_config()
+
+    # Guard: unconfigured state — home_city is required
+    if not config.get("home_city"):
+        print(json.dumps({
+            "needs_setup": True,
+            "message": "Weekend Scout is not configured. Run: python -m weekend_scout setup",
+            "config_path": str(get_config_path()),
+        }, ensure_ascii=False))
+        return
 
     # Allow CLI overrides
     city_geocoded: bool | None = None

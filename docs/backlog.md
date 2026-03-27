@@ -64,7 +64,7 @@
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | 5.1 | Write SKILL.md with full search strategy prompt | DONE (2026-03-27) | Implemented in .claude/skills/weekend-scout/SKILL.md (177 lines, 6 steps) |
-| 5.2 | Test /weekend-scout with real web searches | IN PROGRESS | |
+| 5.2 | Test /weekend-scout with real web searches | IN PROGRESS | Clean-run test done 2026-03-27: Phase A completed (4 searches, 0 events), interrupted before Phase B; exposed bugs fixed in 5.6 |
 | 5.3 | Iterate on search queries based on result quality | TODO | |
 | 5.4 | Iterate on scoring rubric | TODO | |
 | 5.5 | End-to-end test: init -> search -> save -> send | TODO | |
@@ -90,3 +90,5 @@
 | 7.6 | Fix "Leave by:" departure timing rule | DONE (2026-03-27) | Formula: event_start + 1h30 − drive_time, min 09:00; documented in SKILL.md Step 4 |
 | 7.7 | Logging enhancements (events_discovered, skip actions, run_complete) | DONE (2026-03-27) | --events-discovered on log-search; --run-id on save; skip vs phase_start logic; run_complete in Step 6 |
 | 7.8 | Expand language/country support to 27 countries | DONE (2026-03-27) | Added IT/ES/PT/NL/SE/NO/DK/FI/RO/HR/BG/RS/GR/TR/RU with month names and query templates |
+| 7.9 | Fix first-run onboarding: needs_setup guard in init + SKILL.md gate | DONE (2026-03-27) | init returns needs_setup:true when home_city blank; SKILL.md shows setup msg and stops |
+| 7.10 | Fix --events-discovered CLI type error (int vs list) | DONE (2026-03-27) | SKILL.md log pattern clarified: integer count, not a list |

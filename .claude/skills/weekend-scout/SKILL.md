@@ -20,7 +20,18 @@ model: haiku
 python -m weekend_scout init [--city CITY] [--radius KM]
 ```
 
-First run: `python -m weekend_scout setup` then re-run init.
+**Check for unconfigured state first** — if the output contains `"needs_setup": true`, stop
+immediately and tell the user:
+
+> Weekend Scout is not configured yet. Please run the setup wizard in a terminal:
+> ```
+> python -m weekend_scout setup
+> ```
+> Then run `/weekend-scout` again.
+
+Do **not** proceed to Step 2 in this case.
+
+The `init` JSON contains all config fields you need — do **not** run `config` separately.
 
 Extract these fields from the JSON output and keep them in mind throughout:
 
@@ -55,9 +66,10 @@ python -m weekend_scout log-search \
   --cities '["<city>"]' \
   --phase <broad|aggregator|targeted|verification> \
   --result-count <N> \
-  --events-discovered <events_extracted_from_this_search> \
+  --events-discovered <N> \
   --run-id "<run_id>"
 ```
+`<N>` in `--events-discovered` is an **integer count** (e.g. `3`), not a list. Use `0` if no events were identified in this search.
 
 **Event schema** — required fields for `save` (optional fields improve scoring):
 ```
