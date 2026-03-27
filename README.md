@@ -41,12 +41,23 @@ This is optional -- the skill works without it, printing results in Claude Code 
 4. Choose a username ending in `bot` (e.g. `weekend_scout_bot`)
 5. BotFather replies with your **bot token** -- looks like `123456789:ABCdefGhIJKlmNoPQRsTUVwxyz`
 
-### Step 2: Get your chat ID
+### Step 2: Disable privacy mode (required for groups)
+
+By default Telegram bots only see commands (e.g. `/start`), not regular messages.
+To allow `getUpdates` to capture your group messages:
+
+1. In @BotFather, send `/setprivacy`
+2. Select your bot
+3. Choose **Disable**
+
+This only affects what the bot *reads* -- it has no impact on sending messages.
+
+### Step 3: Get your chat ID
 
 **For a group chat:**
 
 1. Add the bot to your Telegram group
-2. Send `/start` in the group
+2. Send any message in the group (e.g. "hello")
 3. Open this URL in a browser (replace `<TOKEN>` with your bot token):
    ```
    https://api.telegram.org/bot<TOKEN>/getUpdates
@@ -66,16 +77,16 @@ This is optional -- the skill works without it, printing results in Claude Code 
 3. Use the `getUpdates` URL to find the channel's chat ID
 
 > **Tip:** `getUpdates` only shows recent messages. If you see an empty `result`,
-> make sure the bot is a group member and send a new `/start` message, then retry.
+> make sure the bot is a group member, send a new message, then retry.
 
-### Step 3: Configure Weekend Scout
+### Step 4: Configure Weekend Scout
 
 ```bash
 python -m weekend_scout config telegram_bot_token "YOUR_BOT_TOKEN"
 python -m weekend_scout config telegram_chat_id "YOUR_CHAT_ID"
 ```
 
-### Step 4: Test it
+### Step 5: Test it
 
 ```bash
 python -m weekend_scout send --message "Hello from Weekend Scout!"
@@ -132,7 +143,7 @@ python -m weekend_scout --help
 
 Config lives at:
 - **Linux/Mac:** `~/.config/weekend-scout/config.yaml`
-- **Windows:** `%APPDATA%\weekend-scout\config.yaml`
+- **Windows:** `%LOCALAPPDATA%\weekend-scout\weekend-scout\config.yaml`
 
 Set individual values:
 
