@@ -264,3 +264,13 @@ def test_log_search_also_writes_jsonl(cfg, tmp_path):
     assert entry["phase"] == "broad"
     assert entry["detail"]["query"] == "test query"
     assert entry["detail"]["result_count"] == 5
+    assert entry["detail"]["events_discovered"] == 0
+
+
+def test_log_search_events_discovered_field(cfg, tmp_path):
+    from weekend_scout.cache import log_search
+    log_search(cfg, "some query", "2026-04-04", 3, ["Lodz"], "targeted",
+               run_id="2026-04-04_1200", events_discovered=4)
+    log_file = tmp_path / "action_log.jsonl"
+    entry = json.loads(log_file.read_text(encoding="utf-8").strip())
+    assert entry["detail"]["events_discovered"] == 4

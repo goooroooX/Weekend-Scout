@@ -55,6 +55,7 @@ python -m weekend_scout log-search \
   --cities '["<city>"]' \
   --phase <broad|aggregator|targeted|verification> \
   --result-count <N> \
+  --events-discovered <events_extracted_from_this_search> \
   --run-id "<run_id>"
 ```
 
@@ -69,6 +70,12 @@ Optional: end_date, time_info, location_name, lat, lon, description, country
 ---
 
 **Phase A — Broad sweep (3–5 searches):**
+Check: if ALL broad_q queries are already in `done_q`, log `skip` and move on:
+```bash
+python -m weekend_scout log-action --run-id "<run_id>" --action skip \
+  --phase A --target-weekend "<saturday>" --detail '{"reason": "all_queries_in_done_q"}'
+```
+Otherwise log `phase_start` and run:
 ```bash
 python -m weekend_scout log-action --run-id "<run_id>" --action phase_start --phase A --target-weekend "<saturday>"
 ```
@@ -83,6 +90,12 @@ After each search, examine results:
 Log each search with `--phase broad`.
 
 **Phase B — Aggregator deep-dive (3–8 fetches):**
+Check: if no aggregator URLs were queued in Phase A, log `skip` and move on:
+```bash
+python -m weekend_scout log-action --run-id "<run_id>" --action skip \
+  --phase B --target-weekend "<saturday>" --detail '{"reason": "no_aggregator_urls"}'
+```
+Otherwise log `phase_start` and run:
 ```bash
 python -m weekend_scout log-action --run-id "<run_id>" --action phase_start --phase B --target-weekend "<saturday>"
 ```
@@ -96,6 +109,12 @@ Fetch the most promising aggregator URLs. Use this prompt:
 Log each fetch with `--phase aggregator`.
 
 **Phase C — Targeted city searches (only if needed):**
+Check: if every city in `tier1` already has at least one event, log `skip` and move on:
+```bash
+python -m weekend_scout log-action --run-id "<run_id>" --action skip \
+  --phase C --target-weekend "<saturday>" --detail '{"reason": "all_tier1_covered"}'
+```
+Otherwise log `phase_start` and run:
 ```bash
 python -m weekend_scout log-action --run-id "<run_id>" --action phase_start --phase C --target-weekend "<saturday>"
 ```
@@ -106,6 +125,12 @@ Same formula for any city discovered mid-search that isn't in tier1.
 Log with `--phase targeted`.
 
 **Phase D — Verification (1–3 fetches):**
+Check: if all top candidates already have `confidence: "confirmed"`, log `skip` and move on:
+```bash
+python -m weekend_scout log-action --run-id "<run_id>" --action skip \
+  --phase D --target-weekend "<saturday>" --detail '{"reason": "all_confirmed"}'
+```
+Otherwise log `phase_start` and run:
 ```bash
 python -m weekend_scout log-action --run-id "<run_id>" --action phase_start --phase D --target-weekend "<saturday>"
 ```
@@ -116,7 +141,7 @@ Update `confidence` to `"confirmed"`. Log with `--phase verification`.
 
 Save ALL discovered events (including future-weekend finds):
 ```bash
-python -m weekend_scout save --events '<JSON array>'
+python -m weekend_scout save --run-id "<run_id>" --events '<JSON array>'
 ```
 
 ### Step 3: Score and Rank
@@ -151,12 +176,19 @@ For each trip option, build a dict for `format-message`:
   "name":   "Łódź Day Trip",
   "route":  "Warsaw → Łódź (130 km, ~1h45) → Warsaw",
   "events": "Festiwal Czterech Kultur | ul. Piotrkowska | Sat–Sun all day",
-  "timing": "Leave by: 09:00 | Back by: ~20:00"
+  "timing": "Leave by: 10:00 | Back by: ~20:00",
+  "url":    "https://example.com/event"
 }
 ```
 
 Use `home_city` as the start/end point name in the route.
-Back-calculate departure time from the first event start time.
+
+**"Leave by"** timing = the latest you can depart and still arrive when the event is **in
+full swing** (not at opening). Formula: `event_start + 1h30 − drive_time`.
+Minimum departure: **09:00** (never suggest leaving before 09:00).
+Example: event opens at 10:00, drive 1h30 → peak at 11:30 → leave by **10:00** (not 08:30).
+If the event has no known start time, use **09:30** as default departure.
+`url` is optional — include it when you have an official event URL (renders as `[link]` in the message).
 
 ### Step 5: Format and Send
 
@@ -178,6 +210,10 @@ config. If Telegram is not configured, display the message contents directly to 
 ```bash
 # Only if send succeeded ({"sent": true}):
 python -m weekend_scout cache-mark-served --date "<saturday>"
+
+python -m weekend_scout log-action --run-id "<run_id>" --action run_complete \
+  --target-weekend "<saturday>" \
+  --detail '{"events_sent": <city_count + trip_count>, "new_events": <N>, "budget_used": "<S searches + F fetches>"}'
 ```
 
 Tell the user:

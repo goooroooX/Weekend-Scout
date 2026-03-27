@@ -150,33 +150,32 @@ def format_event_block(event: dict[str, Any]) -> str:
     day_time = " ".join(filter(None, [day_str, time_info]))
     if day_time:
         venue_time_parts.append(day_time)
-    if venue_time_parts:
-        lines.append("   📍 " + " | ".join(venue_time_parts))
 
-    # Description (truncated)
+    # Inline link tag — appended to description or venue line
+    url = event.get("source_url") or ""
+    link_tag = f' [<a href="{html.escape(url)}">link</a>]' if url else ""
+
+    if venue_time_parts:
+        venue_line = "   📍 " + " | ".join(venue_time_parts)
+        if not (event.get("description") or ""):
+            # No description — attach link to venue line
+            venue_line += link_tag
+            link_tag = ""
+        lines.append(venue_line)
+
+    # Description (truncated) + inline link
     desc = event.get("description") or ""
     if desc:
         if len(desc) > 120:
             desc = desc[:117] + "..."
-        lines.append("   " + html.escape(desc))
+        lines.append("   " + html.escape(desc) + link_tag)
 
-    # Cost + URL on one line
+    # Cost
     free_entry = event.get("free_entry")
-    url = event.get("source_url") or ""
-
-    cost_str = ""
     if free_entry is True or free_entry == 1:
-        cost_str = "✅ Free"
+        lines.append("   ✅ Free")
     elif free_entry is False or free_entry == 0:
-        cost_str = "💰 Paid"
-
-    footer_parts = []
-    if cost_str:
-        footer_parts.append(cost_str)
-    if url:
-        footer_parts.append(f'<a href="{html.escape(url)}">source</a>')
-    if footer_parts:
-        lines.append("   " + "  •  ".join(footer_parts))
+        lines.append("   💰 Paid")
 
     return "\n".join(lines)
 
@@ -198,6 +197,7 @@ def format_scout_message(
         trip_options: Up to 3 road trip option dicts.
             Each trip dict should have keys:
               name (str), route (str), events (str), timing (str).
+            Optional: url (str) — appended as [link] on the events line.
 
     Returns:
         Fully formatted HTML message string.
@@ -240,11 +240,13 @@ def format_scout_message(
             route = html.escape(trip.get("route") or "")
             events_text = html.escape(trip.get("events") or "")
             timing = html.escape(trip.get("timing") or "")
+            trip_url = trip.get("url") or ""
             parts = [f"{letter}. <b>{name}</b>"]
             if route:
                 parts.append(f"   🗺 {route}")
             if events_text:
-                parts.append(f"   🎪 {events_text}")
+                trip_link = f' [<a href="{html.escape(trip_url)}">link</a>]' if trip_url else ""
+                parts.append(f"   🎪 {events_text}{trip_link}")
             if timing:
                 parts.append(f"   🕘 {timing}")
             sections.append("\n".join(parts))

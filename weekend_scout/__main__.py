@@ -145,7 +145,8 @@ def cmd_save(args: argparse.Namespace) -> None:
     config = load_config()
     events = json.loads(args.events)
     saved, skipped = save_events(config, events)
-    log_action(config, "events_saved", detail={"saved": saved, "skipped": skipped})
+    log_action(config, "events_saved", run_id=args.run_id,
+               detail={"saved": saved, "skipped": skipped})
     print(json.dumps({"saved": saved, "skipped": skipped}))
 
 
@@ -196,6 +197,7 @@ def cmd_log_search(args: argparse.Namespace) -> None:
         cities_covered=cities,
         phase=args.phase,
         run_id=args.run_id,
+        events_discovered=args.events_discovered,
     )
     print(json.dumps({"logged": True}))
 
@@ -293,6 +295,7 @@ def build_parser() -> argparse.ArgumentParser:
     # save
     p_save = sub.add_parser("save", help="Save discovered events to cache")
     p_save.add_argument("--events", required=True, help="JSON array of event objects")
+    p_save.add_argument("--run-id", default=None, dest="run_id", help="Run identifier from init")
 
     # send
     p_send = sub.add_parser("send", help="Send formatted message to Telegram")
@@ -312,6 +315,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_ls.add_argument("--cities", help="JSON array of city names covered")
     p_ls.add_argument("--phase", default="broad", choices=["broad", "aggregator", "targeted", "verification"])
     p_ls.add_argument("--run-id", default=None, dest="run_id", help="Run identifier from init")
+    p_ls.add_argument("--events-discovered", type=int, default=0, dest="events_discovered",
+                      help="Number of events extracted from this search")
 
     # log-action
     p_la = sub.add_parser("log-action", help="Append a structured action log entry")

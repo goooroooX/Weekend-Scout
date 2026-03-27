@@ -225,6 +225,7 @@ def log_search(
     cities_covered: list[str],
     phase: str,
     run_id: str | None = None,
+    events_discovered: int = 0,
 ) -> None:
     """Record a completed web search in the search log.
 
@@ -238,6 +239,7 @@ def log_search(
         cities_covered: City names covered by this search.
         phase: Search phase label ('broad', 'aggregator', 'targeted', 'verification').
         run_id: Optional run identifier for grouping log entries.
+        events_discovered: Number of events extracted from this search (0 if unknown).
     """
     today = datetime.date.today().isoformat()
     with get_connection(config) as conn:
@@ -254,7 +256,8 @@ def log_search(
     log_action(config, action, phase=phase, run_id=run_id, source="skill",
                target_weekend=target_weekend,
                detail={"query": query, "result_count": result_count,
-                       "cities": cities_covered or []})
+                       "cities": cities_covered or [],
+                       "events_discovered": events_discovered})
 
 
 def log_action(

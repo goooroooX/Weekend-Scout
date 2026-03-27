@@ -182,6 +182,9 @@ def test_format_event_block_all_fields():
     assert "10:00-18:00" in result
     assert "A fun outdoor festival" in result
     assert "Free" in result
+    # Link is inline on description line
+    assert "[" in result
+    assert "link" in result
     assert "https://example.com/event" in result
 
 
@@ -190,6 +193,14 @@ def test_format_event_block_minimal_fields():
     # Should not crash with only required fields
     result = format_event_block({"event_name": "Bare Event", "city": "Warsaw", "start_date": "2026-04-04"})
     assert "Bare Event" in result
+
+
+def test_format_event_block_link_on_venue_when_no_description():
+    from weekend_scout.telegram import format_event_block
+    result = format_event_block(_event(description=None))
+    # When there's no description, link should appear on the venue/time line
+    assert "link" in result
+    assert "https://example.com/event" in result
 
 
 def test_format_event_block_paid():
@@ -268,6 +279,15 @@ def test_format_scout_message_footer():
     from weekend_scout.telegram import format_scout_message
     msg = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", [_event()], [])
     assert "Scouted by Weekend Scout" in msg
+
+
+def test_format_scout_message_trip_with_url():
+    from weekend_scout.telegram import format_scout_message
+    trip = _trip(url="https://example.com/trip")
+    msg = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", [], [trip])
+    assert "[" in msg
+    assert "link" in msg
+    assert "https://example.com/trip" in msg
 
 
 def test_format_scout_message_empty_returns_no_events():
