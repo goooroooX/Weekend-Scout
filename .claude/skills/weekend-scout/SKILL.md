@@ -6,6 +6,7 @@ description: >
 argument-hint: [city] [radius-km] [--cached-only]
 allowed-tools: Bash, Read, Write, WebSearch, WebFetch
 disable-model-invocation: true
+model: haiku
 ---
 
 ## Weekend Scout
