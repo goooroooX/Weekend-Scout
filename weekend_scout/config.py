@@ -53,7 +53,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "home_city": "",
     "home_country": "Poland",
     "home_coordinates": {"lat": 52.2297, "lon": 21.0122},
-    "precise_location": "",
     "radius_km": 150,
     "search_language": "en",
     "include_categories": [
@@ -153,10 +152,6 @@ def run_setup_wizard() -> dict[str, Any]:
     # Location
     config["home_city"] = _prompt("Home city", config.get("home_city") or "Warsaw")
     config["home_country"] = _prompt("Home country", config.get("home_country") or "Poland")
-    config["precise_location"] = _prompt(
-        "Precise location (address or district for trip start/end)",
-        config.get("precise_location") or config["home_city"],
-    )
 
     # Coordinates
     print("\nHome city coordinates (used for distance calculations):")

@@ -78,7 +78,7 @@ def test_save_and_reload_config(patched_config_path):
 
 def test_save_config_unicode(patched_config_path):
     from weekend_scout.config import save_config, load_config
-    save_config({"home_city": "Łódź", "precise_location": "ul. Piotrkowska"})
+    save_config({"home_city": "Łódź", "search_language": "pl"})
     result = load_config()
     assert result["home_city"] == "Łódź"
 
@@ -109,7 +109,6 @@ def test_run_setup_wizard_saves_config(patched_config_path, monkeypatch):
     inputs = iter([
         "Warsaw",       # home_city
         "Poland",       # home_country
-        "Mokotow",      # precise_location
         "52.2297",      # lat
         "21.0122",      # lon
         "150",          # radius_km
@@ -126,7 +125,7 @@ def test_run_setup_wizard_saves_config(patched_config_path, monkeypatch):
 
 
 def test_run_setup_wizard_returns_dict(patched_config_path, monkeypatch):
-    inputs = iter(["Krakow", "Poland", "Krakow", "50.06", "19.94", "120", "pl", "", ""])
+    inputs = iter(["Krakow", "Poland", "50.06", "19.94", "120", "pl", "", ""])
     monkeypatch.setattr("builtins.input", lambda _: next(inputs))
     from weekend_scout.config import run_setup_wizard
     result = run_setup_wizard()

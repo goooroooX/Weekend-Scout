@@ -22,6 +22,7 @@ Extract these fields from the JSON output and keep them in mind throughout:
 
 ```
 saturday  = output.config.target_weekend.saturday   (ISO date)
+home_city = output.config.home_city                 (departure/arrival label for trip routes)
 tier1     = output.cities.tier1                     (must all be covered)
 cached    = output.cached_events                    (already in cache — skip re-discovering)
 done_q    = output.searches_this_week               (queries already run this week — skip)
@@ -126,7 +127,7 @@ For each trip option, build a dict for `format-message`:
 }
 ```
 
-Use `precise_location` from config as the start/end point name.
+Use `home_city` as the start/end point name in the route.
 Back-calculate departure time from the first event start time.
 
 ### Step 5: Format and Send

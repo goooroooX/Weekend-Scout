@@ -145,15 +145,29 @@ Config lives at:
 - **Linux/Mac:** `~/.config/weekend-scout/config.yaml`
 - **Windows:** `%LOCALAPPDATA%\weekend-scout\weekend-scout\config.yaml`
 
-Set individual values:
+### Config reference
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `home_city` | `""` | Your home city name |
+| `home_country` | `"Poland"` | Country name (used to derive search language) |
+| `home_coordinates` | `{"lat":52.23,"lon":21.01}` | Lat/lon for distance calculations — set to your exact location for precise trip times (right-click on Google Maps → "What's here?") |
+| `radius_km` | `150` | Search radius in km |
+| `search_language` | `"en"` | 2-letter language code for search queries (`pl`, `de`, `fr`, `en`, …) |
+| `telegram_bot_token` | `""` | Telegram bot token |
+| `telegram_chat_id` | `""` | Telegram chat/group/channel ID |
+
+### Set individual values
 
 ```bash
 python -m weekend_scout config home_city Warsaw
+python -m weekend_scout config home_country Poland
 python -m weekend_scout config radius_km 200
+python -m weekend_scout config search_language pl
 python -m weekend_scout config telegram_bot_token "123456789:ABC..."
 ```
 
-Or run the full setup wizard:
+Or run the full setup wizard (prompts for all key fields):
 
 ```bash
 python -m weekend_scout setup

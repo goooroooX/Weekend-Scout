@@ -106,7 +106,6 @@ def cmd_init(args: argparse.Namespace) -> None:
         "home_city": config.get("home_city"),
         "radius_km": config.get("radius_km"),
         "search_language": config.get("search_language"),
-        "precise_location": config.get("precise_location"),
         "target_weekend": target_weekend,
     }
     if city_geocoded is not None:
