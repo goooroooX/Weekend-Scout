@@ -386,6 +386,13 @@ QUERY_TEMPLATES: dict[str, dict[str, Any]] = {
 # Default data directory: <project_root>/data/
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
+# Date format constants for format_date_local
+_PERIOD_DAY_FIRST = {"de", "no", "da", "hr", "sr"}   # "DD. Month Year"
+_DAY_FIRST = {                                          # "DD Month Year"
+    "pl", "fr", "cs", "sk", "hu", "uk", "lt", "lv", "et", "be",
+    "it", "es", "pt", "nl", "sv", "fi", "ro", "bg", "el", "tr", "ru",
+}
+
 
 def download_geonames(force: bool = False) -> Path:
     """Download and unzip cities15000.zip from GeoNames into the data/ directory.
@@ -638,14 +645,6 @@ def format_date_local(iso_date: str, lang: str) -> str:
     d = datetime.date.fromisoformat(iso_date)
     month_list = MONTHS.get(lang, MONTHS["en"])
     month_name = month_list[d.month - 1]
-
-    # Languages that use "DD. Month Year" (period after day number)
-    _PERIOD_DAY_FIRST = {"de", "no", "da", "hr", "sr"}
-    # Languages that use "DD Month Year" (no period)
-    _DAY_FIRST = {
-        "pl", "fr", "cs", "sk", "hu", "uk", "lt", "lv", "et", "be",
-        "it", "es", "pt", "nl", "sv", "fi", "ro", "bg", "el", "tr", "ru",
-    }
 
     if lang in _PERIOD_DAY_FIRST:
         return f"{d.day}. {month_name} {d.year}"

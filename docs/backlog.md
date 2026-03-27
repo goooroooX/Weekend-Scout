@@ -74,6 +74,19 @@
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | 6.1 | Add region mappings beyond Mazowsze | DONE (2026-03-27) | data/regions.json expanded to ~80 EU cities (Berlin, Paris, Vienna, Budapest, Brussels, etc.) |
-| 6.2 | Handle "no events found" gracefully | TODO | |
+| 6.2 | Handle "no events found" gracefully | DONE (2026-03-27) | format_scout_message returns "No events found" message when both city_events and trip_options are empty |
 | 6.3 | Add cron/scheduled execution instructions to README | TODO | |
 | 6.4 | Cross-platform testing (Windows native, WSL) | TODO | |
+
+## Phase 7: Post-Launch Tuning
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 7.1 | Switch Telegram formatting to native HTML | DONE (2026-03-27) | parse_mode="HTML"; html.escape() for all user text; bold/italic/links via <b>/<i>/<a> |
+| 7.2 | Unified JSONL action logging | DONE (2026-03-27) | log_action() in cache.py + log-action CLI; all phases/lifecycle events logged to action_log.jsonl with run_id |
+| 7.3 | Cache-only mode for skill (--cached-only) | DONE (2026-03-27) | SKILL.md skips Step 2 when flag set |
+| 7.4 | Pin skill to Haiku model | DONE (2026-03-27) | model: haiku frontmatter in SKILL.md |
+| 7.5 | Inline [link] on description/venue line | DONE (2026-03-27) | Removed separate source footer; link appended to desc line (or venue if no desc); trip url field added |
+| 7.6 | Fix "Leave by:" departure timing rule | DONE (2026-03-27) | Formula: event_start + 1h30 − drive_time, min 09:00; documented in SKILL.md Step 4 |
+| 7.7 | Logging enhancements (events_discovered, skip actions, run_complete) | DONE (2026-03-27) | --events-discovered on log-search; --run-id on save; skip vs phase_start logic; run_complete in Step 6 |
+| 7.8 | Expand language/country support to 27 countries | DONE (2026-03-27) | Added IT/ES/PT/NL/SE/NO/DK/FI/RO/HR/BG/RS/GR/TR/RU with month names and query templates |

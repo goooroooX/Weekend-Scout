@@ -160,7 +160,11 @@ def cmd_send(args: argparse.Namespace) -> None:
 
     if args.file:
         from pathlib import Path
-        message = Path(args.file).read_text(encoding="utf-8")
+        try:
+            message = Path(args.file).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            print(json.dumps({"error": f"File not found: {args.file}"}))
+            sys.exit(1)
     elif args.message:
         message = args.message
     else:
