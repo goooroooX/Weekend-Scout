@@ -189,14 +189,20 @@ def test_cmd_init_radius_invalid_returns_error(tmp_path, monkeypatch):
 def test_cmd_init_returns_json(tmp_path, monkeypatch):
     # Patch get_city_list to avoid needing GeoNames file
     import weekend_scout.cities as cities_module
-    import weekend_scout.cache as cache_module
     monkeypatch.setattr(cities_module, "get_city_list",
-                        lambda _cfg: {"tier1": [], "tier2": [], "tier3": []})
+                        lambda _cfg, bypass_cache=False: {"tier1": [], "tier2": [], "tier3": []})
     output = _run_cmd("init", [], tmp_path, monkeypatch)
     result = json.loads(output)
     assert "config" in result
     assert "cities" in result
-    assert "suggested_queries" in result
+    sq = result["suggested_queries"]
+    assert "vars" in sq
+    assert "broad" in sq
+    assert "targeted_template" in sq
+    assert "targeted" not in sq  # old format removed
+    assert isinstance(sq["broad"], list)
+    assert isinstance(sq["targeted_template"], str)
+    assert "{city}" in sq["targeted_template"]
 
 
 # --- cmd_save ---

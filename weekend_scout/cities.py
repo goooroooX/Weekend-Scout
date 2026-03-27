@@ -302,7 +302,7 @@ def assign_tier(population: int) -> int:
         return 3
 
 
-def get_city_list(config: dict[str, Any]) -> dict[str, list[str]]:
+def get_city_list(config: dict[str, Any], bypass_cache: bool = False) -> dict[str, list[str]]:
     """Return cities within radius, grouped by tier, using cache when valid.
 
     Reads from cache if <cache_dir>/cities_<home>_<radius>.json exists,
@@ -310,6 +310,9 @@ def get_city_list(config: dict[str, Any]) -> dict[str, list[str]]:
 
     Args:
         config: Loaded configuration dictionary.
+        bypass_cache: If True, skip the cache and recompute from GeoNames.
+                      Use when home_coordinates may differ from a previous cache write
+                      (e.g. when --city override geocoded new coordinates).
 
     Returns:
         Dict with keys 'tier1', 'tier2', 'tier3', each a list of city name strings
@@ -324,7 +327,7 @@ def get_city_list(config: dict[str, Any]) -> dict[str, list[str]]:
     cache_file = cache_dir / f"cities_{home_city}_{radius_km}.json"
 
     # Cache hit
-    if cache_file.exists():
+    if cache_file.exists() and not bypass_cache:
         data = json.loads(cache_file.read_text(encoding="utf-8"))
         result: dict[str, list[str]] = {"tier1": [], "tier2": [], "tier3": []}
         for city in data.get("cities", []):
@@ -448,56 +451,85 @@ def format_date_local(iso_date: str, lang: str) -> str:
         return f"{month_name} {d.day}, {d.year}"
 
 
+def find_city_coords(city_name: str, geonames_path: Path) -> dict[str, Any] | None:
+    """Find a city's coordinates by name in a GeoNames file.
+
+    Returns the highest-population match for the given name, checking both
+    the ASCII name and native name columns.
+
+    Args:
+        city_name: City name to search for (case-insensitive).
+        geonames_path: Path to the cities15000.txt file.
+
+    Returns:
+        City dict with lat, lon, country, population keys, or None if not found.
+    """
+    lower = city_name.lower()
+    all_cities = parse_geonames_file(geonames_path)
+    matches = [
+        c for c in all_cities
+        if c["name"].lower() == lower or c["name_local"].lower() == lower
+    ]
+    if not matches:
+        return None
+    return max(matches, key=lambda c: c["population"])
+
+
 def generate_broad_queries(
     config: dict[str, Any], saturday: str, sunday: str
-) -> list[str]:
-    """Generate broad regional search queries for the target weekend.
+) -> dict[str, Any]:
+    """Generate broad regional search query templates for the target weekend.
 
-    Produces 3 queries in the local language and 1 in English.
+    Returns raw templates with {placeholders} plus a vars dict the caller
+    uses to fill them. Templates are not pre-filled so the skill can adapt
+    them (e.g. substitute a different city discovered mid-search).
 
     Args:
         config: Loaded configuration dictionary.
         saturday: ISO date string of target Saturday.
-        sunday: ISO date string of target Sunday.
+        sunday: ISO date string of target Sunday (kept for signature compatibility).
 
     Returns:
-        List of 4 search query strings.
+        Dict with keys:
+          "templates": list of 4 template strings (3 local-language + 1 English)
+          "vars": substitution variables dict
     """
     lang = config.get("search_language", "en")
     city = config.get("home_city", "")
     region = get_region_name(city)
 
-    sat_str = format_date_local(saturday, lang)
     sat_date = datetime.date.fromisoformat(saturday)
+    date_local = format_date_local(saturday, lang)
+    date_en = format_date_local(saturday, "en")
     month_local = MONTHS.get(lang, MONTHS["en"])[sat_date.month - 1]
-    en_sat = format_date_local(saturday, "en")
 
     tmpl = QUERY_TEMPLATES.get(lang, QUERY_TEMPLATES["en"])
     country = tmpl["country"] or config.get("home_country", "")
 
-    fmt = dict(
-        date=sat_str, region=region, city=city,
-        month=month_local, year=sat_date.year, country=country,
-    )
-    queries = [" ".join(t.format(**fmt).split()) for t in tmpl["broad"]]
-    # Always append one English query for tourist-facing sites (en_sat already contains year)
-    queries.append(f"outdoor festivals events {en_sat}")
-    return queries
+    return {
+        "templates": list(tmpl["broad"]) + ["outdoor festivals events {date_en}"],
+        "vars": {
+            "city": city,
+            "region": region,
+            "date": date_local,
+            "month": month_local,
+            "year": str(sat_date.year),
+            "country": country,
+            "date_en": date_en,
+        },
+    }
 
 
-def generate_targeted_queries(
-    tier1_cities: list[str], lang: str, saturday: str
-) -> dict[str, list[str]]:
-    """Generate targeted per-city search queries for Tier 1 cities.
+def generate_targeted_template(lang: str) -> str:
+    """Return the targeted per-city query template for the given language.
+
+    The template contains {city} and {date} placeholders. The caller fills
+    them: ``template.format(city=city_name, date=vars["date"])``.
 
     Args:
-        tier1_cities: List of Tier 1 city names.
         lang: Two-letter language code.
-        saturday: ISO date string of target Saturday.
 
     Returns:
-        Dict mapping city name -> list of query strings.
+        Template string, e.g. "{city} imprezy plenerowe {date}".
     """
-    sat_str = format_date_local(saturday, lang)
-    tmpl = QUERY_TEMPLATES.get(lang, QUERY_TEMPLATES["en"])["targeted"]
-    return {city: [tmpl.format(city=city, date=sat_str)] for city in tier1_cities}
+    return QUERY_TEMPLATES.get(lang, QUERY_TEMPLATES["en"])["targeted"]

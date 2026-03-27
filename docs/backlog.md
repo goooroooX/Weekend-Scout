@@ -30,7 +30,7 @@
 | 2.3 | Implement distance.py: Haversine formula | DONE (2026-03-26) | Done during scaffolding |
 | 2.4 | Implement distance.py: driving time heuristic | DONE (2026-03-26) | Done during scaffolding |
 | 2.5 | Implement cities.py: filter by radius + assign tiers | DONE (2026-03-26) | |
-| 2.6 | Implement cities.py: generate search queries (broad + targeted) | DONE (2026-03-26) | |
+| 2.6 | Implement cities.py: generate search queries (broad + targeted) | DONE (2026-03-27) | Redesigned to return templates+vars; `--city` override now geocodes coordinates/language |
 | 2.7 | Create data/regions.json for Poland | DONE (2026-03-26) | Done during scaffolding |
 | 2.8 | Implement cities.py: city list caching (JSON file) | DONE (2026-03-26) | |
 | 2.9 | Wire "init" CLI command (returns config + cities + queries) | DONE (2026-03-26) | Wired during scaffolding; fully functional after Phase 3 |

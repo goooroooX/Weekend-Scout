@@ -25,13 +25,18 @@ saturday  = output.config.target_weekend.saturday   (ISO date)
 tier1     = output.cities.tier1                     (must all be covered)
 cached    = output.cached_events                    (already in cache — skip re-discovering)
 done_q    = output.searches_this_week               (queries already run this week — skip)
-broad_q   = output.suggested_queries.broad          (4 ready-to-use language-aware queries)
-target_q  = output.suggested_queries.targeted       (per-city queries: {city: [query]})
+qvars     = output.suggested_queries.vars           (substitution variables for templates)
+broad_q   = output.suggested_queries.broad          (4 templates — fill {placeholders} from qvars)
+tgt_tmpl  = output.suggested_queries.targeted_template  ({city} and {date} are placeholders)
 ```
 
 ### Step 2: Search for Events
 
-**Budget: max 8 searches + max 10 fetches = 18 tool calls.**
+**Offline pre-check (no tool calls):** Review `cached`. If it already has events for
+every city in `tier1` for the target weekend, skip directly to Step 3.
+
+**Budget: max 8 searches + max 10 fetches = 18 WebSearch/WebFetch calls.**
+Bash CLI calls (`save`, `log-search`, etc.) are free — they do not count.
 
 **Log pattern** — call after every search or aggregator fetch:
 ```bash
@@ -53,7 +58,8 @@ Optional: end_date, time_info, location_name, lat, lon, description, country
 ---
 
 **Phase A — Broad sweep (3–5 searches):**
-Run each query in `broad_q` in order. Skip any that are already in `done_q`.
+For each template in `broad_q`: fill it → `query = template.format(**qvars)`.
+Skip if `query` is already in `done_q`. Run WebSearch(query).
 
 After each search, examine results:
 - Specific event title (name + city + date) → record it immediately
@@ -73,8 +79,10 @@ Fetch the most promising aggregator URLs. Use this prompt:
 Log each fetch with `--phase aggregator`.
 
 **Phase C — Targeted city searches (only if needed):**
-For each city in `tier1` that still has zero events after Phase A+B:
-use `target_q[city_name][0]` as the search query.
+For each city in `tier1` with zero events (across `cached` + Phase A+B results):
+fill → `query = tgt_tmpl.format(city=city_name, date=qvars["date"])`.
+Skip if `query` is in `done_q`. Run WebSearch(query).
+Same formula for any city discovered mid-search that isn't in tier1.
 Log with `--phase targeted`.
 
 **Phase D — Verification (1–3 fetches):**
@@ -98,14 +106,15 @@ Score each event 1–10:
 - Free entry: 0–1
 - Source quality (official=1, aggregator=0.5): 0–1
 
-Select: top 3 events in home city + up to 3 road trip options from nearby cities.
+Pool: combine `cached` events + newly saved events.
+Select: top 3 in home city + up to 3 road trip options from nearby cities.
 
 ### Step 4: Build Trip Options
 
-For road trips, use city distances from the init data:
-- Option A: Easy day trip (single city, under 2h drive)
-- Option B: Full day trip (1–2 cities in a loop)
-- Option C: Longer trip (farther city or multi-stop)
+For road trips, use tier as a distance proxy (tier1 = nearest, tier3 = farthest):
+- Option A: Easy day trip — tier1 city (single city, under 2h drive)
+- Option B: Full day trip — tier1/tier2 city in a loop
+- Option C: Longer trip — tier2/tier3 city or multi-stop
 
 For each trip option, build a dict for `format-message`:
 ```json
@@ -138,6 +147,7 @@ config. If Telegram is not configured, display the message contents directly to 
 ### Step 6: Mark Served and Report
 
 ```bash
+# Only if send succeeded ({"sent": true}):
 python -m weekend_scout cache-mark-served --date "<saturday>"
 ```
 

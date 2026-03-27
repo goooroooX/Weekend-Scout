@@ -59,16 +59,33 @@ def cmd_config(args: argparse.Namespace) -> None:
 
 def cmd_init(args: argparse.Namespace) -> None:
     """Load config, city list, cache state, and query suggestions. Output JSON."""
-    from weekend_scout.config import load_config
-    from weekend_scout.cities import get_city_list, generate_broad_queries, generate_targeted_queries
+    from weekend_scout.config import load_config, COUNTRY_CODE_MAP, COUNTRY_LANGUAGE_MAP
+    from weekend_scout.cities import (
+        get_city_list, generate_broad_queries, generate_targeted_template,
+        find_city_coords, _DATA_DIR, GEONAMES_FILENAME,
+    )
     from weekend_scout.cache import query_events, get_searches_this_week
     from weekend_scout.distance import next_weekend_dates
 
     config = load_config()
 
     # Allow CLI overrides
+    city_geocoded: bool | None = None
     if args.city:
         config["home_city"] = args.city
+        geonames_path = _DATA_DIR / GEONAMES_FILENAME
+        if geonames_path.exists():
+            city_data = find_city_coords(args.city, geonames_path)
+            if city_data:
+                config["home_coordinates"] = {"lat": city_data["lat"], "lon": city_data["lon"]}
+                country = COUNTRY_CODE_MAP.get(city_data["country"], "")
+                if country:
+                    config["home_country"] = country
+                    config["search_language"] = COUNTRY_LANGUAGE_MAP.get(country, "en")
+                city_geocoded = True
+            else:
+                city_geocoded = False
+
     if args.radius:
         try:
             config["radius_km"] = int(args.radius)
@@ -79,28 +96,31 @@ def cmd_init(args: argparse.Namespace) -> None:
     saturday, sunday = next_weekend_dates()
     target_weekend = {"saturday": saturday, "sunday": sunday}
 
-    cities = get_city_list(config)
+    cities = get_city_list(config, bypass_cache=args.city is not None)
     cached_events = query_events(config, saturday)
     searches_this_week = get_searches_this_week(config, saturday)
-    broad_queries = generate_broad_queries(config, saturday, sunday)
-    targeted_queries = generate_targeted_queries(
-        cities.get("tier1", []), config.get("search_language", "en"), saturday
-    )
+    broad_result = generate_broad_queries(config, saturday, sunday)
+    targeted_tmpl = generate_targeted_template(config.get("search_language", "en"))
+
+    config_block: dict = {
+        "home_city": config.get("home_city"),
+        "radius_km": config.get("radius_km"),
+        "search_language": config.get("search_language"),
+        "precise_location": config.get("precise_location"),
+        "target_weekend": target_weekend,
+    }
+    if city_geocoded is not None:
+        config_block["city_geocoded"] = city_geocoded
 
     output = {
-        "config": {
-            "home_city": config.get("home_city"),
-            "radius_km": config.get("radius_km"),
-            "search_language": config.get("search_language"),
-            "precise_location": config.get("precise_location"),
-            "target_weekend": target_weekend,
-        },
+        "config": config_block,
         "cities": cities,
         "cached_events": cached_events,
         "searches_this_week": searches_this_week,
         "suggested_queries": {
-            "broad": broad_queries,
-            "targeted": targeted_queries,
+            "vars": broad_result["vars"],
+            "broad": broad_result["templates"],
+            "targeted_template": targeted_tmpl,
         },
     }
     print(json.dumps(output, indent=2, ensure_ascii=False))

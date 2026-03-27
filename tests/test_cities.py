@@ -179,7 +179,7 @@ def test_get_city_list_filters_home_districts(tmp_path, monkeypatch):
     assert "Pruszkow" in all_names       # real city kept
 
 
-def test_generate_broad_queries_returns_list():
+def test_generate_broad_queries_returns_dict():
     from weekend_scout.cities import generate_broad_queries
     config = {
         "home_city": "Warsaw",
@@ -187,76 +187,138 @@ def test_generate_broad_queries_returns_list():
         "home_country": "Poland",
     }
     result = generate_broad_queries(config, "2026-03-28", "2026-03-29")
-    assert isinstance(result, list)
-    assert len(result) == 4
-    assert any("Mazowsze" in q for q in result)
-    assert any("outdoor" in q.lower() for q in result)
+    assert isinstance(result, dict)
+    assert "templates" in result
+    assert "vars" in result
+    assert len(result["templates"]) == 4
+    assert any("Mazowsze" in t or "{region}" in t for t in result["templates"])
+    assert any("outdoor" in t.lower() for t in result["templates"])
 
 
-def test_generate_broad_queries_contains_date():
+def test_generate_broad_queries_vars_contain_date():
     from weekend_scout.cities import generate_broad_queries
     config = {"home_city": "Warsaw", "search_language": "pl", "home_country": "Poland"}
     result = generate_broad_queries(config, "2026-03-28", "2026-03-29")
-    combined = " ".join(result)
-    assert "marca" in combined   # Polish month
-    assert "March" in combined   # English fallback query
+    assert "marca" in result["vars"]["date"]    # Polish month in vars
+    assert "March" in result["vars"]["date_en"] # English date in vars
+    assert result["vars"]["city"] == "Warsaw"
+    assert result["vars"]["year"] == "2026"
+
+
+def test_generate_broad_queries_templates_are_unfilled():
+    from weekend_scout.cities import generate_broad_queries
+    config = {"home_city": "Warsaw", "search_language": "pl", "home_country": "Poland"}
+    result = generate_broad_queries(config, "2026-03-28", "2026-03-29")
+    # Templates should contain at least one {placeholder}
+    assert any("{" in t for t in result["templates"])
+
+
+def test_generate_broad_queries_templates_fill_correctly():
+    from weekend_scout.cities import generate_broad_queries
+    config = {"home_city": "Warsaw", "search_language": "pl", "home_country": "Poland"}
+    result = generate_broad_queries(config, "2026-03-28", "2026-03-29")
+    filled = [t.format(**result["vars"]) for t in result["templates"]]
+    combined = " ".join(filled)
+    assert "marca" in combined    # Polish month
+    assert "March" in combined    # English fallback
+    assert "imprezy" in combined  # Polish keyword
 
 
 def test_generate_broad_queries_german():
     from weekend_scout.cities import generate_broad_queries
     config = {"home_city": "Berlin", "search_language": "de", "home_country": "Germany"}
     result = generate_broad_queries(config, "2026-03-28", "2026-03-29")
-    combined = " ".join(result)
-    assert len(result) == 4
+    filled = [t.format(**result["vars"]) for t in result["templates"]]
+    combined = " ".join(filled)
+    assert len(result["templates"]) == 4
     assert "Veranstaltungen" in combined or "Freiluft" in combined
-    assert "imprezy" not in combined   # no Polish
-    assert "März" in combined          # German month in local queries
-    assert "March" in combined         # English fallback still present
+    assert "imprezy" not in combined    # no Polish
+    assert "März" in result["vars"]["date"]    # German month in vars
+    assert "March" in result["vars"]["date_en"]  # English fallback still present
 
 
 def test_generate_broad_queries_french():
     from weekend_scout.cities import generate_broad_queries
     config = {"home_city": "Paris", "search_language": "fr", "home_country": "France"}
     result = generate_broad_queries(config, "2026-03-28", "2026-03-29")
-    combined = " ".join(result)
+    filled = [t.format(**result["vars"]) for t in result["templates"]]
+    combined = " ".join(filled)
     assert "événements" in combined or "plein air" in combined
     assert "imprezy" not in combined
-    assert "March" in combined  # English fallback
+    assert "March" in result["vars"]["date_en"]
 
 
 def test_generate_broad_queries_unknown_lang_falls_back_to_english():
     from weekend_scout.cities import generate_broad_queries
     config = {"home_city": "Somewhere", "search_language": "xx", "home_country": "Xland"}
     result = generate_broad_queries(config, "2026-03-28", "2026-03-29")
-    combined = " ".join(result)
+    filled = [t.format(**result["vars"]) for t in result["templates"]]
+    combined = " ".join(filled)
     assert "outdoor events" in combined
     assert "imprezy" not in combined
 
 
-def test_generate_targeted_queries_returns_dict():
-    from weekend_scout.cities import generate_targeted_queries
-    result = generate_targeted_queries(["Łódź", "Radom"], "pl", "2026-03-28")
-    assert isinstance(result, dict)
-    assert set(result.keys()) == {"Łódź", "Radom"}
-    assert isinstance(result["Łódź"], list)
-    assert len(result["Łódź"]) == 1
-    assert "Łódź" in result["Łódź"][0]
-    assert "imprezy" in result["Łódź"][0]  # Polish keyword
+def test_generate_targeted_template_returns_string():
+    from weekend_scout.cities import generate_targeted_template
+    result = generate_targeted_template("pl")
+    assert isinstance(result, str)
+    assert "{city}" in result
+    assert "{date}" in result
+    assert "imprezy" in result  # Polish keyword
 
 
-def test_generate_targeted_queries_german():
-    from weekend_scout.cities import generate_targeted_queries
-    result = generate_targeted_queries(["München", "Hamburg"], "de", "2026-03-28")
-    combined = " ".join(result["München"] + result["Hamburg"])
-    assert "Veranstaltungen" in combined or "Freiluft" in combined
-    assert "imprezy" not in combined
+def test_generate_targeted_template_german():
+    from weekend_scout.cities import generate_targeted_template
+    result = generate_targeted_template("de")
+    assert "Veranstaltungen" in result or "Freiluft" in result
+    assert "imprezy" not in result
+    assert "{city}" in result
 
 
-def test_generate_targeted_queries_english_fallback():
-    from weekend_scout.cities import generate_targeted_queries
-    result = generate_targeted_queries(["Dublin"], "xx", "2026-03-28")
-    assert "outdoor events" in result["Dublin"][0]
-    assert "imprezy" not in result["Dublin"][0]
+def test_generate_targeted_template_english_fallback():
+    from weekend_scout.cities import generate_targeted_template
+    result = generate_targeted_template("xx")
+    assert "outdoor events" in result
+    assert "imprezy" not in result
+    assert "{city}" in result
+
+
+def test_generate_targeted_template_fills_correctly():
+    from weekend_scout.cities import generate_targeted_template
+    tmpl = generate_targeted_template("pl")
+    query = tmpl.format(city="Łódź", date="28 marca 2026")
+    assert "Łódź" in query
+    assert "28 marca 2026" in query
+
+
+def test_find_city_coords_returns_highest_population(tmp_path):
+    from weekend_scout.cities import find_city_coords
+    content = "\n".join([
+        _make_geonames_row("1", "Berlin", "Berlin", "52.52", "13.40", "DE", "3500000"),
+        _make_geonames_row("2", "Berlin", "Berlin", "39.30", "-74.93", "US", "10000"),
+    ])
+    p = tmp_path / "cities.txt"
+    p.write_text(content, encoding="utf-8")
+    result = find_city_coords("Berlin", p)
+    assert result is not None
+    assert result["population"] == 3500000
+    assert result["country"] == "DE"
+
+
+def test_find_city_coords_returns_none_for_unknown_city(tmp_path):
+    from weekend_scout.cities import find_city_coords
+    p = tmp_path / "cities.txt"
+    p.write_text(_make_geonames_row(), encoding="utf-8")
+    assert find_city_coords("Atlantis", p) is None
+
+
+def test_find_city_coords_matches_native_name(tmp_path):
+    from weekend_scout.cities import find_city_coords
+    content = _make_geonames_row("1", "Łódź", "Lodz", "51.76", "19.46", "PL", "672185")
+    p = tmp_path / "cities.txt"
+    p.write_text(content, encoding="utf-8")
+    assert find_city_coords("Łódź", p) is not None
+    assert find_city_coords("Lodz", p) is not None
 
 
 def test_get_city_list_uses_cache(tmp_path, monkeypatch):

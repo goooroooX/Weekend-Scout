@@ -33,6 +33,22 @@ COUNTRY_LANGUAGE_MAP: dict[str, str] = {
     "Belarus": "be",
 }
 
+# ISO 3166-1 alpha-2 -> country name (matches COUNTRY_LANGUAGE_MAP keys)
+COUNTRY_CODE_MAP: dict[str, str] = {
+    "PL": "Poland",
+    "DE": "Germany",
+    "FR": "France",
+    "CZ": "Czech Republic",
+    "SK": "Slovakia",
+    "AT": "Austria",
+    "HU": "Hungary",
+    "UA": "Ukraine",
+    "LT": "Lithuania",
+    "LV": "Latvia",
+    "EE": "Estonia",
+    "BY": "Belarus",
+}
+
 DEFAULT_CONFIG: dict[str, Any] = {
     "home_city": "",
     "home_country": "Poland",
