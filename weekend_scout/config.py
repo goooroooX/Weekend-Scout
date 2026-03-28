@@ -3,7 +3,7 @@
 Handles reading, writing, and interactive setup of the YAML config file.
 Config and cache files live in the platform-appropriate user config directory:
   - Linux/Mac: ~/.config/weekend-scout/
-  - Windows:   %LOCALAPPDATA%\\weekend-scout\\weekend-scout\\
+  - Windows:   %LOCALAPPDATA%\\weekend-scout\\
 """
 
 from __future__ import annotations
@@ -106,7 +106,23 @@ DEFAULT_CONFIG: dict[str, Any] = {
 
 def get_config_dir() -> Path:
     """Return the platform-appropriate config directory for Weekend Scout."""
-    return Path(user_config_dir(APP_NAME))
+    import shutil
+    new_dir = Path(user_config_dir(APP_NAME, appauthor=False))
+    # One-time migration from the legacy double-nested path produced when appauthor
+    # was not explicitly disabled (platformdirs used appname as author on Windows,
+    # giving AppData\Local\weekend-scout\weekend-scout\ instead of AppData\Local\weekend-scout\).
+    _legacy = new_dir / APP_NAME
+    if _legacy.exists() and _legacy.is_dir():
+        new_dir.mkdir(parents=True, exist_ok=True)
+        for item in _legacy.iterdir():
+            dest = new_dir / item.name
+            if not dest.exists():
+                shutil.move(str(item), str(dest))
+        try:
+            _legacy.rmdir()
+        except OSError:
+            pass  # leave in place if anything couldn't be moved
+    return new_dir
 
 
 def get_config_path() -> Path:

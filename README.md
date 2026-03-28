@@ -150,7 +150,7 @@ python -m weekend_scout --help
 
 Config lives at:
 - **Linux/Mac:** `~/.config/weekend-scout/config.yaml`
-- **Windows:** `%LOCALAPPDATA%\weekend-scout\weekend-scout\config.yaml`
+- **Windows:** `%LOCALAPPDATA%\weekend-scout\config.yaml`
 
 ### Config reference
 

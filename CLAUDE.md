@@ -27,7 +27,7 @@ When implementation differs from docs/weekend-scout-mvp-design.md:
 - Python 3.10+ with type hints on all public functions
 - Cross-platform: use pathlib.Path everywhere, never hardcode Unix or Windows paths
 - Config directory: use platformdirs library for cross-platform config path
-  (~/.config/weekend-scout on Linux/Mac, AppData\Local on Windows)
+  (~/.config/weekend-scout on Linux/Mac, AppData\Local\weekend-scout on Windows)
 - Minimal dependencies: only pyyaml, requests, platformdirs
 - All CLI commands should work standalone for testing
 - Use argparse for CLI, with subcommands: setup, config, init, save, send,
