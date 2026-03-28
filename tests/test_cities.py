@@ -40,13 +40,11 @@ def test_get_region_name_unknown_city_returns_city():
     assert get_region_name("Atlantis") == "Atlantis"
 
 
-def test_get_region_name_custom_path(tmp_path):
+def test_get_region_name_from_regions_module():
     from weekend_scout.cities import get_region_name
-    regions = {"cities": {"TestCity": "TestRegion"}}
-    p = tmp_path / "regions.json"
-    p.write_text(json.dumps(regions), encoding="utf-8")
-    assert get_region_name("TestCity", regions_path=p) == "TestRegion"
-    assert get_region_name("Unknown", regions_path=p) == "Unknown"
+    # Verifies that get_region_name() reads from regions.py (not JSON)
+    assert get_region_name("Berlin") == "Brandenburg"
+    assert get_region_name("Paris") == "Île-de-France"
 
 
 def test_format_date_local_polish():
@@ -160,7 +158,7 @@ def test_get_city_list_filters_home_districts(tmp_path, monkeypatch):
     from weekend_scout.cities import get_city_list
 
     monkeypatch.setattr(cfg_module, "get_cache_dir", lambda _config: tmp_path)
-    monkeypatch.setattr(cities_module, "_DATA_DIR", tmp_path)
+    monkeypatch.setattr(cities_module, "_geonames_dir", lambda: tmp_path)
 
     # Home city: Warsaw-like PPLC at (52.23, 21.01), adm2=1465, adm3=146501
     home_row = _make_geonames_row(

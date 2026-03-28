@@ -1,13 +1,14 @@
 # Weekend Scout -- Project Guide
 
 ## What this is
-A Claude Code skill + Python CLI that discovers weekend outdoor events near the
+A multi-platform Agent Skill + Python CLI that discovers weekend outdoor events near the
 user's city and sends curated trip options to Telegram.
 
 ## Key documents
 - **Design:** docs/weekend-scout-mvp-design.md (the source of truth for architecture)
 - **Backlog:** docs/backlog.md (track all features, update status when implementing)
 - **Design changes:** docs/design_changes.md (log ANY deviation from the design doc)
+- **Platform reference:** docs/platform-skill-reference.md
 
 ## Development rules
 
@@ -28,6 +29,9 @@ When implementation differs from docs/weekend-scout-mvp-design.md:
 - Cross-platform: use pathlib.Path everywhere, never hardcode Unix or Windows paths
 - Config directory: use platformdirs library for cross-platform config path
   (~/.config/weekend-scout on Linux/Mac, AppData\Local\weekend-scout on Windows)
+- GeoNames data: downloaded automatically to `<config_dir>/geonames/cities15000.txt`
+  (not the project data/ directory, which no longer exists)
+- Region mapping: `weekend_scout/regions.py` Python module (not data/regions.json)
 - Minimal dependencies: only pyyaml, requests, platformdirs
 - All CLI commands should work standalone for testing
 - Use argparse for CLI, with subcommands: setup, config, init, save, send,
@@ -37,12 +41,17 @@ When implementation differs from docs/weekend-scout-mvp-design.md:
 - Tests use pytest, no external test dependencies beyond pytest itself
 
 ### Skill development
-- The skill lives in .claude/skills/weekend-scout/SKILL.md
-- It uses disable-model-invocation: true (user-triggered only via /weekend-scout)
-- Keep SKILL.md under 500 lines; move reference material to separate files if needed
+- **Source of truth:** `skill_template/weekend-scout.template.md`
+- After editing the template, regenerate with: `python skill_template/generate.py`
+- Generated skill files live in:
+  - `.claude/skills/weekend-scout/SKILL.md` (Claude Code)
+  - `.codex/skills/weekend-scout/SKILL.md` (Codex)
+  - `.openclaw/skills/weekend-scout/SKILL.md` (OpenClaw)
+- Do NOT edit the generated SKILL.md files directly — edit the template
+- Claude Code skill uses `disable-model-invocation: true` (user-triggered only via /weekend-scout)
 - The skill orchestrates: it calls Python CLI for data, runs WebSearch/WebFetch
   for event discovery, then calls Python CLI for output
-- Test the skill by running /weekend-scout in Claude Code after changes
+- Test the skill by running /weekend-scout in Claude Code after generating
 
 ### Testing approach
 - Each Python module should be testable independently

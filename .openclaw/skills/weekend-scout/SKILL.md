@@ -3,10 +3,18 @@ name: weekend-scout
 description: >
   Scout outdoor events, festivals, and fairs happening next weekend
   in your city and nearby cities. Builds trip options and posts to Telegram.
-argument-hint: [city] [radius-km] [--cached-only]
-allowed-tools: Bash, Read, Write, WebSearch, WebFetch
-disable-model-invocation: true
-model: haiku
+metadata:
+  openclaw:
+    emoji: "🏕️"
+    requires:
+      bins: ["python"]
+    install:
+      - id: "pip"
+        kind: "pip"
+        package: "weekend-scout"
+        bins: ["weekend-scout"]
+        label: "Install Weekend Scout (pip)"
+    preferred_model: gemini-3-flash
 ---
 
 ## Weekend Scout
@@ -267,7 +275,7 @@ If `{"sent": false}`:
   > python -m weekend_scout config telegram_bot_token YOUR_BOT_TOKEN
   > python -m weekend_scout config telegram_chat_id YOUR_CHAT_ID
   > ```
-  > Then run `/weekend-scout` again to send this weekend's digest.
+  > Then run `weekend-scout` again to send this weekend's digest.
 
 - **Telegram configured but send failed**: report the error and suggest verifying
   the token and chat ID with `python -m weekend_scout config`.

@@ -103,3 +103,26 @@
 | 8.4 | Fix DEFAULT_CONFIG: remove hardcoded Poland/Warsaw defaults | DONE (2026-03-27) | home_country:"", home_coordinates:{lat:0.0,lon:0.0}; 0,0 is the unset sentinel |
 | 8.5 | SKILL.md: full in-chat onboarding flow (find-city + WebSearch fallback + setup --json) | DONE (2026-03-27) | Handles needs_setup + coordinates_not_set; no manual terminal setup needed |
 | 8.6 | SKILL.md: always display message to user; improved Telegram unconfigured guidance | DONE (2026-03-27) | Message shown in chat; config commands suggested when Telegram not set |
+
+## Phase 9: Multi-Platform Restructuring
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 9.1  | Create weekend_scout/regions.py from data/regions.json | DONE (2026-03-28) | ~200 entries, all 27 countries, English + native names |
+| 9.2  | Update cities.py to import from regions.py | DONE (2026-03-28) | get_region_name() now does case-insensitive lookup via REGIONS dict |
+| 9.3  | Move GeoNames download target to platformdirs cache dir | DONE (2026-03-28) | _geonames_dir() uses get_config_dir()/geonames/ |
+| 9.4  | Add auto-download in init/find-city when file missing | DONE (2026-03-28) | ensure_geonames() helper; called from get_city_list, cmd_find_city, cmd_init, run_setup_wizard |
+| 9.5  | Update tests for new data paths | DONE (2026-03-28) | Monkeypatch _geonames_dir; added test_regions.py; 144 tests pass |
+| 9.6  | Delete data/ directory from repo | DONE (2026-03-28) | git rm data/regions.json; data/ removed |
+| 9.7  | Create skill_template/ with generator system | DONE (2026-03-28) | platforms.yaml, weekend-scout.template.md, generate.py, README.md |
+| 9.8  | Create docs/platform-skill-reference.md | DONE (2026-03-28) | Copied from platform-skill-research.md |
+| 9.9  | Generate .claude/skills/weekend-scout/SKILL.md from template | DONE (2026-03-28) | Replaced existing file |
+| 9.10 | Create .codex/skills/weekend-scout/ with generated SKILL.md | DONE (2026-03-28) | Plus agents/openai.yaml |
+| 9.11 | Create .openclaw/skills/weekend-scout/ with generated SKILL.md | DONE (2026-03-28) | |
+| 9.12 | Create install/install_skill.py | DONE (2026-03-28) | Cross-platform installer with auto-detect |
+| 9.13 | Create install/README.md | DONE (2026-03-28) | Per-platform install instructions |
+| 9.14 | Rewrite root README.md for multi-platform | DONE (2026-03-28) | |
+| 9.15 | Update CLAUDE.md with new paths and workflow | DONE (2026-03-28) | |
+| 9.16 | Update .gitignore | DONE (2026-03-28) | Removed data/cities15000.txt; added note about generated skills |
+| 9.17 | Update docs/design_changes.md | DONE (2026-03-28) | Logged all Phase 9 structural changes |
+| 9.18 | Final test run + commit | DONE (2026-03-28) | 144 tests pass; generate --check passes |

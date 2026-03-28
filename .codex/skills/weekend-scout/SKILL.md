@@ -3,10 +3,9 @@ name: weekend-scout
 description: >
   Scout outdoor events, festivals, and fairs happening next weekend
   in your city and nearby cities. Builds trip options and posts to Telegram.
-argument-hint: [city] [radius-km] [--cached-only]
-allowed-tools: Bash, Read, Write, WebSearch, WebFetch
-disable-model-invocation: true
-model: haiku
+metadata:
+  preferred_model: gpt-5.4-mini
+  version: 0.1.0
 ---
 
 ## Weekend Scout
@@ -14,6 +13,9 @@ model: haiku
 > Note: `weekend_scout` is a Python package — `python -m weekend_scout` works from any
 > directory. Do **not** prefix commands with `cd <path> &&`.
 
+> **Note:** If running in a sandboxed Codex container, ensure the package
+> is installed via `pip install weekend-scout` in the sandbox setup command.
+> GeoNames data auto-downloads on first run.
 
 ### Step 1: Initialize
 
@@ -267,7 +269,7 @@ If `{"sent": false}`:
   > python -m weekend_scout config telegram_bot_token YOUR_BOT_TOKEN
   > python -m weekend_scout config telegram_chat_id YOUR_CHAT_ID
   > ```
-  > Then run `/weekend-scout` again to send this weekend's digest.
+  > Then run `$weekend-scout` again to send this weekend's digest.
 
 - **Telegram configured but send failed**: report the error and suggest verifying
   the token and chat ID with `python -m weekend_scout config`.

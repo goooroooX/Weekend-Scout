@@ -49,16 +49,9 @@ def cmd_setup(args: argparse.Namespace) -> None:
 
 def cmd_find_city(args: argparse.Namespace) -> None:
     """Look up a city in the GeoNames database and return matching entries."""
-    from weekend_scout.cities import find_city_candidates, _DATA_DIR, GEONAMES_FILENAME
+    from weekend_scout.cities import find_city_candidates, ensure_geonames
 
-    geonames_path = _DATA_DIR / GEONAMES_FILENAME
-    if not geonames_path.exists():
-        print(json.dumps({
-            "matches": [],
-            "warning": "GeoNames file not found. Run: python -m weekend_scout download-data",
-        }, ensure_ascii=False))
-        return
-
+    geonames_path = ensure_geonames()
     matches = find_city_candidates(args.name, geonames_path, country_filter=args.country)
     print(json.dumps({"matches": matches}, ensure_ascii=False))
 
@@ -106,7 +99,7 @@ def cmd_init(args: argparse.Namespace) -> None:
     from weekend_scout.config import load_config, get_config_path, COUNTRY_CODE_MAP, COUNTRY_LANGUAGE_MAP
     from weekend_scout.cities import (
         get_city_list, generate_broad_queries, generate_targeted_template,
-        find_city_coords, _DATA_DIR, GEONAMES_FILENAME,
+        find_city_coords, ensure_geonames,
     )
     from weekend_scout.cache import query_events, get_searches_this_week, log_action
     from weekend_scout.distance import next_weekend_dates
@@ -126,7 +119,7 @@ def cmd_init(args: argparse.Namespace) -> None:
     city_geocoded: bool | None = None
     if args.city:
         config["home_city"] = args.city
-        geonames_path = _DATA_DIR / GEONAMES_FILENAME
+        geonames_path = ensure_geonames()
         if geonames_path.exists():
             city_data = find_city_coords(args.city, geonames_path)
             if city_data:
@@ -298,7 +291,7 @@ def cmd_cache_mark_served(args: argparse.Namespace) -> None:
 
 
 def cmd_download_data(args: argparse.Namespace) -> None:
-    """Download and unzip GeoNames cities15000.zip into data/."""
+    """Download and unzip GeoNames cities15000.zip into the cache directory."""
     from weekend_scout.cities import download_geonames
     path = download_geonames(force=args.force)
     print(json.dumps({"path": str(path)}))
@@ -414,7 +407,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_fc.add_argument("--country", default=None, help="Optional country filter (full English name)")
 
     # download-data
-    p_dd = sub.add_parser("download-data", help="Download GeoNames cities15000.zip into data/")
+    p_dd = sub.add_parser("download-data", help="Download GeoNames cities15000.zip into cache dir")
     p_dd.add_argument("--force", action="store_true", help="Re-download even if file already exists")
 
     # run

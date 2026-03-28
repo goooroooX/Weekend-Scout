@@ -1,111 +1,101 @@
 # Weekend Scout
 
-Weekend Scout is a Claude Code skill + Python CLI that discovers outdoor events,
-festivals, and fairs happening next weekend in your city and within driving distance.
-It builds curated trip options and delivers them to a Telegram group.
+A Python CLI + Agent Skill that discovers outdoor events, festivals, and
+fairs happening next weekend near your city. Builds curated trip options
+and delivers them to Telegram.
 
-## Prerequisites
+## Supported Platforms
 
-- Python 3.10+
-- Claude Code with Pro or Max subscription (for WebSearch/WebFetch tools)
-
-## Installation
-
-```bash
-pip install -e ".[dev]"
-python -m weekend_scout download-data
-```
-
-`download-data` fetches the GeoNames city database (~50 MB) used for distance
-calculations and auto-detecting your city's coordinates and language.
+- **Claude Code** — fully tested, primary development platform
+- **OpenAI Codex** — skill compatible, generated from shared template
+- **OpenClaw** — skill compatible, generated from shared template
+- Any agent supporting the Agent Skills standard (agentskills.io)
 
 ## Quick Start
 
+### Claude Code (recommended)
+
 ```bash
-# Install (see above), then in Claude Code:
+git clone https://github.com/goooroooX/Weekend-Scout.git
+cd Weekend-Scout
+pip install -e .
+python install/install_skill.py --platform claude-code
+
+# In Claude Code:
 /weekend-scout
 ```
 
-On first run the skill will ask for your city and search radius, resolve coordinates
-automatically, and proceed straight to scouting. No manual setup step needed.
+### Codex
 
-To configure Telegram delivery (optional), see the **Telegram Setup** section below.
+```bash
+git clone https://github.com/goooroooX/Weekend-Scout.git
+cd Weekend-Scout
+pip install -e .
+python install/install_skill.py --platform codex
+
+# In Codex:
+$weekend-scout
+```
+
+### OpenClaw
+
+```bash
+git clone https://github.com/goooroooX/Weekend-Scout.git
+cd Weekend-Scout
+pip install -e .
+python install/install_skill.py --platform openclaw
+```
+
+See [install/README.md](install/README.md) for the full installation guide.
+
+## How It Works
+
+Weekend Scout has two parts:
+
+1. **Python CLI** (`weekend_scout/`) — handles config, city data, caching,
+   distance calculations, and Telegram delivery
+2. **Agent Skill** (SKILL.md) — instructs the AI agent to search for events,
+   extract and score them, build trip options, and format output
+
+The skill calls the CLI for data operations and uses the agent's built-in
+web search/fetch tools for event discovery.
+
+GeoNames city data (used for geocoding and nearby city discovery) is
+downloaded automatically on first run to the platform cache directory.
 
 ## Telegram Setup
 
 Weekend Scout can send event summaries to a Telegram chat (group, channel, or DM).
-This is optional — if Telegram is not configured the skill prints the digest directly
-in Claude Code and shows the commands to enable delivery.
+This is optional — if Telegram is not configured the skill prints the digest in chat
+and shows the commands to enable delivery.
 
 ### Step 1: Create a bot
 
 1. Open Telegram and search for **@BotFather**
-2. Send `/newbot`
-3. Choose a display name (e.g. "Weekend Scout")
-4. Choose a username ending in `bot` (e.g. `weekend_scout_bot`)
-5. BotFather replies with your **bot token** — looks like `123456789:ABCdefGhIJKlmNoPQRsTUVwxyz`
+2. Send `/newbot`, choose a name and username (e.g. `weekend_scout_bot`)
+3. BotFather replies with your **bot token** — looks like `123456789:ABCdefGhIJK...`
 
-### Step 2: Disable privacy mode (required for groups)
+### Step 2: Get your chat ID
 
-By default Telegram bots only see commands (e.g. `/start`), not regular messages.
-To allow `getUpdates` to capture your group messages:
+**For a group:** add the bot, send a message, then open:
+```
+https://api.telegram.org/bot<TOKEN>/getUpdates
+```
+Look for `"chat":{"id":-100XXXXXXXXXX}` (negative number = group/channel).
 
-1. In @BotFather, send `/setprivacy`
-2. Select your bot
-3. Choose **Disable**
+**For a DM:** open a chat with your bot, send `/start`, then use the same URL.
+Your chat ID is the positive number in `"chat":{"id":XXXXXXXXX}`.
 
-This only affects what the bot *reads* — it has no impact on sending messages.
-
-### Step 3: Get your chat ID
-
-**For a group chat:**
-
-1. Add the bot to your Telegram group
-2. Send any message in the group (e.g. "hello")
-3. Open this URL in a browser (replace `<TOKEN>` with your bot token):
-   ```
-   https://api.telegram.org/bot<TOKEN>/getUpdates
-   ```
-4. Find `"chat":{"id":-100XXXXXXXXXX}` in the JSON — that negative number is your chat ID
-
-**For a direct message:**
-
-1. Open a chat with your bot and send `/start`
-2. Open the same `getUpdates` URL
-3. Your chat ID is the positive number in `"chat":{"id":XXXXXXXXX}`
-
-**For a channel:**
-
-1. Add the bot as a **channel administrator** (bots need admin rights to post in channels)
-2. Post any message in the channel
-3. Use the `getUpdates` URL to find the channel's chat ID
-
-> **Tip:** `getUpdates` only shows recent messages. If you see an empty `result`,
-> make sure the bot is a group member, send a new message, then retry.
-
-### Step 4: Configure Weekend Scout
+### Step 3: Configure Weekend Scout
 
 ```bash
 python -m weekend_scout config telegram_bot_token "YOUR_BOT_TOKEN"
 python -m weekend_scout config telegram_chat_id "YOUR_CHAT_ID"
 ```
 
-### Step 5: Test it
-
-```bash
-python -m weekend_scout send --message "Hello from Weekend Scout!"
-```
-
-You should see `{"sent": true}` and the message appear in your Telegram chat.
-If you see `{"sent": false}`, check:
-
-- Is the bot token correct? (no extra spaces)
-- Is the bot a member of the group?
-- Is the chat ID correct? (include the `-` for groups/channels)
-
 ## Usage
 
-### Via Claude Code skill
+### Via skill
 
 ```
 /weekend-scout
@@ -129,22 +119,21 @@ python -m weekend_scout --help
 
 | Command | Description |
 |---------|-------------|
-| `setup` | Interactive setup wizard — asks for city and radius, auto-detects everything else |
-| `setup --json '{...}'` | Apply a JSON config payload directly (no prompts) |
-| `find-city --name CITY` | Look up a city in GeoNames; returns name, country, coordinates, language |
+| `setup` | Interactive setup wizard |
+| `setup --json '{...}'` | Apply a JSON config payload (no prompts) |
+| `find-city --name CITY` | Look up a city in GeoNames |
 | `config` | Show current configuration as JSON |
 | `config KEY VALUE` | Set a single configuration value |
-| `init [--city CITY] [--radius KM]` | Load config + city list + cache for a scout run (JSON output) |
+| `init [--city CITY] [--radius KM]` | Load config + city list + cache (JSON output) |
 | `save --events '<JSON>'` | Save discovered events to cache |
-| `format-message` | Format the scout digest and write it to a file |
+| `format-message` | Format the scout digest and write to file |
 | `send --file <path>` | Send a formatted message file to Telegram |
 | `send --message '<text>'` | Send a text message to Telegram |
-| `cache-query --date YYYY-MM-DD` | Query cached events for the weekend containing the given date |
-| `log-search` | Log a completed web search to the search log |
-| `log-action` | Append a structured action log entry to `action_log.jsonl` |
-| `cache-mark-served --date YYYY-MM-DD` | Mark all events for a weekend as sent |
-| `download-data` | Download the GeoNames cities15000 database into `data/` |
-| `run` | Print instructions for a manual `/weekend-scout` run |
+| `cache-query --date YYYY-MM-DD` | Query cached events for a weekend |
+| `log-search` | Log a completed web search |
+| `log-action` | Append a structured action log entry |
+| `cache-mark-served --date YYYY-MM-DD` | Mark events as sent |
+| `download-data` | Download GeoNames cities15000 to cache dir |
 
 ## Configuration
 
@@ -152,33 +141,17 @@ Config lives at:
 - **Linux/Mac:** `~/.config/weekend-scout/config.yaml`
 - **Windows:** `%LOCALAPPDATA%\weekend-scout\config.yaml`
 
-### Config reference
-
 | Key | Default | Description |
 |-----|---------|-------------|
-| `home_city` | `""` | Your home city name — set automatically during first run |
-| `home_country` | `""` | Country name — auto-detected from GeoNames during setup |
-| `home_coordinates` | `{lat:0, lon:0}` | Lat/lon for distance calculations — auto-set from GeoNames; update manually only if the detected point is wrong |
+| `home_city` | `""` | Home city — set automatically on first run |
+| `home_country` | `""` | Country name — auto-detected from GeoNames |
+| `home_coordinates` | `{lat:0, lon:0}` | Lat/lon — auto-set from GeoNames |
 | `radius_km` | `150` | Search radius in km |
-| `search_language` | `"en"` | 2-letter language code for queries — auto-derived from country during setup |
+| `search_language` | `"en"` | Language code for queries |
 | `telegram_bot_token` | `""` | Telegram bot token |
 | `telegram_chat_id` | `""` | Telegram chat/group/channel ID |
 
-### Override individual values
-
-```bash
-python -m weekend_scout config radius_km 200
-python -m weekend_scout config telegram_bot_token "123456789:ABC..."
-python -m weekend_scout config telegram_chat_id "-1001234567890"
-```
-
-To re-run the setup wizard (city + radius only; re-geocodes automatically):
-
-```bash
-python -m weekend_scout setup
-```
-
-## Supported countries
+## Supported Countries
 
 27 countries with native-language search queries:
 Poland, Germany, France, Czech Republic, Slovakia, Austria, Hungary, Ukraine,
@@ -187,10 +160,47 @@ Norway, Denmark, Finland, Romania, Croatia, Bulgaria, Serbia, Greece, Turkey, Ru
 
 English-language queries are used as a fallback for any other location.
 
+## Project Structure
+
+```
+Weekend-Scout/
+    weekend_scout/           Python package (CLI + data layer)
+    skill_template/          Skill template + generator (source of truth)
+    .claude/skills/          Generated skill for Claude Code
+    .codex/skills/           Generated skill for Codex
+    .openclaw/skills/        Generated skill for OpenClaw
+    install/                 Cross-platform installer
+    tests/                   Test suite
+    docs/                    Design docs, backlog, references
+```
+
+## For Developers
+
+### Skill Template System
+
+Skills are generated from a single template using a preprocessor.
+After editing `skill_template/weekend-scout.template.md`:
+
+```bash
+python skill_template/generate.py
+```
+
+This regenerates all platform SKILL.md files. See
+[skill_template/README.md](skill_template/README.md) for details.
+
+### Development Setup
+
+```bash
+git clone https://github.com/goooroooX/Weekend-Scout.git
+cd Weekend-Scout
+pip install -e ".[dev]"
+python -m pytest tests/ -v
+```
+
 ## Design
 
-See [docs/weekend-scout-mvp-design.md](docs/weekend-scout-mvp-design.md) for the
-full architecture and design decisions.
+See [docs/weekend-scout-mvp-design.md](docs/weekend-scout-mvp-design.md)
+for architecture and design decisions.
 
 ## License
 

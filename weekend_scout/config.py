@@ -211,8 +211,8 @@ def run_setup_wizard(_geonames_path: "Path | None" = None) -> dict[str, Any]:
 
     # -- Auto-geocode from GeoNames --
     if _geonames_path is None:
-        from weekend_scout.cities import _DATA_DIR, GEONAMES_FILENAME
-        _geonames_path = _DATA_DIR / GEONAMES_FILENAME
+        from weekend_scout.cities import ensure_geonames
+        _geonames_path = ensure_geonames()
 
     if _geonames_path.exists():
         from weekend_scout.cities import find_city_candidates

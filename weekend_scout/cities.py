@@ -383,8 +383,12 @@ QUERY_TEMPLATES: dict[str, dict[str, Any]] = {
     },
 }
 
-# Default data directory: <project_root>/data/
-_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+def _geonames_dir() -> Path:
+    """Return the directory for GeoNames data files (platformdirs cache dir)."""
+    from weekend_scout.config import get_config_dir
+    d = get_config_dir() / "geonames"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 # Date format constants for format_date_local
 _PERIOD_DAY_FIRST = {"de", "no", "da", "hr", "sr"}   # "DD. Month Year"
@@ -395,9 +399,9 @@ _DAY_FIRST = {                                          # "DD Month Year"
 
 
 def download_geonames(force: bool = False) -> Path:
-    """Download and unzip cities15000.zip from GeoNames into the data/ directory.
+    """Download and unzip cities15000.zip from GeoNames into the cache directory.
 
-    Skips the download if data/cities15000.txt already exists, unless force=True.
+    Skips the download if cities15000.txt already exists, unless force=True.
 
     Args:
         force: Re-download even if the file is already present.
@@ -405,12 +409,12 @@ def download_geonames(force: bool = False) -> Path:
     Returns:
         Path to the extracted cities15000.txt file.
     """
-    txt_path = _DATA_DIR / GEONAMES_FILENAME
+    geonames_dir = _geonames_dir()
+    txt_path = geonames_dir / GEONAMES_FILENAME
     if txt_path.exists() and not force:
         return txt_path
 
-    _DATA_DIR.mkdir(parents=True, exist_ok=True)
-    zip_path = _DATA_DIR / "cities15000.zip"
+    zip_path = geonames_dir / "cities15000.zip"
 
     print(f"Downloading {GEONAMES_ZIP_URL} ...", file=sys.stderr)
     response = requests.get(GEONAMES_ZIP_URL, stream=True, timeout=120)
@@ -421,10 +425,26 @@ def download_geonames(force: bool = False) -> Path:
 
     print("Extracting ...", file=sys.stderr)
     with zipfile.ZipFile(zip_path) as zf:
-        zf.extract(GEONAMES_FILENAME, _DATA_DIR)
+        zf.extract(GEONAMES_FILENAME, geonames_dir)
 
     zip_path.unlink()
     print(f"Saved to {txt_path}", file=sys.stderr)
+    return txt_path
+
+
+def ensure_geonames(force: bool = False) -> Path:
+    """Return path to cities15000.txt, downloading automatically if missing.
+
+    Args:
+        force: Re-download even if the file already exists.
+
+    Returns:
+        Path to the cities15000.txt file.
+    """
+    txt_path = _geonames_dir() / GEONAMES_FILENAME
+    if not txt_path.exists() or force:
+        print("GeoNames data not found — downloading automatically...", file=sys.stderr)
+        download_geonames(force=force)
     return txt_path
 
 
@@ -540,12 +560,7 @@ def get_city_list(config: dict[str, Any], bypass_cache: bool = False) -> dict[st
         return result
 
     # Cache miss — parse GeoNames file
-    geonames_path = _DATA_DIR / GEONAMES_FILENAME
-    if not geonames_path.exists():
-        raise FileNotFoundError(
-            f"GeoNames file not found at {geonames_path}. "
-            "Run 'python -m weekend_scout download-data' first."
-        )
+    geonames_path = ensure_geonames()
 
     home_lat = config["home_coordinates"]["lat"]
     home_lon = config["home_coordinates"]["lon"]
@@ -603,23 +618,21 @@ def get_city_list(config: dict[str, Any], bypass_cache: bool = False) -> dict[st
 
 
 def get_region_name(home_city: str, regions_path: Path | None = None) -> str:
-    """Look up the region name for a home city from data/regions.json.
+    """Look up the region name for a home city.
 
     Args:
         home_city: City name (case-insensitive lookup).
-        regions_path: Optional override path to regions.json.
+        regions_path: Deprecated, ignored. Kept for signature compatibility.
 
     Returns:
         Region name string, or the home_city itself if not found.
     """
-    if regions_path is None:
-        regions_path = _DATA_DIR / "regions.json"
-    try:
-        data = json.loads(regions_path.read_text(encoding="utf-8"))
-        lookup = {k.lower(): v for k, v in data.get("cities", {}).items()}
-        return lookup.get(home_city.lower(), home_city)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return home_city
+    from weekend_scout.regions import REGIONS
+    lower = home_city.lower()
+    for k, v in REGIONS.items():
+        if k.lower() == lower:
+            return v
+    return home_city
 
 
 def format_date_local(iso_date: str, lang: str) -> str:

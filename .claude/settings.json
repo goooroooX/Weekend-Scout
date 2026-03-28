@@ -7,18 +7,5 @@
       "WebSearch",
       "WebFetch"
     ]
-  },
-  "hooks": {
-    "PostCompact": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "cat .claude/compaction-notes.md"
-          }
-        ]
-      }
-    ]
   }
 }
