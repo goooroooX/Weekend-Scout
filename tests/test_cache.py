@@ -131,6 +131,16 @@ def test_query_events_covers_saturday_and_sunday(cfg):
     assert "Sun Event" in names
 
 
+def test_query_events_includes_multi_day_spanning_weekend(cfg):
+    from weekend_scout.cache import save_events, query_events
+    # Event starts before and ends after the whole weekend — must be included
+    save_events(cfg, [_event(event_name="Long Fest",
+                             start_date="2026-03-20", end_date="2026-04-10")])
+    result = query_events(cfg, "2026-04-04")
+    assert len(result) == 1
+    assert result[0]["event_name"] == "Long Fest"
+
+
 def test_query_events_excludes_other_weekends(cfg):
     from weekend_scout.cache import save_events, query_events
     save_events(cfg, [_event(start_date="2026-04-11")])  # next weekend

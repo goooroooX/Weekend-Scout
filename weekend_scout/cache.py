@@ -190,7 +190,7 @@ def query_events(
 ) -> list[dict[str, Any]]:
     """Return cached events for the weekend starting on the given Saturday.
 
-    Includes events whose start_date or end_date falls on Saturday or Sunday.
+    Includes events that overlap the target weekend (Saturday or Sunday).
 
     Args:
         config: Loaded configuration dictionary.
@@ -207,11 +207,12 @@ def query_events(
         rows = conn.execute(
             """
             SELECT * FROM events
-            WHERE (start_date IN (?, ?) OR end_date IN (?, ?))
+            WHERE start_date <= ?
+              AND (end_date IS NULL OR end_date >= ?)
               AND canceled = 0
             ORDER BY start_date, city
             """,
-            (saturday, sunday, saturday, sunday),
+            (sunday, saturday),
         ).fetchall()
 
     return [dict(row) for row in rows]

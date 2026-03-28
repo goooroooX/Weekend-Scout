@@ -752,7 +752,7 @@ def find_city_coords(city_name: str, geonames_path: Path) -> dict[str, Any] | No
     all_cities = parse_geonames_file(geonames_path)
     matches = [
         c for c in all_cities
-        if c["name"].lower() == lower or c["name_local"].lower() == lower
+        if c["name"].lower() == lower or (c["name_local"] and c["name_local"].lower() == lower)
     ]
     if not matches:
         return None

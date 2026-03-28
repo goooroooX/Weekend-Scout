@@ -269,6 +269,16 @@ def test_format_scout_message_road_trips():
     assert "A. <b>Lodz Day Trip</b>" in msg
 
 
+def test_format_scout_message_trip_cap_10():
+    from weekend_scout.telegram import format_scout_message
+    trips = [_trip(name=f"Trip {i}") for i in range(12)]
+    msg = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", [], trips)
+    assert "Trip 0" in msg
+    assert "Trip 9" in msg
+    assert "Trip 10" not in msg
+    assert "Trip 11" not in msg
+
+
 def test_format_scout_message_no_trips_omits_section():
     from weekend_scout.telegram import format_scout_message
     msg = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", [_event()], [])
@@ -296,6 +306,23 @@ def test_format_scout_message_empty_returns_no_events():
     assert "No events found" in msg
     assert "Weekend Scout |" in msg
     assert "Scouted by Weekend Scout" in msg
+
+
+def test_format_scout_message_low_results_hint_normal_path():
+    from weekend_scout.telegram import format_scout_message
+    msg = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", [_event()], [],
+                               low_results_hint=True)
+    assert "Only 1 event(s) found" in msg
+    assert "max_searches 50" in msg
+    assert msg.index("Only 1 event") < msg.index("Scouted by Weekend Scout")
+
+
+def test_format_scout_message_low_results_hint_empty_path():
+    from weekend_scout.telegram import format_scout_message
+    msg = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", [], [],
+                               low_results_hint=True)
+    assert "No events found" in msg
+    assert "max_searches 50" in msg
 
 
 def test_format_scout_message_month_boundary():

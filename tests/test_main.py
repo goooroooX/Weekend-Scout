@@ -241,6 +241,8 @@ def test_cmd_init_returns_json(tmp_path, monkeypatch):
     assert isinstance(sq["broad"], list)
     assert isinstance(sq["targeted_template"], str)
     assert "{city}" in sq["targeted_template"]
+    assert result["config"]["max_searches"] == 30
+    assert result["config"]["max_fetches"] == 30
 
 
 # --- cmd_save ---

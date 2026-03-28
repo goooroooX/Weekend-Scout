@@ -194,7 +194,7 @@ def format_scout_message(
         home_city: Name of the home city.
         saturday: ISO date string of target Saturday.
         sunday: ISO date string of target Sunday.
-        city_events: Up to 3 top-ranked home city events.
+        city_events: Top-ranked home city events (caller controls count).
         trip_options: Up to 10 road trip option dicts.
             Each trip dict should have keys:
               name (str), route (str), events (str), timing (str).
