@@ -65,9 +65,11 @@
 |---|------|--------|-------|
 | 5.1 | Write SKILL.md with full search strategy prompt | DONE (2026-03-27) | Implemented in .claude/skills/weekend-scout/SKILL.md (177 lines, 6 steps) |
 | 5.2 | Test /weekend-scout with real web searches | IN PROGRESS | Clean-run test done 2026-03-27: Phase A completed (4 searches, 0 events), interrupted before Phase B; exposed bugs fixed in 5.6 |
-| 5.3 | Iterate on search queries based on result quality | TODO | |
+| 5.3 | Iterate on search queries based on result quality | DONE (2026-03-28) | Phase C rewritten: individual per-city searches, tier1→tier2→tier3 priority, budget allocation table; Phase D cap 3→5 fetches |
 | 5.4 | Iterate on scoring rubric | TODO | |
 | 5.5 | End-to-end test: init -> search -> save -> send | TODO | |
+| 5.6 | Budget config keys + low-results hint | DONE (2026-03-28) | max_searches(30)/max_fetches(30) in config.py + init JSON output; --low-results flag in format-message; console + Telegram hint when <3 results |
+| 5.7 | Increase road trip options to 10 | DONE (2026-03-28) | max_trip_options=10 default, format_scout_message cap updated, Step 3/4 in skill template updated |
 
 ## Phase 6: Polish
 

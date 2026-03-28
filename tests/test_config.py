@@ -50,7 +50,7 @@ def test_load_config_merges_with_defaults(patched_config_path, tmp_path):
     assert result["radius_km"] == 80
     # Default keys still present
     assert result["output_language"] == "en"
-    assert result["max_trip_options"] == 3
+    assert result["max_trip_options"] == 10
 
 
 def test_load_config_handles_empty_yaml(patched_config_path):

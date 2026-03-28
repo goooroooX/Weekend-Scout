@@ -165,6 +165,8 @@ def cmd_init(args: argparse.Namespace) -> None:
         "radius_km": config.get("radius_km"),
         "search_language": config.get("search_language"),
         "target_weekend": target_weekend,
+        "max_searches": config.get("max_searches", 30),
+        "max_fetches": config.get("max_fetches", 30),
     }
     if city_geocoded is not None:
         config_block["city_geocoded"] = city_geocoded
@@ -307,12 +309,14 @@ def cmd_format_message(args: argparse.Namespace) -> None:
     config = load_config()
     city_events = json.loads(args.city_events)
     trips = json.loads(args.trips)
+    low_results = args.low_results.lower() in ("true", "1", "yes") if args.low_results else False
     msg = format_scout_message(
         config.get("home_city", ""),
         args.saturday,
         args.sunday,
         city_events,
         trips,
+        low_results_hint=low_results,
     )
     output_path = Path(args.output) if args.output else get_cache_dir(config) / "scout_message.txt"
     output_path.write_text(msg, encoding="utf-8")
@@ -400,6 +404,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_fm.add_argument("--city-events", default="[]", help="JSON array of up to 3 event dicts")
     p_fm.add_argument("--trips", default="[]", help="JSON array of trip option dicts")
     p_fm.add_argument("--output", default=None, help="Output file path (default: app cache dir)")
+    p_fm.add_argument("--low-results", default=None, dest="low_results",
+                      help="Pass 'true' to append a budget-increase hint to the message")
 
     # find-city
     p_fc = sub.add_parser("find-city", help="Look up a city in the GeoNames database")

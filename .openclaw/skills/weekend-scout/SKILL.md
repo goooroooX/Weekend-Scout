@@ -83,16 +83,20 @@ The `init` JSON contains all config fields you need — do **not** run `config` 
 Extract these fields from the JSON output and keep them in mind throughout:
 
 ```
-saturday  = output.config.target_weekend.saturday   (ISO date)
-sunday    = output.config.target_weekend.sunday     (ISO date)
-home_city = output.config.home_city                 (departure/arrival label for trip routes)
-tier1     = output.cities.tier1                     (must all be covered)
-cached    = output.cached_events                    (already in cache — skip re-discovering)
-done_q    = output.searches_this_week               (queries already run this week — skip)
-run_id    = output.run_id                           (pass to all log-search and log-action calls)
-qvars     = output.suggested_queries.vars           (substitution variables for templates)
-broad_q   = output.suggested_queries.broad          (4 templates — fill {placeholders} from qvars)
-tgt_tmpl  = output.suggested_queries.targeted_template  ({city} and {date} are placeholders)
+saturday     = output.config.target_weekend.saturday   (ISO date)
+sunday       = output.config.target_weekend.sunday     (ISO date)
+home_city    = output.config.home_city                 (departure/arrival label for trip routes)
+max_searches = output.config.max_searches              (search budget limit)
+max_fetches  = output.config.max_fetches               (fetch budget limit)
+tier1        = output.cities.tier1                     (largest nearby cities, highest population)
+tier2        = output.cities.tier2                     (medium-population nearby cities)
+tier3        = output.cities.tier3                     (smallest nearby cities)
+cached       = output.cached_events                    (already in cache — skip re-discovering)
+done_q       = output.searches_this_week               (queries already run this week — skip)
+run_id       = output.run_id                           (pass to all log-search and log-action calls)
+qvars        = output.suggested_queries.vars           (substitution variables for templates)
+broad_q      = output.suggested_queries.broad          (4 templates — fill {placeholders} from qvars)
+tgt_tmpl     = output.suggested_queries.targeted_template  ({city} and {date} are placeholders)
 ```
 
 ### Step 2: Search for Events
@@ -103,8 +107,24 @@ using only the `cached` events from Step 1.
 **Offline pre-check (no tool calls):** Review `cached`. If it already has events for
 every city in `tier1` for the target weekend, skip directly to Step 3.
 
-**Budget: max 8 searches + max 10 fetches = 18 WebSearch/WebFetch calls.**
+**Budget: up to `max_searches` WebSearch calls + up to `max_fetches` WebFetch calls.**
 Bash CLI calls (`save`, `log-search`, etc.) are free — they do not count.
+
+Track usage mentally throughout this step:
+- `searches_used` — increment by 1 after every WebSearch
+- `fetches_used`  — increment by 1 after every WebFetch
+- Before any WebSearch: stop if `searches_used >= max_searches`
+- Before any WebFetch:  stop if `fetches_used  >= max_fetches`
+
+**Budget allocation guidance:**
+```
+Phase A  (broad)        : up to 5 searches + up to 6 fetches
+Phase B  (aggregators)  : counts against the 6 fetch slots above
+Phase C  (per-city)     : up to 2 searches + 1 fetch per uncovered tier1 city
+                          up to 1 search per uncovered tier2 city (if searches_used < max_searches × 0.6)
+                          up to 1 search per uncovered tier3 city (if searches_used < max_searches × 0.8)
+Phase D  (verification) : up to 5 fetches (reserve capacity before Phase C)
+```
 
 **Log pattern** — call after every search or aggregator fetch:
 ```bash
@@ -167,23 +187,34 @@ Fetch the most promising aggregator URLs. Use this prompt:
 
 Log each fetch with `--phase aggregator`.
 
-**Phase C — Targeted city searches (only if needed):**
-Check: if every city in `tier1` already has at least one event, log `skip` and move on:
-```bash
-python -m weekend_scout log-action --run-id "<run_id>" --action skip \
-  --phase C --target-weekend "<saturday>" --detail '{"reason": "all_tier1_covered"}'
-```
-Otherwise log `phase_start` and run:
+**Phase C — Targeted city searches:**
+Log `phase_start`:
 ```bash
 python -m weekend_scout log-action --run-id "<run_id>" --action phase_start --phase C --target-weekend "<saturday>"
 ```
-For each city in `tier1` with zero events (across `cached` + Phase A+B results):
+
+Search cities in priority order: **tier1 first** (largest population), then tier2, then tier3.
+Stop when budget is exhausted.
+
+**Rules:**
+- **Always search each uncovered city individually** — never combine multiple cities in one query.
+- Each uncovered **tier1** city: run up to 2 WebSearch calls (first broad, then specific if the
+  first returns nothing useful). Optionally fetch the most promising URL found (1 WebFetch).
+- Each uncovered **tier2** city: 1 WebSearch — only if `searches_used < max_searches × 0.6`.
+- Each uncovered **tier3** city: 1 WebSearch — only if `searches_used < max_searches × 0.8`.
+- A city is "covered" if it has at least one event across `cached` + Phase A+B+C results.
+- If all cities in all tiers are already covered, log skip:
+  ```bash
+  python -m weekend_scout log-action --run-id "<run_id>" --action skip \
+    --phase C --target-weekend "<saturday>" --detail '{"reason": "all_cities_covered"}'
+  ```
+
+For each targeted search:
 fill → `query = tgt_tmpl.format(city=city_name, date=qvars["date"])`.
 Skip if `query` is in `done_q`. Run WebSearch(query).
-Same formula for any city discovered mid-search that isn't in tier1.
-Log with `--phase targeted`.
+Log each with `--phase targeted`.
 
-**Phase D — Verification (1–3 fetches):**
+**Phase D — Verification (1–5 fetches):**
 Check: if all top candidates already have `confidence: "confirmed"`, log `skip` and move on:
 ```bash
 python -m weekend_scout log-action --run-id "<run_id>" --action skip \
@@ -214,7 +245,9 @@ Score each event 1–10:
 - Source quality (official=1, aggregator=0.5): 0–1
 
 Pool: combine `cached` events + newly saved events.
-Select: top 3 in home city + up to 3 road trip options from nearby cities.
+Select: top 3 in home city + up to 10 road trip options from nearby cities (tier1 first, then tier2, tier3).
+
+After selecting, compute: `total_events = len(city_events_selected) + len(trip_options)`
 
 ```bash
 python -m weekend_scout log-action --run-id "<run_id>" --action score_summary \
@@ -224,10 +257,9 @@ python -m weekend_scout log-action --run-id "<run_id>" --action score_summary \
 
 ### Step 4: Build Trip Options
 
-For road trips, use tier as a distance proxy (tier1 = nearest, tier3 = farthest):
-- Option A: Easy day trip — tier1 city (single city, under 2h drive)
-- Option B: Full day trip — tier1/tier2 city in a loop
-- Option C: Longer trip — tier2/tier3 city or multi-stop
+For road trips, use tier as a distance proxy (tier1 = largest/closest, tier3 = smallest/farthest):
+Build up to 10 options — one per city that has confirmed events, working through tier1 → tier2 → tier3.
+Label them A through J.
 
 For each trip option, build a dict for `format-message`:
 ```json
@@ -255,7 +287,8 @@ If the event has no known start time, use **09:30** as default departure.
 python -m weekend_scout format-message \
   --saturday "<saturday>" --sunday "<sunday>" \
   --city-events '<top_3_city_events_json>' \
-  --trips '<trip_options_json>'
+  --trips '<trip_options_json>' \
+  [--low-results true]   # include this flag when total_events < 3
 # → {"written": "<path>"}  — use this path for send:
 
 python -m weekend_scout send --file "<path from written>"
@@ -288,13 +321,20 @@ python -m weekend_scout cache-mark-served --date "<saturday>"
 
 python -m weekend_scout log-action --run-id "<run_id>" --action run_complete \
   --target-weekend "<saturday>" \
-  --detail '{"events_sent": <city_count + trip_count>, "new_events": <N>, "budget_used": "<S searches + F fetches>"}'
+  --detail '{"events_sent": <city_count + trip_count>, "new_events": <N>, "budget_used": "<searches_used>/<max_searches> searches + <fetches_used>/<max_fetches> fetches"}'
 ```
 
 Tell the user:
 - How many events were found / how many are new vs cached
-- Searches and fetches used (vs budget)
-- Any Tier 1 cities with zero coverage (flag for next run)
+- Budget used: `searches_used`/`max_searches` searches, `fetches_used`/`max_fetches` fetches
+- Any cities with zero coverage (tier1 most important — flag for next run)
+
+**If `total_events < 3`**, also tell the user:
+> Only N event(s) found. To discover more, increase your search budget:
+> ```
+> python -m weekend_scout config max_searches 50
+> python -m weekend_scout config max_fetches 50
+> ```
 
 ---
 

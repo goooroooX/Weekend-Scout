@@ -186,6 +186,7 @@ def format_scout_message(
     sunday: str,
     city_events: list[dict[str, Any]],
     trip_options: list[dict[str, Any]],
+    low_results_hint: bool = False,
 ) -> str:
     """Format the full Weekend Scout message as HTML.
 
@@ -194,10 +195,12 @@ def format_scout_message(
         saturday: ISO date string of target Saturday.
         sunday: ISO date string of target Sunday.
         city_events: Up to 3 top-ranked home city events.
-        trip_options: Up to 3 road trip option dicts.
+        trip_options: Up to 10 road trip option dicts.
             Each trip dict should have keys:
               name (str), route (str), events (str), timing (str).
             Optional: url (str) — appended as [link] on the events line.
+        low_results_hint: When True, appends a hint suggesting the user
+            increase the search budget.
 
     Returns:
         Fully formatted HTML message string.
@@ -214,9 +217,15 @@ def format_scout_message(
     header = f"<b>🗓 Weekend Scout | {date_range}</b>"
 
     if not city_events and not trip_options:
+        hint = (
+            "\n\n💡 <i>No events found. To discover more, increase your search budget:\n"
+            "python -m weekend_scout config max_searches 50\n"
+            "python -m weekend_scout config max_fetches 50</i>"
+            if low_results_hint else ""
+        )
         return (
             f"{header}\n\n"
-            "No events found for this weekend.\n\n"
+            f"No events found for this weekend.{hint}\n\n"
             "<i>— Scouted by Weekend Scout</i>"
         )
 
@@ -234,7 +243,7 @@ def format_scout_message(
     if trip_options:
         sections.append("<b>🚗 ROAD TRIPS:</b>")
         letters = "ABCDEFGHIJ"
-        for i, trip in enumerate(trip_options[:3]):
+        for i, trip in enumerate(trip_options[:10]):
             letter = letters[i]
             name = html.escape(trip.get("name") or "")
             route = html.escape(trip.get("route") or "")
@@ -250,6 +259,14 @@ def format_scout_message(
             if timing:
                 parts.append(f"   🕘 {timing}")
             sections.append("\n".join(parts))
+
+    if low_results_hint:
+        total = len(city_events) + len(trip_options)
+        sections.append(
+            f"💡 <i>Only {total} event(s) found. To discover more, increase your search budget:\n"
+            "python -m weekend_scout config max_searches 50\n"
+            "python -m weekend_scout config max_fetches 50</i>"
+        )
 
     sections.append("<i>— Scouted by Weekend Scout</i>")
     return "\n\n".join(sections)

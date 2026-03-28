@@ -24,8 +24,10 @@ weekend_scout/cities.py
 weekend_scout/distance.py
 weekend_scout/cache.py
 weekend_scout/telegram.py
+weekend_scout/regions.py
 ```
 Also check the corresponding test files in `tests/`.
+Also check the skill template at `skill_template/weekend-scout.template.md`.
 
 Read each file fully before making any judgement.
 
@@ -48,6 +50,8 @@ Work through every section. Report every finding — do not stop at the first is
 - [ ] `parse_geonames_file` PPLX filter and admin-code district filter both applied correctly
 - [ ] Cache `query_events` covers both Saturday **and** Sunday of the target weekend
 - [ ] `format_event_block` doesn't crash when `free_entry` is `0` (falsy but not None)
+- [ ] `format_scout_message` `low_results_hint=True` adds hint in **both** the empty-events path and the normal path
+- [ ] `format_scout_message` renders up to 10 trip options (cap is `[:10]`, not `[:3]`)
 
 ### 2. Project standards (from CLAUDE.md)
 
@@ -60,6 +64,7 @@ Work through every section. Report every finding — do not stop at the first is
 - [ ] **Minimal dependencies** — no imports beyond pyyaml, requests, platformdirs, sqlite3, stdlib
 - [ ] **CLI commands print JSON** — every `cmd_*` function outputs parseable JSON, not plain text
 - [ ] **No `os.path`** usage anywhere
+- [ ] **Skill template is the source of truth** — `.claude/skills/weekend-scout/SKILL.md` must be generated, not hand-edited
 
 ### 3. Cross-platform safety
 
@@ -86,27 +91,56 @@ Work through every section. Report every finding — do not stop at the first is
 - [ ] `get_city_list` uses cache when available and writes cache when not
 - [ ] Cache file name encodes both `home_city` and `radius_km` (cache key is correct)
 - [ ] `generate_broad_queries` language fallback is `"en"`, not `"pl"`
-- [ ] `get_region_name` returns `home_city` (not empty string) when city not in regions.json
+- [ ] `get_region_name` returns `home_city` (not empty string) when city not in regions dict
+- [ ] Region lookup uses `regions.py` (`REGIONS` dict) — no `data/regions.json` file read
+- [ ] `ensure_geonames()` auto-downloads when file is missing (no `download-data` prerequisite)
+- [ ] GeoNames file stored under `<config_dir>/geonames/` via `get_config_dir()` — not inside project `data/`
 
 ### 6. Telegram / telegram.py
 
 - [ ] `split_message` never produces a part exceeding `max_length`
 - [ ] `send_telegram` validates token **and** chat_id before making any HTTP call
 - [ ] HTTP call uses `timeout=` argument (never blocks forever)
-- [ ] Markdown escape applied to user-sourced text (event names, descriptions) before sending
+- [ ] **HTML** escape applied to user-sourced text via `html.escape()` — not Markdown escape
 - [ ] `format_event_block` handles `end_date == start_date` (shows "Sat", not "Sat-Sat")
 - [ ] `format_scout_message` omits "ROAD TRIPS:" section when `trip_options` is empty
+- [ ] `format_scout_message` signature includes `low_results_hint: bool = False`
+- [ ] `low_results_hint=True` appends hint **before** the "Scouted by" footer line
+- [ ] Trip rendering uses `trip_options[:10]` — cap is 10, not 3
 
 ### 7. Config / config.py
 
 - [ ] `DEFAULT_CONFIG["search_language"]` is `"en"` (not `"pl"`)
+- [ ] `DEFAULT_CONFIG["max_trip_options"]` is `10`
+- [ ] `DEFAULT_CONFIG["max_searches"]` is `30`
+- [ ] `DEFAULT_CONFIG["max_fetches"]` is `30`
 - [ ] `load_config` merges stored YAML *over* defaults (not the other way around)
 - [ ] `save_config` creates parent directory if it doesn't exist
 - [ ] `run_setup_wizard` does not overwrite Telegram token with empty string when user skips
 - [ ] `config set` command (in `__main__.py`) validates key exists before saving
 - [ ] `config set` coerces value type to match existing (bool, int, float)
 
-### 8. Tests
+### 8. CLI / __main__.py
+
+- [ ] `cmd_init` includes `max_searches` and `max_fetches` in the `config` block of JSON output
+- [ ] `format-message` subcommand has `--low-results` argument wired to `format_scout_message(low_results_hint=...)`
+- [ ] `--low-results` accepts string `"true"/"false"` (not a boolean flag) — LLM passes it as a string
+- [ ] No business logic in `cmd_*` functions — they load config, call module functions, print JSON
+- [ ] `cache.py` functions take `config` dict, not a raw path, so tests can inject `_cache_dir`
+
+### 9. Skill template system
+
+- [ ] `skill_template/weekend-scout.template.md` is the source of truth — do not review generated files
+- [ ] Generated files exist at `.claude/skills/weekend-scout/SKILL.md`, `.codex/skills/weekend-scout/SKILL.md`, `.openclaw/skills/weekend-scout/SKILL.md`
+- [ ] Template Step 1 extracts `max_searches`, `max_fetches`, `tier2`, `tier3` from init output
+- [ ] Template Step 2 references `max_searches`/`max_fetches` (not hardcoded 8/10)
+- [ ] Template Phase C: per-city individual searches, tier1→tier2→tier3 priority, budget thresholds
+- [ ] Template Step 3: trip cap is 10, not 3
+- [ ] Template Step 5: `--low-results true` flag shown for `format-message` when `total_events < 3`
+- [ ] Template Step 6: low-results hint shown to user when `total_events < 3`
+- [ ] Run `python skill_template/generate.py --check` to verify generated files are in sync with template
+
+### 10. Tests
 
 - [ ] Every public function in each module has at least one test
 - [ ] Tests use `tmp_path` or `_cache_dir` override — never touch real filesystem or real config
@@ -115,22 +149,25 @@ Work through every section. Report every finding — do not stop at the first is
 - [ ] Tests for `send_telegram` mock `requests.post`, not the whole `requests` module
 - [ ] `test_parse_geonames_file_skips_pplx` and `test_get_city_list_filters_home_districts` both present
 - [ ] `test_split_at_double_newline` and `test_split_at_single_newline_fallback` use messages longer than 4096 chars
+- [ ] Test for `max_trip_options` default asserts value is `10` (not `3`)
+- [ ] Tests for `format_scout_message` cover the `low_results_hint=True` path
+- [ ] Tests for `cmd_init` output verify `max_searches` and `max_fetches` present in config block
 
-### 9. Design / architecture
+### 11. Design / architecture
 
-- [ ] No business logic in `__main__.py` — cmd functions only load config, call module functions, print JSON
-- [ ] `cache.py` functions take `config` dict, not a raw path, so tests can inject `_cache_dir`
-- [ ] Backlog items in `docs/backlog.md` reflect current implementation state
+- [ ] Backlog items in `docs/backlog.md` reflect current implementation state (no TODO items that are actually done)
 - [ ] Any deviation from `docs/weekend-scout-mvp-design.md` has an entry in `docs/design_changes.md`
+- [ ] `data/` directory does not exist in the repo (regions moved to `regions.py`, geonames to cache dir)
 
 ---
 
 ## How to run existing tests
 
-Before reporting, run the test suite to see if there are already failing tests:
+Before reporting, run the test suite and the generator check:
 
 ```bash
 python -m pytest tests/ -v --tb=short 2>&1 | tail -30
+python skill_template/generate.py --check 2>&1
 ```
 
 Report any failures as **P0 — test failure** findings.

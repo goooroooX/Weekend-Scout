@@ -94,13 +94,15 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "conference", "recurring_market",
     ],
     "max_city_options": 3,
-    "max_trip_options": 3,
+    "max_trip_options": 10,
     "output_language": "en",
     "telegram_bot_token": "",
     "telegram_chat_id": "",
     "auto_run": False,
     "run_day": "friday",
     "run_time": "18:00",
+    "max_searches": 30,
+    "max_fetches": 30,
 }
 
 
