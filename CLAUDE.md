@@ -35,7 +35,10 @@ When implementation differs from docs/weekend-scout-mvp-design.md:
 - Minimal dependencies: only pyyaml, requests, platformdirs
 - All CLI commands should work standalone for testing
 - Use argparse for CLI, with subcommands: setup, config, init, save, send,
-  cache-query, log-search, cache-mark-served, run
+  cache-query, log-search, cache-mark-served, install-skill, run
+- `install-skill [--platform P]` copies bundled SKILL.md from `weekend_scout/skill_data/`
+  to the user's global skills dir. Used after `pip install .` (non-editable).
+  Not needed for developers using editable installs (skill loads from `.claude/skills/`).
 - SQLite via built-in sqlite3 module
 - Print JSON output from CLI commands so the skill can parse it
 - Tests use pytest, no external test dependencies beyond pytest itself

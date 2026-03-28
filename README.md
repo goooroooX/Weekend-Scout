@@ -11,39 +11,67 @@ and delivers them to Telegram.
 - **OpenClaw** — skill compatible, generated from shared template
 - Any agent supporting the Agent Skills standard (agentskills.io)
 
-## Quick Start
+## Installation
 
-### Claude Code (recommended)
+### For users
 
 ```bash
 git clone https://github.com/goooroooX/Weekend-Scout.git
 cd Weekend-Scout
-pip install -e .
-python install/install_skill.py --platform claude-code
-
-# In Claude Code:
-/weekend-scout
+python install/install_skill.py --with-pip
+cd ..
 ```
 
-### Codex
+The package is now installed system-wide. You can safely delete the
+`Weekend-Scout/` folder after installation.
+
+If you already have the package installed and only need to update the skill file:
 
 ```bash
-git clone https://github.com/goooroooX/Weekend-Scout.git
-cd Weekend-Scout
-pip install -e .
-python install/install_skill.py --platform codex
-
-# In Codex:
-$weekend-scout
+python -m weekend_scout install-skill
 ```
 
-### OpenClaw
+### For developers
 
 ```bash
 git clone https://github.com/goooroooX/Weekend-Scout.git
 cd Weekend-Scout
-pip install -e .
-python install/install_skill.py --platform openclaw
+pip install -e ".[dev]"
+```
+
+The skill loads from `.claude/skills/` inside the repo (project-scoped).
+Do **not** delete this folder — editable mode links to it.
+
+### Updating
+
+```bash
+# Users: re-clone and re-run the installer
+git clone https://github.com/goooroooX/Weekend-Scout.git
+cd Weekend-Scout
+python install/install_skill.py --with-pip
+
+# Developers: pull in your existing clone
+git pull
+pip install -e ".[dev]"
+```
+
+### Uninstalling
+
+```bash
+pip uninstall weekend-scout
+```
+
+Then delete the skill folder for your platform:
+- Claude Code: `~/.claude/skills/weekend-scout/`
+- Codex: `~/.codex/skills/weekend-scout/`
+- OpenClaw: `~/.openclaw/skills/weekend-scout/`
+
+### Quick Start (after install)
+
+```
+/weekend-scout            # Claude Code
+$weekend-scout            # Codex
+weekend-scout             # OpenClaw
 ```
 
 See [install/README.md](install/README.md) for the full installation guide.
@@ -133,6 +161,7 @@ python -m weekend_scout --help
 | `log-search` | Log a completed web search |
 | `log-action` | Append a structured action log entry |
 | `cache-mark-served --date YYYY-MM-DD` | Mark events as sent |
+| `install-skill [--platform P]` | Copy bundled SKILL.md to global skills directory |
 | `download-data` | Download GeoNames cities15000 to cache dir |
 
 ## Configuration
@@ -193,8 +222,14 @@ This regenerates all platform SKILL.md files. See
 ```bash
 git clone https://github.com/goooroooX/Weekend-Scout.git
 cd Weekend-Scout
-pip install -e ".[dev]"
+pip install -e ".[dev]"       # editable install with test deps
 python -m pytest tests/ -v
+```
+
+Or use the installer with the `--dev` flag:
+
+```bash
+python install/install_skill.py --with-pip --dev
 ```
 
 ## Design

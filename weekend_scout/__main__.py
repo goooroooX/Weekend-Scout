@@ -334,6 +334,71 @@ def cmd_run(args: argparse.Namespace) -> None:
     }))
 
 
+_INSTALL_TARGETS: dict[str, "Path"] = {}
+
+
+def _get_install_targets() -> dict[str, "Path"]:
+    from pathlib import Path as _P
+    return {
+        "claude-code": _P.home() / ".claude"   / "skills" / "weekend-scout",
+        "codex":       _P.home() / ".codex"    / "skills" / "weekend-scout",
+        "openclaw":    _P.home() / ".openclaw" / "skills" / "weekend-scout",
+    }
+
+
+def _resolve_platforms(platform_arg: str | None) -> list[str]:
+    """Determine which platforms to install for."""
+    targets = _get_install_targets()
+    if platform_arg == "all":
+        return list(targets.keys())
+    if platform_arg:
+        return [platform_arg]
+    # Auto-detect: check which platform base dirs exist (e.g. ~/.claude/)
+    detected = [
+        name for name, target in targets.items()
+        if target.parent.parent.exists()
+    ]
+    return detected if detected else ["claude-code"]
+
+
+def _copy_tree(src: "Path", dst: "Path") -> None:
+    """Recursively copy all files from src to dst."""
+    import shutil as _shutil
+    for item in src.rglob("*"):
+        if item.is_file():
+            rel = item.relative_to(src)
+            target_file = dst / rel
+            target_file.parent.mkdir(parents=True, exist_ok=True)
+            _shutil.copy2(item, target_file)
+
+
+def cmd_install_skill(args: argparse.Namespace) -> None:
+    """Copy bundled SKILL.md from the installed package to the global skills dir."""
+    from pathlib import Path
+    skill_data_dir = Path(__file__).resolve().parent / "skill_data"
+    if not skill_data_dir.exists():
+        print(json.dumps({"error": "skill_data directory not found in package"}))
+        sys.exit(1)
+
+    platforms = _resolve_platforms(args.platform)
+    install_targets = _get_install_targets()
+
+    results = []
+    for platform in platforms:
+        source_dir = skill_data_dir / platform
+        if not source_dir.exists():
+            results.append({"platform": platform, "status": "skipped",
+                            "reason": f"no skill data for {platform}"})
+            continue
+        target_dir = install_targets[platform]
+        target_dir.mkdir(parents=True, exist_ok=True)
+        _copy_tree(source_dir, target_dir)
+        results.append({"platform": platform, "status": "installed",
+                        "path": str(target_dir)})
+
+    print(json.dumps({"installed": results}, indent=2))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="weekend_scout",
@@ -407,6 +472,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_fm.add_argument("--low-results", default=None, dest="low_results",
                       help="Pass 'true' to append a budget-increase hint to the message")
 
+    # install-skill
+    p_is = sub.add_parser(
+        "install-skill",
+        help="Copy bundled SKILL.md from the installed package to your global skills directory",
+    )
+    p_is.add_argument(
+        "--platform",
+        choices=["claude-code", "codex", "openclaw", "all"],
+        default=None,
+        help="Target platform (auto-detected if not specified)",
+    )
+
     # find-city
     p_fc = sub.add_parser("find-city", help="Look up a city in the GeoNames database")
     p_fc.add_argument("--name", required=True, help="City name to search")
@@ -434,6 +511,7 @@ COMMANDS = {
     "log-action": cmd_log_action,
     "cache-mark-served": cmd_cache_mark_served,
     "format-message": cmd_format_message,
+    "install-skill": cmd_install_skill,
     "download-data": cmd_download_data,
     "run": cmd_run,
 }

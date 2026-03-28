@@ -22,3 +22,6 @@ weekend-scout = "weekend_scout.__main__:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["weekend_scout*"]
+
+[tool.setuptools.package-data]
+"weekend_scout.skill_data" = ["**/*.md", "**/*.yaml"]

@@ -128,3 +128,15 @@
 | 9.16 | Update .gitignore | DONE (2026-03-28) | Removed data/cities15000.txt; added note about generated skills |
 | 9.17 | Update docs/design_changes.md | DONE (2026-03-28) | Logged all Phase 9 structural changes |
 | 9.18 | Final test run + commit | DONE (2026-03-28) | 144 tests pass; generate --check passes |
+
+## Phase 10: Installation Fixes
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 10.1 | Bundle SKILL.md files as package data | DONE (2026-03-28) | `weekend_scout/skill_data/` + pyproject.toml package-data; generator mirrors there |
+| 10.2 | Add install-skill CLI command | DONE (2026-03-28) | Copies SKILL.md from package to global skills dir; auto-detects platform |
+| 10.3 | Fix install/install_skill.py: use pip install (not -e) | DONE (2026-03-28) | `--dev` flag for editable; delegates skill copy to `install-skill` CLI |
+| 10.4 | Update README with user vs developer flows | DONE (2026-03-28) | |
+| 10.5 | Update CLAUDE.md | DONE (2026-03-28) | |
+| 10.6 | Update docs/design_changes.md | DONE (2026-03-28) | |
+| 10.7 | Test both install flows | DONE (2026-03-28) | Smoke-tested via manual CLI commands |

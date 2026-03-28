@@ -9,7 +9,8 @@ Usage:
     python install/install_skill.py                        # auto-detect platform
     python install/install_skill.py --platform claude-code # specific platform
     python install/install_skill.py --platform all         # all platforms
-    python install/install_skill.py --with-pip             # also run pip install -e .
+    python install/install_skill.py --with-pip             # also pip install + skill copy
+    python install/install_skill.py --with-pip --dev       # developer install (editable)
 """
 
 from __future__ import annotations
@@ -111,7 +112,12 @@ def main() -> None:
     parser.add_argument(
         "--with-pip",
         action="store_true",
-        help="Also run 'pip install -e .' to install the Python package.",
+        help="Also install the Python package via pip before copying the skill.",
+    )
+    parser.add_argument(
+        "--dev",
+        action="store_true",
+        help="Developer install: use 'pip install -e .[dev]' (editable, includes test deps). Implies --with-pip.",
     )
     args = parser.parse_args()
 
@@ -130,28 +136,52 @@ def main() -> None:
         platforms = detect_platforms()
 
     # Optionally install the Python package
-    if args.with_pip:
-        print("Installing Python package...")
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "-e", str(repo_root)],
-            check=False,
-        )
+    do_pip = args.with_pip or args.dev
+    if do_pip:
+        if args.dev:
+            print("Installing Python package (developer/editable mode)...")
+            pip_cmd = [sys.executable, "-m", "pip", "install", "-e", ".[dev]"]
+        else:
+            print("Installing Python package...")
+            pip_cmd = [sys.executable, "-m", "pip", "install", "."]
+        result = subprocess.run(pip_cmd, check=False, cwd=repo_root)
         if result.returncode != 0:
             print("WARNING: pip install failed. Continuing with skill installation.")
         else:
             print("  Package installed.")
 
-    # Install each platform
-    all_ok = True
-    for platform in platforms:
-        print(f"\nInstalling skill for {platform}...")
-        ok = install_platform(platform, repo_root)
-        if not ok:
-            all_ok = False
-
-    if not all_ok:
-        print("\nSome platforms failed — see errors above.")
-        sys.exit(1)
+        # Delegate skill copying to the installed package so it reads from
+        # its own skill_data/ directory (works after the clone is deleted).
+        platform_arg = args.platform or "all"
+        print(f"\nInstalling skill via package CLI (--platform {platform_arg})...")
+        result = subprocess.run(
+            [sys.executable, "-m", "weekend_scout", "install-skill",
+             "--platform", platform_arg],
+            check=False,
+        )
+        if result.returncode != 0:
+            print("WARNING: install-skill failed — falling back to repo-based copy.")
+            # Fall back to direct repo copy
+            all_ok = True
+            for platform in platforms:
+                print(f"\nInstalling skill for {platform}...")
+                ok = install_platform(platform, repo_root)
+                if not ok:
+                    all_ok = False
+            if not all_ok:
+                print("\nSome platforms failed — see errors above.")
+                sys.exit(1)
+    else:
+        # No pip install: copy directly from the repo (requires clone to be present)
+        all_ok = True
+        for platform in platforms:
+            print(f"\nInstalling skill for {platform}...")
+            ok = install_platform(platform, repo_root)
+            if not ok:
+                all_ok = False
+        if not all_ok:
+            print("\nSome platforms failed — see errors above.")
+            sys.exit(1)
 
     # Pre-download GeoNames data
     print("\nPre-downloading GeoNames city data...")
@@ -165,6 +195,9 @@ def main() -> None:
     # Print next steps
     print("\n" + "=" * 50)
     print("Weekend Scout installed successfully!")
+    if not args.dev:
+        print("\nThe package is installed. You can safely delete this folder.")
+        print("To update later: re-clone and re-run this installer.")
     print("\nNext steps:")
     for platform in platforms:
         cmd = INVOKE_CMDS[platform]

@@ -27,6 +27,13 @@ REPO_ROOT = SCRIPT_DIR.parent
 PLATFORMS_FILE = SCRIPT_DIR / "platforms.yaml"
 TEMPLATE_FILE = SCRIPT_DIR / "weekend-scout.template.md"
 
+# skill_data/ mirror mapping: platform_id -> subdir inside weekend_scout/skill_data/
+SKILL_DATA_TARGETS: dict[str, str] = {
+    "claude-code": "weekend_scout/skill_data/claude-code",
+    "codex":       "weekend_scout/skill_data/codex",
+    "openclaw":    "weekend_scout/skill_data/openclaw",
+}
+
 
 def load_config() -> dict:
     """Load platforms.yaml."""
@@ -264,6 +271,10 @@ def main() -> None:
         else:
             print(f"Generating {platform_id} -> {output_dir}")
             write_files(output_dir, files)
+            # Mirror into weekend_scout/skill_data/ so the package is self-contained
+            if platform_id in SKILL_DATA_TARGETS:
+                skill_data_dir = REPO_ROOT / SKILL_DATA_TARGETS[platform_id]
+                write_files(skill_data_dir, files)
 
     if args.check and not all_ok:
         print("\nSome files are out of date. Run: python skill_template/generate.py")
