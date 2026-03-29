@@ -285,6 +285,19 @@ def test_cmd_cache_mark_served_returns_count(tmp_path, monkeypatch):
     assert "marked" in result
 
 
+def test_format_message_logs_run_id(tmp_path, monkeypatch):
+    output = tmp_path / "msg.txt"
+    _run_format_message(
+        ["--saturday", "2026-03-28", "--sunday", "2026-03-29",
+         "--output", str(output), "--run-id", "run-xyz"],
+        tmp_path, monkeypatch,
+    )
+    log_file = tmp_path / "cache" / "action_log.jsonl"
+    entry = json.loads(log_file.read_text(encoding="utf-8").strip())
+    assert entry["run_id"] == "run-xyz"
+    assert entry["action"] == "message_formatted"
+
+
 # --- cmd_send ---
 
 def test_cmd_send_missing_token_returns_sent_false(tmp_path, monkeypatch):
@@ -293,6 +306,16 @@ def test_cmd_send_missing_token_returns_sent_false(tmp_path, monkeypatch):
     output = _run_cmd("send", ["--file", str(msg_file)], tmp_path, monkeypatch)
     result = json.loads(output)
     assert result == {"sent": False}
+
+
+def test_cmd_send_logs_run_id(tmp_path, monkeypatch):
+    msg_file = tmp_path / "msg.txt"
+    msg_file.write_text("Hello", encoding="utf-8")
+    _run_cmd("send", ["--file", str(msg_file), "--run-id", "run-xyz"], tmp_path, monkeypatch)
+    log_file = tmp_path / "cache" / "action_log.jsonl"
+    entry = json.loads(log_file.read_text(encoding="utf-8").strip())
+    assert entry["run_id"] == "run-xyz"
+    assert entry["action"] == "telegram_send"
 
 
 # --- cmd_run ---

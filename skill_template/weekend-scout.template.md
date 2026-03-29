@@ -312,10 +312,11 @@ python -m weekend_scout format-message \
   --saturday "<saturday>" --sunday "<sunday>" \
   --city-events '<top_3_city_events_json>' \
   --trips '<trip_options_json>' \
+  --run-id "<run_id>" \
   [--low-results true]   # include this flag when total_events < 3
 # → {"written": "<path>"}  — use this path for send:
 
-python -m weekend_scout send --file "<path from written>"
+python -m weekend_scout send --file "<path from written>" --run-id "<run_id>"
 ```
 
 **Always display the message to the user** — read the written file and show its contents

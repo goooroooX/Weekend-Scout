@@ -228,7 +228,8 @@ def cmd_send(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     success = send_telegram(config, message)
-    log_action(config, "telegram_send", detail={"success": success, "char_count": len(message)})
+    log_action(config, "telegram_send", run_id=args.run_id,
+               detail={"success": success, "char_count": len(message)})
     print(json.dumps({"sent": success}))
 
 
@@ -320,7 +321,8 @@ def cmd_format_message(args: argparse.Namespace) -> None:
     )
     output_path = Path(args.output) if args.output else get_cache_dir(config) / "scout_message.txt"
     output_path.write_text(msg, encoding="utf-8")
-    log_action(config, "message_formatted", target_weekend=args.saturday,
+    log_action(config, "message_formatted", run_id=args.run_id,
+               target_weekend=args.saturday,
                detail={"city_events": len(city_events), "trips": len(trips),
                        "char_count": len(msg)})
     print(json.dumps({"written": str(output_path)}))
@@ -433,6 +435,8 @@ def build_parser() -> argparse.ArgumentParser:
     grp = p_send.add_mutually_exclusive_group(required=True)
     grp.add_argument("--message", help="Message text")
     grp.add_argument("--file", help="Path to file containing message text")
+    p_send.add_argument("--run-id", default=None, dest="run_id",
+                        help="Run identifier from init")
 
     # cache-query
     p_cq = sub.add_parser("cache-query", help="Query cached events for a weekend date")
@@ -471,6 +475,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_fm.add_argument("--output", default=None, help="Output file path (default: app cache dir)")
     p_fm.add_argument("--low-results", default=None, dest="low_results",
                       help="Pass 'true' to append a budget-increase hint to the message")
+    p_fm.add_argument("--run-id", default=None, dest="run_id",
+                      help="Run identifier from init")
 
     # install-skill
     p_is = sub.add_parser(
