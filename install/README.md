@@ -30,7 +30,7 @@ at `.claude/skills/weekend-scout/SKILL.md`. Claude Code discovers it automatical
 ### Global install
 
 ```bash
-pip install -e .
+pip install .
 python install/install_skill.py --platform claude-code
 ```
 
@@ -56,7 +56,7 @@ command palette (or it loads immediately).
 ### Install
 
 ```bash
-pip install -e .
+pip install .
 python install/install_skill.py --platform codex
 ```
 
@@ -82,7 +82,7 @@ $weekend-scout Berlin 150
 ### Install
 
 ```bash
-pip install -e .
+pip install .
 python install/install_skill.py --platform openclaw
 ```
 
@@ -119,10 +119,20 @@ For Codex, also copy `agents/openai.yaml` into the destination directory.
 
 ## Updating
 
+**Users** — re-clone and re-run the installer (same as initial install):
+
+```bash
+git clone https://github.com/goooroooX/Weekend-Scout.git
+cd Weekend-Scout
+python install/install_skill.py --with-pip
+```
+
+**Developers** — pull and reinstall:
+
 ```bash
 git pull
-python skill_template/generate.py   # regenerate from updated template
-python install/install_skill.py     # reinstall
+pip install -e ".[dev]"
+python skill_template/generate.py   # only if template was changed
 ```
 
 ---

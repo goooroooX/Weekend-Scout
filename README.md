@@ -39,8 +39,8 @@ cd Weekend-Scout
 pip install -e ".[dev]"
 ```
 
-The skill loads from `.claude/skills/` inside the repo (project-scoped).
-Do **not** delete this folder — editable mode links to it.
+Claude Code auto-discovers the skill at `.claude/skills/weekend-scout/` as a
+project-scoped skill. Do not delete that folder.
 
 ### Updating
 
@@ -170,6 +170,9 @@ Config lives at:
 - **Linux/Mac:** `~/.config/weekend-scout/config.yaml`
 - **Windows:** `%LOCALAPPDATA%\weekend-scout\config.yaml`
 
+Cache files (database, city lists, logs, GeoNames data) live in the `cache/`
+subdirectory alongside `config.yaml`.
+
 | Key | Default | Description |
 |-----|---------|-------------|
 | `home_city` | `""` | Home city — set automatically on first run |
@@ -177,6 +180,9 @@ Config lives at:
 | `home_coordinates` | `{lat:0, lon:0}` | Lat/lon — auto-set from GeoNames |
 | `radius_km` | `150` | Search radius in km |
 | `search_language` | `"en"` | Language code for queries |
+| `max_searches` | `30` | Max WebSearch calls per run |
+| `max_fetches` | `30` | Max WebFetch calls per run |
+| `max_trip_options` | `10` | Max road trip options to include |
 | `telegram_bot_token` | `""` | Telegram bot token |
 | `telegram_chat_id` | `""` | Telegram chat/group/channel ID |
 
@@ -224,12 +230,6 @@ git clone https://github.com/goooroooX/Weekend-Scout.git
 cd Weekend-Scout
 pip install -e ".[dev]"       # editable install with test deps
 python -m pytest tests/ -v
-```
-
-Or use the installer with the `--dev` flag:
-
-```bash
-python install/install_skill.py --with-pip --dev
 ```
 
 ## Design

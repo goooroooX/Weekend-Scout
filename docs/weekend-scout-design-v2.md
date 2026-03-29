@@ -147,7 +147,7 @@ NL, SE, NO, DK, FI, RO, HR, BG, RS, GR, TR, RU.
 **Data source:** GeoNames `cities15000.txt` -- a free downloadable file
 containing all cities worldwide with population above 15,000.
 
-- **Storage:** Downloaded to `<config_dir>/geonames/cities15000.txt` (~24 MB)
+- **Storage:** Downloaded to `<config_dir>/cache/geonames/cities15000.txt` (~24 MB)
 - **Auto-download:** `ensure_geonames()` downloads automatically on first use
   if the file is missing. The `download-data` CLI command allows explicit
   pre-download.
@@ -171,7 +171,7 @@ containing all cities worldwide with population above 15,000.
    | 2    | 30,000-99,999  | Searched individually if budget allows        |
    | 3    | 15,000-29,999  | Covered by regional queries only              |
 
-5. Caches the result as `<config_dir>/cities_<home>_<radius>.json`.
+5. Caches the result as `<config_dir>/cache/cities_<home>_<radius>.json`.
    Invalidated when home_city, coordinates, or radius change.
 
 **Region mapping (`regions.py`):**
@@ -231,7 +231,7 @@ upcoming Saturday and Sunday. If today is Saturday, it skips to next week.
 
 ### 4.4 Event Cache (`cache.py`)
 
-**Database:** SQLite at `<config_dir>/cache.db`.
+**Database:** SQLite at `<config_dir>/cache/cache.db`.
 
 **Events table:**
 
@@ -279,7 +279,7 @@ CREATE TABLE search_log (
 ```
 
 **Action log:** `log_action()` appends structured JSONL entries to
-`<config_dir>/action_log.jsonl` with fields: timestamp, action, phase,
+`<config_dir>/cache/action_log.jsonl` with fields: timestamp, action, phase,
 run_id, source, target_weekend, detail. Used for debugging agent behavior
 and analyzing search efficiency.
 

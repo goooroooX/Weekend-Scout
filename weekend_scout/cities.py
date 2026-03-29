@@ -384,9 +384,9 @@ QUERY_TEMPLATES: dict[str, dict[str, Any]] = {
 }
 
 def _geonames_dir() -> Path:
-    """Return the directory for GeoNames data files (platformdirs cache dir)."""
+    """Return the directory for GeoNames data files."""
     from weekend_scout.config import get_config_dir
-    d = get_config_dir() / "geonames"
+    d = get_config_dir() / "cache" / "geonames"
     d.mkdir(parents=True, exist_ok=True)
     return d
 

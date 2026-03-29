@@ -29,7 +29,7 @@ When implementation differs from docs/weekend-scout-design-v2.md:
 - Cross-platform: use pathlib.Path everywhere, never hardcode Unix or Windows paths
 - Config directory: use platformdirs library for cross-platform config path
   (~/.config/weekend-scout on Linux/Mac, AppData\Local\weekend-scout on Windows)
-- GeoNames data: downloaded automatically to `<config_dir>/geonames/cities15000.txt`
+- GeoNames data: downloaded automatically to `<config_dir>/cache/geonames/cities15000.txt`
   (not the project data/ directory, which no longer exists)
 - Region mapping: `weekend_scout/regions.py` Python module (not data/regions.json)
 - Minimal dependencies: only pyyaml, requests, platformdirs

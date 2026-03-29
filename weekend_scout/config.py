@@ -133,19 +133,46 @@ def get_config_path() -> Path:
 
 
 def get_cache_dir(config: dict[str, Any]) -> Path:
-    """Return the directory used for cache files (DB, city list JSON).
+    """Return the directory used for cache files (DB, city list JSON, logs).
 
-    Uses the same base directory as the config file. Creates it if needed.
+    Cache lives at <config_dir>/cache/ — separate from config.yaml.
+    On first call after upgrade, migrates legacy files from <config_dir>/ root.
 
     Args:
-        config: Loaded configuration dictionary (unused currently, reserved
-                for future per-profile cache directories).
+        config: Loaded configuration dictionary (unused; reserved for
+                future per-profile cache directories).
 
     Returns:
-        Path to the cache directory.
+        Path to the cache directory (created if absent).
     """
-    cache_dir = get_config_dir()
+    if "_cache_dir" in config:
+        # Test-only override
+        cache_dir = Path(config["_cache_dir"])
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        return cache_dir
+
+    import shutil as _shutil
+
+    base = get_config_dir()
+    cache_dir = base / "cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
+
+    # One-time migration from legacy layout (files lived in base dir)
+    _MIGRATE_FILES = ["cache.db", "action_log.jsonl", "scout_message.txt"]
+    for fname in _MIGRATE_FILES:
+        old = base / fname
+        if old.exists() and not (cache_dir / fname).exists():
+            _shutil.move(str(old), str(cache_dir / fname))
+    for old_json in base.glob("cities_*.json"):
+        dest = cache_dir / old_json.name
+        if not dest.exists():
+            _shutil.move(str(old_json), str(dest))
+    # Migrate geonames directory
+    old_geonames = base / "geonames"
+    new_geonames = cache_dir / "geonames"
+    if old_geonames.exists() and not new_geonames.exists():
+        _shutil.move(str(old_geonames), str(new_geonames))
+
     return cache_dir
 
 
