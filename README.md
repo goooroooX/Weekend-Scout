@@ -25,12 +25,6 @@ cd ..
 The package is now installed system-wide. You can safely delete the
 `Weekend-Scout/` folder after installation.
 
-If you already have the package installed and only need to update the skill file:
-
-```bash
-python -m weekend_scout install-skill
-```
-
 ### For developers
 
 ```bash
@@ -42,7 +36,28 @@ pip install -e ".[dev]"
 Claude Code auto-discovers the skill at `.claude/skills/weekend-scout/` as a
 project-scoped skill. Do not delete that folder.
 
-### Updating
+See [install/README.md](install/README.md) for platform-specific install details.
+
+## Quick Start
+
+Just invoke the skill — no manual configuration needed:
+
+```
+/weekend-scout            # Claude Code
+$weekend-scout            # Codex
+weekend-scout             # OpenClaw
+```
+
+On first run the skill will ask for your city and search radius, look up
+the coordinates automatically, and save everything to config. Then it
+searches the web for outdoor events happening next weekend near you,
+scores and ranks them, builds road trip options for nearby cities, and
+presents the digest right in chat.
+
+Once that works, you can optionally [set up Telegram](#telegram-setup)
+to receive the digest as a message instead of reading it in chat.
+
+## Updating
 
 ```bash
 # Users: re-clone and re-run the installer
@@ -55,7 +70,7 @@ git pull
 pip install -e ".[dev]"
 ```
 
-### Uninstalling
+## Uninstalling
 
 ```bash
 pip uninstall weekend-scout
@@ -65,33 +80,6 @@ Then delete the skill folder for your platform:
 - Claude Code: `~/.claude/skills/weekend-scout/`
 - Codex: `~/.codex/skills/weekend-scout/`
 - OpenClaw: `~/.openclaw/skills/weekend-scout/`
-
-### Quick Start (after install)
-
-```
-/weekend-scout            # Claude Code
-$weekend-scout            # Codex
-weekend-scout             # OpenClaw
-```
-
-See [install/README.md](install/README.md) for the full installation guide.
-
-## Quick Start
-
-Just invoke the skill — no manual configuration needed:
-
-```
-/weekend-scout
-```
-
-On first run the skill will ask for your city and search radius, look up
-the coordinates automatically, and save everything to config. Then it
-searches the web for outdoor events happening next weekend near you,
-scores and ranks them, builds road trip options for nearby cities, and
-presents the digest right in chat.
-
-Once that works, you can optionally [set up Telegram](#telegram-setup)
-to receive the digest as a message instead of reading it in chat.
 
 ## How It Works
 
