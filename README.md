@@ -234,7 +234,7 @@ python install/install_skill.py --with-pip --dev
 
 ## Design
 
-See [docs/weekend-scout-mvp-design.md](docs/weekend-scout-mvp-design.md)
+See [docs/weekend-scout-design-v2.md](docs/weekend-scout-design-v2.md)
 for architecture and design decisions.
 
 ## License

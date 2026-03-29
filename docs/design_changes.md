@@ -1,6 +1,6 @@
 # Weekend Scout -- Design Changes Log
 
-Changes from the original design (docs/weekend-scout-mvp-design.md).
+Changes from the original design (docs/weekend-scout-mvp-design.md), now superseded by docs/weekend-scout-design-v2.md.
 
 | Date | Design Section | Change | Reason |
 |------|---------------|--------|--------|

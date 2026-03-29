@@ -5,7 +5,7 @@ A multi-platform Agent Skill + Python CLI that discovers weekend outdoor events 
 user's city and sends curated trip options to Telegram.
 
 ## Key documents
-- **Design:** docs/weekend-scout-mvp-design.md (the source of truth for architecture)
+- **Design:** docs/weekend-scout-design-v2.md (the source of truth for architecture)
 - **Backlog:** docs/backlog.md (track all features, update status when implementing)
 - **Design changes:** docs/design_changes.md (log ANY deviation from the design doc)
 - **Platform reference:** docs/platform-skill-reference.md
@@ -20,7 +20,7 @@ When you start working on any feature or task:
 4. If you discover new tasks during implementation, add them to the backlog
 
 ### Design change tracking (MANDATORY)
-When implementation differs from docs/weekend-scout-mvp-design.md:
+When implementation differs from docs/weekend-scout-design-v2.md:
 1. Add an entry to docs/design_changes.md with date, section, what changed, and why
 2. Keep entries concise but specific
 
