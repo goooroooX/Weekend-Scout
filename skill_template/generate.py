@@ -42,8 +42,19 @@ def load_config() -> dict:
 
 
 def load_template() -> str:
-    """Load the template file."""
-    return TEMPLATE_FILE.read_text(encoding="utf-8")
+    """Load the template file and reject common encoding corruption."""
+    template_bytes = TEMPLATE_FILE.read_bytes()
+    if template_bytes.startswith(b"\xef\xbb\xbf"):
+        raise ValueError(f"{TEMPLATE_FILE} must not start with a UTF-8 BOM")
+
+    template = template_bytes.decode("utf-8")
+    mojibake_markers = ("\u0432\u0402", "\u0432\u2020", "\u0413\u2014", "\u0415\u0403")
+    found_markers = [marker for marker in mojibake_markers if marker in template]
+    if found_markers:
+        markers = ", ".join(repr(marker) for marker in found_markers)
+        raise ValueError(f"{TEMPLATE_FILE} contains mojibake markers: {markers}")
+
+    return template
 
 
 def process_directives(template: str, platform_id: str) -> str:

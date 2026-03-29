@@ -344,15 +344,24 @@ def cmd_run(args: argparse.Namespace) -> None:
     }))
 
 
-_INSTALL_TARGETS: dict[str, "Path"] = {}
-
-
 def _get_install_targets() -> dict[str, "Path"]:
     from pathlib import Path as _P
     return {
         "claude-code": _P.home() / ".claude"   / "skills" / "weekend-scout",
-        "codex":       _P.home() / ".codex"    / "skills" / "weekend-scout",
+        "codex":       _P.home() / ".agents"   / "skills" / "weekend-scout",
         "openclaw":    _P.home() / ".openclaw" / "skills" / "weekend-scout",
+    }
+
+
+def _get_platform_detection_dirs() -> dict[str, tuple["Path", ...]]:
+    """Return directories used only to detect whether a platform is present."""
+    from pathlib import Path as _P
+    return {
+        "claude-code": (_P.home() / ".claude",),
+        # Codex installs skills into ~/.agents/skills, but installations may expose
+        # either ~/.codex or ~/.agents as a platform marker on disk.
+        "codex":       (_P.home() / ".codex", _P.home() / ".agents"),
+        "openclaw":    (_P.home() / ".openclaw",),
     }
 
 
@@ -363,10 +372,10 @@ def _resolve_platforms(platform_arg: str | None) -> list[str]:
         return list(targets.keys())
     if platform_arg:
         return [platform_arg]
-    # Auto-detect: check which platform base dirs exist (e.g. ~/.claude/)
+    platform_detection_dirs = _get_platform_detection_dirs()
     detected = [
-        name for name, target in targets.items()
-        if target.parent.parent.exists()
+        name for name, base_dirs in platform_detection_dirs.items()
+        if any(base_dir.exists() for base_dir in base_dirs)
     ]
     return detected if detected else ["claude-code"]
 

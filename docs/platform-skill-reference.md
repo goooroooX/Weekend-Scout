@@ -46,7 +46,7 @@ SKILL.md conventions.
 
 ### Skill discovery paths
 - Project-scoped: `.agents/skills/<name>/SKILL.md` (scanned from CWD up to repo root)
-- User-scoped: `~/.codex/skills/<name>/SKILL.md` (also `~/.agents/skills/`)
+- User-scoped: `~/.agents/skills/<name>/SKILL.md`
 - Admin: `/etc/codex/skills/`
 - System: bundled skills
 
@@ -116,24 +116,12 @@ dependencies:
 |-------|----------|-------------|
 | `name` | Yes | Skill identifier. |
 | `description` | Yes | Trigger text. |
-| `metadata` | No | Nested block with OpenClaw-specific config. |
+| `metadata` | No | Single-line JSON object with OpenClaw-specific config. |
 
 ### OpenClaw metadata block
 
 ```yaml
-metadata:
-  openclaw:
-    emoji: "icon"
-    requires:
-      bins: ["python"]           # required binaries
-      config: ["configKey"]      # required config entries
-    install:
-      - id: "pip"
-        kind: "pip"
-        package: "weekend-scout"
-        bins: ["weekend-scout"]
-        label: "Install Weekend Scout (pip)"
-    preferred_model: "gemini-3-flash"
+metadata: {"openclaw":{"requires":{"bins":["python"]}}}
 ```
 
 ### Invocation
@@ -149,9 +137,11 @@ metadata:
 ### Notes
 - Follows AgentSkills spec for layout/intent
 - Parser supports single-line frontmatter keys only
+- `metadata` should be a single-line JSON object
 - `{baseDir}` placeholder available in instructions to reference skill folder path
 - Unknown frontmatter fields are ignored
 - Plugins can ship skills via `openclaw.plugin.json`
+- In this repo, `.openclaw/skills/` is a generated packaging/staging artifact, not the canonical workspace discovery path
 
 ---
 
@@ -168,7 +158,7 @@ metadata:
 | Feature | Claude Code | Codex | OpenClaw |
 |---------|------------|-------|----------|
 | Project skill dir | `.claude/skills/` | `.agents/skills/` | `<workspace>/skills/` |
-| Global skill dir | `~/.claude/skills/` | `~/.codex/skills/` | `~/.openclaw/skills/` |
+| Global skill dir | `~/.claude/skills/` | `~/.agents/skills/` | `~/.openclaw/skills/` |
 | Disable auto-invoke | `disable-model-invocation: true` | `agents/openai.yaml` policy | Config-level |
 | Per-skill model | `model: haiku` (enforced) | Not supported (advisory only) | Not supported (advisory only) |
 | Explicit invoke | `/skill-name` | `$skill-name` | Depends on channel |

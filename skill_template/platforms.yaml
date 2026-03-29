@@ -11,7 +11,7 @@ platforms:
       INVOKE_CMD: "/weekend-scout"
 
   codex:
-    output_dir: ".codex/skills/weekend-scout"
+    output_dir: ".agents/skills/weekend-scout"
     vars:
       MODEL: "gpt-5.4-mini"
       PLATFORM_NAME: "Codex"

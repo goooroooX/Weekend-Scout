@@ -24,22 +24,24 @@ from pathlib import Path
 # Source directories inside the repo (relative to repo root)
 SOURCE_DIRS: dict[str, str] = {
     "claude-code": ".claude/skills/weekend-scout",
-    "codex":       ".codex/skills/weekend-scout",
+    "codex":       ".agents/skills/weekend-scout",
     "openclaw":    ".openclaw/skills/weekend-scout",
 }
 
 # User-scoped global installation directories
 INSTALL_TARGETS: dict[str, Path] = {
     "claude-code": Path.home() / ".claude"   / "skills" / "weekend-scout",
-    "codex":       Path.home() / ".codex"    / "skills" / "weekend-scout",
+    "codex":       Path.home() / ".agents"   / "skills" / "weekend-scout",
     "openclaw":    Path.home() / ".openclaw" / "skills" / "weekend-scout",
 }
 
-# Parent dirs used for auto-detection (platform is installed if this dir exists)
-PLATFORM_HOME_DIRS: dict[str, Path] = {
-    "claude-code": Path.home() / ".claude",
-    "codex":       Path.home() / ".codex",
-    "openclaw":    Path.home() / ".openclaw",
+# Directories used only for platform auto-detection.
+PLATFORM_DETECTION_DIRS: dict[str, tuple[Path, ...]] = {
+    "claude-code": (Path.home() / ".claude",),
+    # Codex installs skills into ~/.agents/skills, but installations may expose
+    # either ~/.codex or ~/.agents as a platform marker on disk.
+    "codex":       (Path.home() / ".codex", Path.home() / ".agents"),
+    "openclaw":    (Path.home() / ".openclaw",),
 }
 
 INVOKE_CMDS: dict[str, str] = {
@@ -50,12 +52,12 @@ INVOKE_CMDS: dict[str, str] = {
 
 
 def detect_platforms() -> list[str]:
-    """Auto-detect which platforms are installed based on home dirs.
+    """Auto-detect which platforms are installed based on detection dirs.
 
     Returns:
         List of platform IDs to install to. Falls back to ['claude-code'] if none detected.
     """
-    detected = [p for p, d in PLATFORM_HOME_DIRS.items() if d.exists()]
+    detected = [p for p, dirs in PLATFORM_DETECTION_DIRS.items() if any(d.exists() for d in dirs)]
     if not detected:
         print("No platform home directories found — defaulting to claude-code.")
         return ["claude-code"]

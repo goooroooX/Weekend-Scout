@@ -3,18 +3,7 @@ name: weekend-scout
 description: >
   Scout outdoor events, festivals, and fairs happening next weekend
   in your city and nearby cities. Builds trip options and posts to Telegram.
-metadata:
-  openclaw:
-    emoji: "🏕️"
-    requires:
-      bins: ["python"]
-    install:
-      - id: "pip"
-        kind: "pip"
-        package: "weekend-scout"
-        bins: ["weekend-scout"]
-        label: "Install Weekend Scout (pip)"
-    preferred_model: gemini-3-flash
+metadata: {"openclaw":{"requires":{"bins":["python"]}}}
 ---
 
 ## Weekend Scout

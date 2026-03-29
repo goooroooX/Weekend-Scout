@@ -140,3 +140,12 @@
 | 10.5 | Update CLAUDE.md | DONE (2026-03-28) | |
 | 10.6 | Update docs/design_changes.md | DONE (2026-03-28) | |
 | 10.7 | Test both install flows | DONE (2026-03-28) | Smoke-tested via manual CLI commands |
+
+## Phase 11: Skill Workflow Drift Fixes
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 11.1 | Move generated Codex repo skill from `.codex/skills/` to `.agents/skills/` | DONE (2026-03-29) | Keeps repo artifact aligned with current Codex discovery docs |
+| 11.2 | Keep `.openclaw/skills/` as generated repo artifact but document it as packaging/staging only | DONE (2026-03-29) | Supported installed OpenClaw location remains `~/.openclaw/skills/` |
+| 11.3 | Fix OpenClaw generated metadata format and remove unsupported pip installer metadata | DONE (2026-03-29) | `metadata` now single-line JSON; removed `kind: "pip"` block |
+| 11.4 | Update installers, docs, and tests for the new Codex install target | DONE (2026-03-29) | Codex now installs to `~/.agents/skills/` |

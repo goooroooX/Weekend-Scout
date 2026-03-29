@@ -15,18 +15,7 @@ metadata:
   version: %%SKILL_VERSION%%
 #@ENDIF
 #@IF openclaw
-metadata:
-  openclaw:
-    emoji: "🏕️"
-    requires:
-      bins: ["python"]
-    install:
-      - id: "pip"
-        kind: "pip"
-        package: "weekend-scout"
-        bins: ["weekend-scout"]
-        label: "Install Weekend Scout (pip)"
-    preferred_model: %%MODEL%%
+metadata: {"openclaw":{"requires":{"bins":["python"]}}}
 #@ENDIF
 ---
 

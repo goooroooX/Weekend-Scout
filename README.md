@@ -78,7 +78,7 @@ pip uninstall weekend-scout
 
 Then delete the skill folder for your platform:
 - Claude Code: `~/.claude/skills/weekend-scout/`
-- Codex: `~/.codex/skills/weekend-scout/`
+- Codex: `~/.agents/skills/weekend-scout/`
 - OpenClaw: `~/.openclaw/skills/weekend-scout/`
 
 ## How It Works
@@ -215,8 +215,8 @@ Weekend-Scout/
     weekend_scout/           Python package (CLI + data layer)
     skill_template/          Skill template + generator (source of truth)
     .claude/skills/          Generated skill for Claude Code
-    .codex/skills/           Generated skill for Codex
-    .openclaw/skills/        Generated skill for OpenClaw
+    .agents/skills/          Generated skill for Codex
+    .openclaw/skills/        Generated skill for OpenClaw packaging/staging
     install/                 Cross-platform installer
     tests/                   Test suite
     docs/                    Design docs, backlog, references

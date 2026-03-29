@@ -60,7 +60,7 @@ pip install .
 python install/install_skill.py --platform codex
 ```
 
-Files installed to `~/.codex/skills/weekend-scout/`:
+Files installed to `~/.agents/skills/weekend-scout/`:
 - `SKILL.md` — skill instructions
 - `agents/openai.yaml` — Codex-specific metadata (disables implicit invocation)
 
@@ -110,10 +110,12 @@ If you prefer to install manually, copy the SKILL.md from the appropriate direct
 | Platform   | Source in repo                           | Destination                          |
 |------------|------------------------------------------|--------------------------------------|
 | Claude Code | `.claude/skills/weekend-scout/`         | `~/.claude/skills/weekend-scout/`    |
-| Codex       | `.codex/skills/weekend-scout/`          | `~/.codex/skills/weekend-scout/`     |
+| Codex       | `.agents/skills/weekend-scout/`         | `~/.agents/skills/weekend-scout/`    |
 | OpenClaw    | `.openclaw/skills/weekend-scout/`       | `~/.openclaw/skills/weekend-scout/`  |
 
 For Codex, also copy `agents/openai.yaml` into the destination directory.
+The OpenClaw repo copy is a generated artifact for packaging/staging in this repo; the
+supported installed location remains `~/.openclaw/skills/weekend-scout/`.
 
 ---
 
@@ -146,7 +148,7 @@ Remove the skill directory:
 rm -rf ~/.claude/skills/weekend-scout
 
 # Codex
-rm -rf ~/.codex/skills/weekend-scout
+rm -rf ~/.agents/skills/weekend-scout
 
 # OpenClaw
 rm -rf ~/.openclaw/skills/weekend-scout

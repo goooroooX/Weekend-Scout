@@ -366,7 +366,7 @@ template generates platform-specific SKILL.md files for three platforms:
 | Platform    | Project skills dir          | Global skills dir               | Invoke command     |
 |-------------|-----------------------------|----------------------------------|--------------------|
 | Claude Code | `.claude/skills/<name>/`    | `~/.claude/skills/<name>/`      | `/weekend-scout`   |
-| Codex       | `.agents/skills/<name>/`    | `~/.codex/skills/<name>/`       | `$weekend-scout`   |
+| Codex       | `.agents/skills/<name>/`    | `~/.agents/skills/<name>/`      | `$weekend-scout`   |
 | OpenClaw    | `<workspace>/skills/<name>/`| `~/.openclaw/skills/<name>/`    | `weekend-scout`    |
 
 **Template system (`skill_template/`):**

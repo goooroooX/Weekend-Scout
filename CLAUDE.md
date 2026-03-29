@@ -48,7 +48,7 @@ When implementation differs from docs/weekend-scout-design-v2.md:
 - After editing the template, regenerate with: `python skill_template/generate.py`
 - Generated skill files live in:
   - `.claude/skills/weekend-scout/SKILL.md` (Claude Code)
-  - `.codex/skills/weekend-scout/SKILL.md` (Codex)
+  - `.agents/skills/weekend-scout/SKILL.md` (Codex)
   - `.openclaw/skills/weekend-scout/SKILL.md` (OpenClaw)
 - Do NOT edit the generated SKILL.md files directly — edit the template
 - Claude Code skill uses `disable-model-invocation: true` (user-triggered only via /weekend-scout)
