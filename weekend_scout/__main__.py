@@ -167,6 +167,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         "target_weekend": target_weekend,
         "max_searches": config.get("max_searches", 30),
         "max_fetches": config.get("max_fetches", 30),
+        "exclude_served": config.get("exclude_served", False),
     }
     if city_geocoded is not None:
         config_block["city_geocoded"] = city_geocoded

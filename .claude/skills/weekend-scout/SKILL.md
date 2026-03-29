@@ -85,8 +85,9 @@ tier2        = output.cities.tier2                     (medium-population nearby
 tier3        = output.cities.tier3                     (smallest nearby cities)
 cached       = output.cached_events                    (already in cache — skip re-discovering)
 done_q       = output.searches_this_week               (queries already run this week — skip)
-run_id       = output.run_id                           (pass to all log-search and log-action calls)
-qvars        = output.suggested_queries.vars           (substitution variables for templates)
+run_id         = output.run_id                           (pass to all log-search and log-action calls)
+exclude_served = output.config.exclude_served           (bool — if true, cached excludes already-sent events)
+qvars          = output.suggested_queries.vars           (substitution variables for templates)
 broad_q      = output.suggested_queries.broad          (4 templates — fill {placeholders} from qvars)
 tgt_tmpl     = output.suggested_queries.targeted_template  ({city} and {date} are placeholders)
 ```

@@ -207,13 +207,17 @@ def query_events(
         datetime.date.fromisoformat(saturday) + datetime.timedelta(days=1)
     ).isoformat()
 
+    exclude_served = config.get("exclude_served", False)
+    served_clause = "AND served = 0" if exclude_served else ""
+
     with get_connection(config) as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT * FROM events
             WHERE start_date <= ?
               AND (end_date IS NULL OR end_date >= ?)
               AND canceled = 0
+              {served_clause}
             ORDER BY start_date, city
             """,
             (sunday, saturday),

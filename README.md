@@ -126,6 +126,13 @@ python -m weekend_scout config telegram_bot_token "YOUR_BOT_TOKEN"
 python -m weekend_scout config telegram_chat_id "YOUR_CHAT_ID"
 ```
 
+If you plan to run `/weekend-scout` more than once in the same week and want each
+run to show only new events (excluding what was already sent), enable:
+
+```bash
+python -m weekend_scout config exclude_served true
+```
+
 ## Usage
 
 ### Via skill
@@ -188,6 +195,7 @@ subdirectory alongside `config.yaml`.
 | `max_searches` | `30` | Max WebSearch calls per run |
 | `max_fetches` | `30` | Max WebFetch calls per run |
 | `max_trip_options` | `10` | Max road trip options to include |
+| `exclude_served` | `false` | Skip events already sent to Telegram in previous runs |
 | `telegram_bot_token` | `""` | Telegram bot token |
 | `telegram_chat_id` | `""` | Telegram chat/group/channel ID |
 

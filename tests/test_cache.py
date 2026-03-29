@@ -155,6 +155,25 @@ def test_query_events_excludes_other_weekends(cfg):
     assert result == []
 
 
+def test_query_events_exclude_served_filters_served(cfg):
+    from weekend_scout.cache import save_events, query_events, get_connection
+    save_events(cfg, [_event(event_name="Old", start_date="2026-04-04")])
+    with get_connection(cfg) as conn:
+        conn.execute("UPDATE events SET served = 1")
+    cfg_excl = dict(cfg, exclude_served=True)
+    result = query_events(cfg_excl, "2026-04-04")
+    assert result == []
+
+
+def test_query_events_exclude_served_false_includes_served(cfg):
+    from weekend_scout.cache import save_events, query_events, get_connection
+    save_events(cfg, [_event(event_name="Old", start_date="2026-04-04")])
+    with get_connection(cfg) as conn:
+        conn.execute("UPDATE events SET served = 1")
+    result = query_events(cfg, "2026-04-04")  # default False
+    assert len(result) == 1
+
+
 def test_query_events_excludes_canceled(cfg):
     from weekend_scout.cache import save_events, query_events, get_connection
     save_events(cfg, [_event(start_date="2026-04-04")])

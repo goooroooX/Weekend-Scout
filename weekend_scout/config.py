@@ -103,6 +103,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "run_time": "18:00",
     "max_searches": 30,
     "max_fetches": 30,
+    "exclude_served": False,
 }
 
 
