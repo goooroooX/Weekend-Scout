@@ -76,6 +76,23 @@ weekend-scout             # OpenClaw
 
 See [install/README.md](install/README.md) for the full installation guide.
 
+## Quick Start
+
+Just invoke the skill — no manual configuration needed:
+
+```
+/weekend-scout
+```
+
+On first run the skill will ask for your city and search radius, look up
+the coordinates automatically, and save everything to config. Then it
+searches the web for outdoor events happening next weekend near you,
+scores and ranks them, builds road trip options for nearby cities, and
+presents the digest right in chat.
+
+Once that works, you can optionally [set up Telegram](#telegram-setup)
+to receive the digest as a message instead of reading it in chat.
+
 ## How It Works
 
 Weekend Scout has two parts:
