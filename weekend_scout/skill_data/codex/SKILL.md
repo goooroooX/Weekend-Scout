@@ -120,6 +120,10 @@ Phase C  (per-city)     : up to 2 searches + 1 fetch per uncovered tier1 city
 Phase D  (verification) : up to 5 fetches (reserve capacity before Phase C)
 ```
 
+**Event collection:** Maintain a running list of discovered events throughout
+all phases. Do **not** call `save` during phases — call it once at the end of
+Step 2 with the complete list.
+
 **Log pattern** — call after every search or aggregator fetch:
 ```bash
 python -m weekend_scout log-search \
@@ -156,7 +160,7 @@ For each template in `broad_q`: fill it → `query = template.format(**qvars)`.
 Skip if `query` is already in `done_q`. Run WebSearch(query).
 
 After each search, examine results:
-- Specific event title (name + city + date) → record it immediately
+- Specific event title (name + city + date) → add it to your running list
 - Aggregator URL listing many events → queue for Phase B
 - Irrelevant (museums, indoor, wrong dates) → skip
 
