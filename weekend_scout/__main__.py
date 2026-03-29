@@ -312,6 +312,8 @@ def cmd_format_message(args: argparse.Namespace) -> None:
     city_events = json.loads(args.city_events)
     trips = json.loads(args.trips)
     low_results = args.low_results.lower() in ("true", "1", "yes") if args.low_results else False
+    hint_searches = max(50, config.get("max_searches", 30) + 20)
+    hint_fetches  = max(50, config.get("max_fetches",  30) + 20)
     msg = format_scout_message(
         config.get("home_city", ""),
         args.saturday,
@@ -319,6 +321,8 @@ def cmd_format_message(args: argparse.Namespace) -> None:
         city_events,
         trips,
         low_results_hint=low_results,
+        hint_max_searches=hint_searches,
+        hint_max_fetches=hint_fetches,
     )
     output_path = Path(args.output) if args.output else get_cache_dir(config) / "scout_message.txt"
     output_path.write_text(msg, encoding="utf-8")

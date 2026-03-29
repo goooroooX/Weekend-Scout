@@ -13,6 +13,7 @@ from __future__ import annotations
 import datetime
 import json
 import sys
+import time
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,7 @@ import requests
 
 GEONAMES_ZIP_URL = "https://download.geonames.org/export/dump/cities15000.zip"
 GEONAMES_FILENAME = "cities15000.txt"
+_RETRY_DELAYS: tuple[int, ...] = (5, 15)  # seconds between download attempts
 
 # Month names for date localisation (Polish uses genitive forms)
 MONTHS: dict[str, list[str]] = {
@@ -416,12 +418,36 @@ def download_geonames(force: bool = False) -> Path:
 
     zip_path = geonames_dir / "cities15000.zip"
 
-    print(f"Downloading {GEONAMES_ZIP_URL} ...", file=sys.stderr)
-    response = requests.get(GEONAMES_ZIP_URL, stream=True, timeout=120)
-    response.raise_for_status()
-    with zip_path.open("wb") as f:
-        for chunk in response.iter_content(chunk_size=65536):
-            f.write(chunk)
+    last_exc: Exception | None = None
+    for attempt in range(1, len(_RETRY_DELAYS) + 2):
+        try:
+            print(f"Downloading {GEONAMES_ZIP_URL} ... (attempt {attempt})",
+                  file=sys.stderr)
+            response = requests.get(GEONAMES_ZIP_URL, stream=True, timeout=120)
+            response.raise_for_status()
+            with zip_path.open("wb") as f:
+                for chunk in response.iter_content(chunk_size=65536):
+                    f.write(chunk)
+            break  # success — continue to unzip
+        except requests.RequestException as exc:
+            last_exc = exc
+            if zip_path.exists():
+                zip_path.unlink()
+            delay_idx = attempt - 1
+            if delay_idx < len(_RETRY_DELAYS):
+                delay = _RETRY_DELAYS[delay_idx]
+                print(f"  Download failed ({exc}). Retrying in {delay}s ...",
+                      file=sys.stderr)
+                time.sleep(delay)
+    else:
+        max_attempts = len(_RETRY_DELAYS) + 1
+        print(
+            f"Failed to download GeoNames data after {max_attempts} attempts.\n"
+            "Check your network connection and try again:\n"
+            "  python -m weekend_scout download-data",
+            file=sys.stderr,
+        )
+        raise RuntimeError(f"GeoNames download failed: {last_exc}") from last_exc
 
     print("Extracting ...", file=sys.stderr)
     with zipfile.ZipFile(zip_path) as zf:

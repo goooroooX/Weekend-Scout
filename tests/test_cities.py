@@ -408,3 +408,62 @@ def test_get_city_list_uses_cache(tmp_path, monkeypatch):
     assert "tier2" in result
     assert "Łódź" in result["tier1"]
     assert "Płock" in result["tier2"]
+
+
+# --- download_geonames retry ---
+
+def test_download_geonames_retries_on_network_error(tmp_path, monkeypatch):
+    import requests as req_module
+    import time
+    from weekend_scout import cities as cities_module
+    monkeypatch.setattr(cities_module, "_geonames_dir", lambda: tmp_path)
+    monkeypatch.setattr(cities_module, "_RETRY_DELAYS", (0, 0))
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+
+    call_count = 0
+
+    def fake_get(*a, **kw):
+        nonlocal call_count
+        call_count += 1
+        raise req_module.ConnectionError("network down")
+
+    monkeypatch.setattr(req_module, "get", fake_get)
+
+    with pytest.raises(RuntimeError, match="GeoNames download failed"):
+        cities_module.download_geonames(force=True)
+
+    assert call_count == 3
+    assert not (tmp_path / "cities15000.zip").exists()
+
+
+def test_download_geonames_succeeds_on_second_attempt(tmp_path, monkeypatch):
+    import io
+    import requests as req_module
+    import time
+    import zipfile as zf_module
+    from weekend_scout import cities as cities_module
+    monkeypatch.setattr(cities_module, "_geonames_dir", lambda: tmp_path)
+    monkeypatch.setattr(cities_module, "_RETRY_DELAYS", (0, 0))
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+
+    attempt = [0]
+
+    def fake_get(*a, **kw):
+        attempt[0] += 1
+        if attempt[0] == 1:
+            raise req_module.ConnectionError("transient")
+        buf = io.BytesIO()
+        with zf_module.ZipFile(buf, "w") as z:
+            z.writestr("cities15000.txt", "fake content")
+        buf.seek(0)
+
+        class FakeResp:
+            def raise_for_status(self): pass
+            def iter_content(self, chunk_size=None):
+                yield buf.read()
+        return FakeResp()
+
+    monkeypatch.setattr(req_module, "get", fake_get)
+    result = cities_module.download_geonames(force=True)
+    assert result.exists()
+    assert attempt[0] == 2

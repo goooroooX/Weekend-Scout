@@ -311,18 +311,20 @@ def test_format_scout_message_empty_returns_no_events():
 def test_format_scout_message_low_results_hint_normal_path():
     from weekend_scout.telegram import format_scout_message
     msg = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", [_event()], [],
-                               low_results_hint=True)
+                               low_results_hint=True,
+                               hint_max_searches=60, hint_max_fetches=60)
     assert "Only 1 event(s) found" in msg
-    assert "max_searches 50" in msg
+    assert "max_searches 60" in msg
     assert msg.index("Only 1 event") < msg.index("Scouted by Weekend Scout")
 
 
 def test_format_scout_message_low_results_hint_empty_path():
     from weekend_scout.telegram import format_scout_message
     msg = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", [], [],
-                               low_results_hint=True)
+                               low_results_hint=True,
+                               hint_max_searches=60, hint_max_fetches=60)
     assert "No events found" in msg
-    assert "max_searches 50" in msg
+    assert "max_searches 60" in msg
 
 
 def test_format_scout_message_month_boundary():

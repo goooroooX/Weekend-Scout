@@ -187,6 +187,8 @@ def format_scout_message(
     city_events: list[dict[str, Any]],
     trip_options: list[dict[str, Any]],
     low_results_hint: bool = False,
+    hint_max_searches: int = 50,
+    hint_max_fetches: int = 50,
 ) -> str:
     """Format the full Weekend Scout message as HTML.
 
@@ -219,8 +221,8 @@ def format_scout_message(
     if not city_events and not trip_options:
         hint = (
             "\n\n💡 <i>No events found. To discover more, increase your search budget:\n"
-            "python -m weekend_scout config max_searches 50\n"
-            "python -m weekend_scout config max_fetches 50</i>"
+            f"python -m weekend_scout config max_searches {hint_max_searches}\n"
+            f"python -m weekend_scout config max_fetches {hint_max_fetches}</i>"
             if low_results_hint else ""
         )
         return (
@@ -264,8 +266,8 @@ def format_scout_message(
         total = len(city_events) + len(trip_options)
         sections.append(
             f"💡 <i>Only {total} event(s) found. To discover more, increase your search budget:\n"
-            "python -m weekend_scout config max_searches 50\n"
-            "python -m weekend_scout config max_fetches 50</i>"
+            f"python -m weekend_scout config max_searches {hint_max_searches}\n"
+            f"python -m weekend_scout config max_fetches {hint_max_fetches}</i>"
         )
 
     sections.append("<i>— Scouted by Weekend Scout</i>")
