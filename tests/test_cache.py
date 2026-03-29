@@ -284,3 +284,16 @@ def test_log_search_events_discovered_field(cfg, tmp_path):
     log_file = tmp_path / "action_log.jsonl"
     entry = json.loads(log_file.read_text(encoding="utf-8").strip())
     assert entry["detail"]["events_discovered"] == 4
+
+
+def test_log_search_stores_run_id_and_events_discovered(cfg):
+    from weekend_scout.cache import log_search, get_connection
+    log_search(cfg, "query x", "2026-04-04", 5, ["Warsaw"], "broad",
+               run_id="run-123", events_discovered=7)
+    with get_connection(cfg) as conn:
+        row = conn.execute(
+            "SELECT run_id, events_discovered FROM search_log WHERE query = ?",
+            ("query x",)
+        ).fetchone()
+    assert row["run_id"] == "run-123"
+    assert row["events_discovered"] == 7

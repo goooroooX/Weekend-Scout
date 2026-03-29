@@ -274,7 +274,9 @@ CREATE TABLE search_log (
     target_weekend TEXT NOT NULL,
     result_count INTEGER DEFAULT 0,
     cities_covered TEXT,            -- JSON array
-    phase TEXT
+    phase TEXT,
+    run_id TEXT,
+    events_discovered INTEGER DEFAULT 0
 );
 ```
 

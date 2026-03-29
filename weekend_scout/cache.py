@@ -50,7 +50,9 @@ CREATE TABLE IF NOT EXISTS search_log (
     target_weekend TEXT NOT NULL,
     result_count INTEGER DEFAULT 0,
     cities_covered TEXT,
-    phase TEXT
+    phase TEXT,
+    run_id TEXT,
+    events_discovered INTEGER DEFAULT 0
 );
 """
 
@@ -247,11 +249,12 @@ def log_search(
         conn.execute(
             """
             INSERT INTO search_log
-                (query, search_date, target_weekend, result_count, cities_covered, phase)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (query, search_date, target_weekend, result_count, cities_covered,
+                 phase, run_id, events_discovered)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (query, today, target_weekend, result_count,
-             json.dumps(cities_covered), phase),
+             json.dumps(cities_covered), phase, run_id, events_discovered),
         )
     action = "fetch" if phase in ("aggregator", "verification") else "search"
     log_action(config, action, phase=phase, run_id=run_id, source="skill",
