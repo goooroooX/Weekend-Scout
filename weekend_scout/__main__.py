@@ -4,13 +4,16 @@ Provides subcommands:
   setup             -- interactive first-run setup wizard
   config            -- show current configuration
   init              -- load config + cities + cache for a scout run (JSON)
-  find-city         -- look up a city in the GeoNames database
   save              -- save discovered events to cache
   send              -- send formatted message to Telegram
   cache-query       -- query cached events for a weekend date
   log-search        -- log a completed search to the search log
+  log-action        -- append a structured action log entry
   cache-mark-served -- mark events as sent to Telegram
   format-message    -- format scout message and write to file
+  install-skill     -- copy bundled skill files to the global skills directory
+  find-city         -- look up a city in the GeoNames database
+  download-data     -- download GeoNames cities15000.zip into the cache directory
   run               -- full automated run
 """
 
