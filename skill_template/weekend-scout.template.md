@@ -222,6 +222,8 @@ Stop when budget is exhausted.
 - **Always search each uncovered city individually** — never combine multiple cities in one query.
 - Each uncovered **tier1** city: run up to 2 WebSearch calls (first broad, then specific if the
   first returns nothing useful). Optionally fetch the most promising URL found (1 WebFetch).
+  When fetching, extract: event name, date, venue, description, free entry. Skip navigation,
+  ads, and content unrelated to the target weekend.
 - Each uncovered **tier2** city: 1 WebSearch — only if `searches_used < max_searches × 0.6`.
 - Each uncovered **tier3** city: 1 WebSearch — only if `searches_used < max_searches × 0.8`.
 - A city is "covered" if it has at least one event across `cached` + Phase A+B+C results.
