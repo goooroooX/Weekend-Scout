@@ -29,7 +29,14 @@ def _event(**kwargs):
 def test_dedup_key_normalises():
     from weekend_scout.cache import dedup_key
     key = dedup_key("Jarmark Wielkanocny", "Warsaw", "2026-03-28")
-    assert key == "jarmarkwielkanocny_warsaw_2026-03-28"
+    assert key == "jarmark_wielkanocny_warsaw_2026-03-28"
+
+
+def test_dedup_key_no_space_collision():
+    from weekend_scout.cache import dedup_key
+    key_spaced = dedup_key("Dni Miasta", "Warsaw", "2026-03-28")
+    key_joined = dedup_key("DniMiasta", "Warsaw", "2026-03-28")
+    assert key_spaced != key_joined
 
 
 def test_dedup_key_strips_special_chars():

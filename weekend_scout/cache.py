@@ -108,6 +108,8 @@ def dedup_key(event_name: str, city: str, start_date: str) -> str:
     """Generate a normalised dedup key for an event.
 
     Key format: <normalised_name>_<normalised_city>_<start_date>
+    Spaces are replaced with underscores before stripping so that
+    "Dni Miasta" and "DniMiasta" produce different keys.
 
     Args:
         event_name: Raw event name.
@@ -115,10 +117,10 @@ def dedup_key(event_name: str, city: str, start_date: str) -> str:
         start_date: ISO date string.
 
     Returns:
-        Lowercase alphanumeric dedup key string.
+        Lowercase dedup key string.
     """
-    name = re.sub(r"[^\w]", "", event_name.lower())
-    city_clean = re.sub(r"[^\w]", "", city.lower())
+    name = re.sub(r"[^\w_]", "", re.sub(r"\s+", "_", event_name.lower()))
+    city_clean = re.sub(r"[^\w_]", "", re.sub(r"\s+", "_", city.lower()))
     return f"{name}_{city_clean}_{start_date}"
 
 
