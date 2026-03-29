@@ -1,3 +1,7 @@
+> **This document is superseded.**
+> The current reference is [docs/weekend-scout-design-v2.md](weekend-scout-design-v2.md).
+> This file is kept for historical context only.
+
 # Weekend Scout -- MVP Design Document
 
 **Version:** 0.2
