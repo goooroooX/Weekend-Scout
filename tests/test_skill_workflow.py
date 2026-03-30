@@ -67,6 +67,16 @@ def test_template_has_no_utf8_bom():
     assert not template_bytes.startswith(b"\xef\xbb\xbf")
 
 
+def test_claude_argument_hint_is_quoted_yaml_string():
+    template = _read_text(Path("skill_template/weekend-scout.template.md"))
+    generated = _read_text(Path(".claude/skills/weekend-scout/SKILL.md"))
+
+    assert 'argument-hint: "[city] [radius-km] [--cached-only]"' in template
+    assert 'argument-hint: "[city] [radius-km] [--cached-only]"' in generated
+    assert "argument-hint: [city] [radius-km] [--cached-only]" not in template
+    assert "argument-hint: [city] [radius-km] [--cached-only]" not in generated
+
+
 def test_template_and_generated_skill_preserve_known_unicode():
     template = _read_text(Path("skill_template/weekend-scout.template.md"))
     generated = _read_text(Path(".claude/skills/weekend-scout/SKILL.md"))

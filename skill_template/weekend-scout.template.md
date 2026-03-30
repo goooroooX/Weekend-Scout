@@ -4,7 +4,7 @@ description: >
   Scout outdoor events, festivals, and fairs happening next weekend
   in your city and nearby cities. Builds trip options and posts to Telegram.
 #@IF claude-code
-argument-hint: [city] [radius-km] [--cached-only]
+argument-hint: "[city] [radius-km] [--cached-only]"
 allowed-tools: Bash, Read, Write, WebSearch, WebFetch
 disable-model-invocation: true
 model: %%MODEL%%
