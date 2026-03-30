@@ -216,6 +216,18 @@ def _write_minimal_config(tmp_path) -> None:
     (tmp_path / "config.yaml").write_text(yaml.dump(cfg), encoding="utf-8")
 
 
+def _write_json_file(path: Path, payload, *, encoding: str = "utf-8") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding=encoding)
+    return path
+
+
+def _write_skill_tmp_payload(tmp_path: Path, name: str, payload, *, encoding: str = "utf-8") -> Path:
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return _write_json_file(cache_dir / f"_tmp_{name}.tmp", payload, encoding=encoding)
+
+
 def test_cmd_init_radius_invalid_returns_error(tmp_path, monkeypatch):
     _write_minimal_config(tmp_path)
     output = _run_cmd("init", ["--radius", "abc"], tmp_path, monkeypatch)
@@ -228,19 +240,24 @@ def test_cmd_init_returns_json(tmp_path, monkeypatch):
     # Patch get_city_list to avoid needing GeoNames file
     import weekend_scout.cities as cities_module
     monkeypatch.setattr(cities_module, "get_city_list",
-                        lambda _cfg, bypass_cache=False: {"tier1": [], "tier2": [], "tier3": []})
+                        lambda _cfg, bypass_cache=False: {"tier1": ["Potsdam|DE"], "tier2": [], "tier3": ["Szczecin|PL"]})
     output = _run_cmd("init", [], tmp_path, monkeypatch)
     result = json.loads(output)
     assert "config" in result
     assert "cities" in result
+    assert "city_meta" not in result
     sq = result["suggested_queries"]
     assert "vars" in sq
     assert "broad" in sq
-    assert "targeted_template" in sq
-    assert "targeted" not in sq  # old format removed
+    assert "targeted_by_country" in sq
+    assert "targeted_template" not in sq
     assert isinstance(sq["broad"], list)
-    assert isinstance(sq["targeted_template"], str)
-    assert "{city}" in sq["targeted_template"]
+    assert "{city}" in sq["targeted_by_country"]["DE"]["template"]
+    assert sq["targeted_by_country"]["DE"]["date"]
+    assert "{city}" in sq["targeted_by_country"]["PL"]["template"]
+    assert sq["targeted_by_country"]["PL"]["date"]
+    assert result["cities"]["tier1"] == ["Potsdam|DE"]
+    assert result["cities"]["tier3"] == ["Szczecin|PL"]
     assert result["config"]["max_searches"] == 30
     assert result["config"]["max_fetches"] == 30
 
@@ -254,6 +271,152 @@ def test_cmd_save_returns_counts(tmp_path, monkeypatch):
     output = _run_cmd("save", ["--events", events], tmp_path, monkeypatch)
     result = json.loads(output)
     assert result == {"saved": 1, "skipped": 0}
+
+
+def test_cmd_setup_accepts_json_file(tmp_path, monkeypatch):
+    payload_path = _write_json_file(
+        tmp_path / "setup.json",
+        {
+            "home_city": "Berlin",
+            "home_country": "Germany",
+            "home_coordinates": {"lat": 52.52437, "lon": 13.41053},
+            "radius_km": 150,
+        },
+    )
+    output = _run_cmd("setup", ["--json-file", str(payload_path)], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert result["saved"] is True
+
+    stored = _run_config(["home_city"], tmp_path, monkeypatch)
+    assert stored == {"home_city": "Berlin"}
+
+
+def test_cmd_setup_derives_search_language_from_home_country(tmp_path, monkeypatch):
+    payload_path = _write_json_file(
+        tmp_path / "setup.json",
+        {
+            "home_city": "Berlin",
+            "home_country": "Germany",
+            "home_coordinates": {"lat": 52.52437, "lon": 13.41053},
+            "radius_km": 150,
+        },
+    )
+    output = _run_cmd("setup", ["--json-file", str(payload_path)], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert result["saved"] is True
+
+    stored = _run_config(["search_language"], tmp_path, monkeypatch)
+    assert stored == {"search_language": "de"}
+
+
+def test_cmd_setup_keeps_explicit_search_language(tmp_path, monkeypatch):
+    payload_path = _write_json_file(
+        tmp_path / "setup.json",
+        {
+            "home_city": "Berlin",
+            "home_country": "Germany",
+            "home_coordinates": {"lat": 52.52437, "lon": 13.41053},
+            "radius_km": 150,
+            "search_language": "en",
+        },
+    )
+    output = _run_cmd("setup", ["--json-file", str(payload_path)], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert result["saved"] is True
+
+    stored = _run_config(["search_language"], tmp_path, monkeypatch)
+    assert stored == {"search_language": "en"}
+
+
+def test_cmd_setup_deletes_skill_generated_tmp_file_after_success(tmp_path, monkeypatch):
+    payload_path = _write_skill_tmp_payload(
+        tmp_path,
+        "setup",
+        {
+            "home_city": "Berlin",
+            "home_country": "Germany",
+            "home_coordinates": {"lat": 52.52437, "lon": 13.41053},
+        },
+    )
+    output = _run_cmd("setup", ["--json-file", str(payload_path)], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert result["saved"] is True
+    assert not payload_path.exists()
+
+
+def test_cmd_setup_json_file_accepts_utf8_bom(tmp_path, monkeypatch):
+    payload_path = _write_json_file(
+        tmp_path / "setup-bom.json",
+        {
+            "home_city": "Berlin",
+            "home_country": "Germany",
+            "home_coordinates": {"lat": 52.52437, "lon": 13.41053},
+        },
+        encoding="utf-8-sig",
+    )
+    output = _run_cmd("setup", ["--json-file", str(payload_path)], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert result["saved"] is True
+
+
+def test_cmd_setup_json_file_missing_returns_error(tmp_path, monkeypatch):
+    output = _run_cmd("setup", ["--json-file", str(tmp_path / "missing.json")], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert "error" in result
+    assert "--json-file not found" in result["error"]
+
+
+def test_cmd_setup_json_file_invalid_json_returns_error(tmp_path, monkeypatch):
+    payload_path = tmp_path / "bad.json"
+    payload_path.write_text("{bad", encoding="utf-8")
+    output = _run_cmd("setup", ["--json-file", str(payload_path)], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert "error" in result
+    assert "Invalid JSON in --json-file" in result["error"]
+
+
+def test_cmd_setup_keeps_skill_tmp_file_when_json_invalid(tmp_path, monkeypatch):
+    payload_path = tmp_path / "cache" / "_tmp_setup.tmp"
+    payload_path.parent.mkdir(parents=True, exist_ok=True)
+    payload_path.write_text("{bad", encoding="utf-8")
+    output = _run_cmd("setup", ["--json-file", str(payload_path)], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert "error" in result
+    assert payload_path.exists()
+
+
+def test_cmd_setup_keeps_non_tmp_file_after_success(tmp_path, monkeypatch):
+    payload_path = _write_json_file(
+        tmp_path / "cache" / "setup.json",
+        {
+            "home_city": "Berlin",
+            "home_country": "Germany",
+            "home_coordinates": {"lat": 52.52437, "lon": 13.41053},
+        },
+    )
+    output = _run_cmd("setup", ["--json-file", str(payload_path)], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert result["saved"] is True
+    assert payload_path.exists()
+
+
+def test_cmd_save_accepts_events_file(tmp_path, monkeypatch):
+    payload_path = _write_skill_tmp_payload(
+        tmp_path,
+        "events",
+        [{"event_name": "Fest", "city": "Warsaw", "start_date": "2026-03-28"}],
+    )
+    output = _run_cmd("save", ["--events-file", str(payload_path)], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert result == {"saved": 1, "skipped": 0}
+    assert not payload_path.exists()
+
+
+def test_cmd_save_events_file_missing_returns_error(tmp_path, monkeypatch):
+    output = _run_cmd("save", ["--events-file", str(tmp_path / "missing.json")], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert "error" in result
+    assert "--events-file not found" in result["error"]
 
 
 # --- cmd_cache_query ---
@@ -277,6 +440,44 @@ def test_cmd_log_search_returns_logged(tmp_path, monkeypatch):
     assert result == {"logged": True}
 
 
+def test_cmd_log_search_accepts_cities_file(tmp_path, monkeypatch):
+    payload_path = _write_skill_tmp_payload(tmp_path, "cities", ["Berlin", "Potsdam"], encoding="utf-8-sig")
+    output = _run_cmd(
+        "log-search",
+        ["--query", "test query", "--target-weekend", "2026-03-28",
+         "--phase", "broad", "--result-count", "5", "--cities-file", str(payload_path)],
+        tmp_path, monkeypatch,
+    )
+    result = json.loads(output)
+    assert result == {"logged": True}
+    assert not payload_path.exists()
+
+
+def test_cmd_log_action_accepts_detail_file(tmp_path, monkeypatch):
+    payload_path = _write_skill_tmp_payload(tmp_path, "detail", {"reason": "all_confirmed"}, encoding="utf-8-sig")
+    output = _run_cmd(
+        "log-action",
+        ["--action", "skip", "--detail-file", str(payload_path)],
+        tmp_path, monkeypatch,
+    )
+    result = json.loads(output)
+    assert result == {"logged": True}
+    assert not payload_path.exists()
+
+
+def test_cmd_log_action_detail_file_invalid_json_returns_error(tmp_path, monkeypatch):
+    payload_path = tmp_path / "detail.json"
+    payload_path.write_text("{bad", encoding="utf-8")
+    output = _run_cmd(
+        "log-action",
+        ["--action", "skip", "--detail-file", str(payload_path)],
+        tmp_path, monkeypatch,
+    )
+    result = json.loads(output)
+    assert "error" in result
+    assert "Invalid JSON in --detail-file" in result["error"]
+
+
 # --- cmd_cache_mark_served ---
 
 def test_cmd_cache_mark_served_returns_count(tmp_path, monkeypatch):
@@ -296,6 +497,97 @@ def test_format_message_logs_run_id(tmp_path, monkeypatch):
     entry = json.loads(log_file.read_text(encoding="utf-8").strip())
     assert entry["run_id"] == "run-xyz"
     assert entry["action"] == "message_formatted"
+
+
+def test_format_message_accepts_json_files(tmp_path, monkeypatch):
+    output = tmp_path / "msg.txt"
+    city_events_path = _write_skill_tmp_payload(
+        tmp_path,
+        "city-events",
+        [{"event_name": "Spring Festival", "city": "Warsaw", "start_date": "2026-03-28"}],
+        encoding="utf-8-sig",
+    )
+    trips_path = _write_skill_tmp_payload(
+        tmp_path,
+        "trips",
+        [{"name": "Berlin Day Trip", "route": "Berlin -> Potsdam -> Berlin", "events": "Market"}],
+    )
+    _run_format_message(
+        ["--saturday", "2026-03-28", "--sunday", "2026-03-29",
+         "--city-events-file", str(city_events_path), "--trips-file", str(trips_path),
+         "--output", str(output)],
+        tmp_path, monkeypatch,
+    )
+    content = output.read_text(encoding="utf-8")
+    assert "Spring Festival" in content
+    assert "Berlin Day Trip" in content
+    assert not city_events_path.exists()
+    assert not trips_path.exists()
+
+
+def test_format_message_city_events_file_invalid_json_returns_error(tmp_path, monkeypatch):
+    output = tmp_path / "msg.txt"
+    payload_path = tmp_path / "bad-city-events.json"
+    payload_path.write_text("{bad", encoding="utf-8")
+    result = json.loads(
+        _run_cmd(
+            "format-message",
+            ["--saturday", "2026-03-28", "--sunday", "2026-03-29",
+             "--city-events-file", str(payload_path), "--output", str(output)],
+            tmp_path, monkeypatch,
+        )
+    )
+    assert "error" in result
+    assert "Invalid JSON in --city-events-file" in result["error"]
+
+
+def test_format_message_keeps_tmp_files_when_later_command_logic_fails(tmp_path, monkeypatch):
+    import weekend_scout.telegram as telegram_module
+
+    output = tmp_path / "msg.txt"
+    city_events_path = _write_skill_tmp_payload(
+        tmp_path,
+        "city-events",
+        [{"event_name": "Spring Festival", "city": "Warsaw", "start_date": "2026-03-28"}],
+    )
+    trips_path = _write_skill_tmp_payload(
+        tmp_path,
+        "trips",
+        [{"name": "Berlin Day Trip", "route": "Berlin -> Potsdam -> Berlin", "events": "Market"}],
+    )
+    monkeypatch.setattr(telegram_module, "format_scout_message", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    with pytest.raises(RuntimeError, match="boom"):
+        _run_format_message(
+            ["--saturday", "2026-03-28", "--sunday", "2026-03-29",
+             "--city-events-file", str(city_events_path), "--trips-file", str(trips_path),
+             "--output", str(output)],
+            tmp_path, monkeypatch,
+        )
+
+    assert city_events_path.exists()
+    assert trips_path.exists()
+
+
+def test_format_message_mixed_cleanup_deletes_only_skill_tmp_files(tmp_path, monkeypatch):
+    output = tmp_path / "msg.txt"
+    city_events_path = _write_skill_tmp_payload(
+        tmp_path,
+        "city-events",
+        [{"event_name": "Spring Festival", "city": "Warsaw", "start_date": "2026-03-28"}],
+    )
+    trips_path = _write_json_file(
+        tmp_path / "cache" / "trips.json",
+        [{"name": "Berlin Day Trip", "route": "Berlin -> Potsdam -> Berlin", "events": "Market"}],
+    )
+    _run_format_message(
+        ["--saturday", "2026-03-28", "--sunday", "2026-03-29",
+         "--city-events-file", str(city_events_path), "--trips-file", str(trips_path),
+         "--output", str(output)],
+        tmp_path, monkeypatch,
+    )
+    assert not city_events_path.exists()
+    assert trips_path.exists()
 
 
 # --- cmd_send ---

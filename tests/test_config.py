@@ -16,6 +16,12 @@ def patched_config_path(tmp_path, monkeypatch):
 
 # --- get_config_path ---
 
+def test_get_config_dir_returns_repo_local_dir():
+    from weekend_scout.config import get_config_dir
+
+    expected = Path(__file__).resolve().parents[1] / ".weekend_scout"
+    assert get_config_dir() == expected
+
 def test_get_config_path_returns_path():
     from weekend_scout.config import get_config_path
     path = get_config_path()

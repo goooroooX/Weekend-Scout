@@ -94,7 +94,7 @@ The skill calls the CLI for data operations and uses the agent's built-in
 web search/fetch tools for event discovery.
 
 GeoNames city data (used for geocoding and nearby city discovery) is
-downloaded automatically on first run to the platform cache directory.
+downloaded automatically on first run to the repo-local cache directory.
 
 ## Telegram Setup
 
@@ -174,16 +174,15 @@ python -m weekend_scout --help
 | `log-action` | Append a structured action log entry |
 | `cache-mark-served --date YYYY-MM-DD` | Mark events as sent |
 | `install-skill [--platform P]` | Copy bundled SKILL.md to global skills directory |
-| `download-data` | Download GeoNames cities15000 to cache dir |
+| `download-data` | Download GeoNames cities15000 to `.weekend_scout/cache/` |
 
 ## Configuration
 
 Config lives at:
-- **Linux/Mac:** `~/.config/weekend-scout/config.yaml`
-- **Windows:** `%LOCALAPPDATA%\weekend-scout\config.yaml`
+- `.weekend_scout/config.yaml`
 
-Cache files (database, city lists, logs, GeoNames data) live in the `cache/`
-subdirectory alongside `config.yaml`.
+Cache files (database, city lists, logs, GeoNames data) live in:
+- `.weekend_scout/cache/`
 
 | Key | Default | Description |
 |-----|---------|-------------|

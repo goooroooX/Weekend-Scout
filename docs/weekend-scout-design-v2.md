@@ -72,7 +72,6 @@ User invokes /weekend-scout (or $weekend-scout on Codex)
 |---------------|--------------------------------------|
 | `pyyaml`      | Config file read/write               |
 | `requests`    | Telegram Bot API, GeoNames download  |
-| `platformdirs`| Cross-platform config/cache paths    |
 | `pytest`      | Test framework (dev dependency only)  |
 
 No search APIs, no routing APIs, no LLM libraries. SQLite is built into
@@ -84,14 +83,13 @@ Python's standard library.
 
 ### 4.1 Configuration (`config.py`)
 
-Config is stored as YAML at the platform-appropriate user config directory:
+Config is stored as YAML in the repo-local state directory:
 
-- **Linux/Mac:** `~/.config/weekend-scout/config.yaml`
-- **Windows:** `%LOCALAPPDATA%\weekend-scout\config.yaml`
+- `.weekend_scout/config.yaml`
 
-Paths are resolved using `platformdirs.user_config_dir("weekend-scout", appauthor=False)`.
-A legacy migration handles the double-nested path that earlier versions created on
-Windows when `appauthor` was not disabled.
+Cache files, logs, the SQLite DB, and GeoNames data live under:
+
+- `.weekend_scout/cache/`
 
 **Default configuration:**
 

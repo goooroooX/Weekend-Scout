@@ -19,16 +19,132 @@ Provides subcommands:
 
 import argparse
 import json
+import re
 import sys
+
+
+def _print_error_and_exit(message: str) -> "NoReturn":
+    print(json.dumps({"error": message}, ensure_ascii=False))
+    sys.exit(1)
+
+
+def _is_skill_generated_payload_file(path: "Path", cache_dir: "Path") -> bool:
+    """Return True when the payload file is in cache_dir and matches _tmp_*.tmp."""
+    try:
+        resolved_path = path.resolve()
+        resolved_cache_dir = cache_dir.resolve()
+    except OSError:
+        return False
+
+    if resolved_path.parent != resolved_cache_dir:
+        return False
+    return re.fullmatch(r"_tmp_.+\.tmp", resolved_path.name) is not None
+
+
+def _cleanup_payload_files(paths: list["Path"]) -> None:
+    """Best-effort cleanup for skill-generated payload files after command success."""
+    for path in paths:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _load_json_argument(
+    *,
+    inline_value: str | None,
+    file_path: str | None,
+    cache_dir: "Path | None" = None,
+    cleanup_candidates: list["Path"] | None = None,
+    option_name: str,
+    expected_type: type,
+    expected_label: str,
+    default_json: str | None = None,
+    required: bool = False,
+):
+    """Load JSON from an inline CLI arg or a UTF-8/UTF-8-BOM file."""
+    if file_path:
+        from pathlib import Path
+
+        payload_path = Path(file_path)
+        try:
+            raw_value = payload_path.read_text(encoding="utf-8-sig")
+        except FileNotFoundError:
+            _print_error_and_exit(f"{option_name}-file not found: {file_path}")
+        except OSError as exc:
+            _print_error_and_exit(f"Failed to read {option_name}-file {file_path}: {exc}")
+    elif inline_value is not None:
+        raw_value = inline_value
+    elif default_json is not None:
+        raw_value = default_json
+    elif required:
+        _print_error_and_exit(f"Provide {option_name} or {option_name}-file")
+    else:
+        return None
+
+    try:
+        parsed = json.loads(raw_value)
+    except json.JSONDecodeError as exc:
+        source = f"{option_name}-file {file_path}" if file_path else option_name
+        _print_error_and_exit(f"Invalid JSON in {source}: {exc.msg}")
+
+    if not isinstance(parsed, expected_type):
+        _print_error_and_exit(f"{option_name} must be a {expected_label}")
+
+    if (
+        file_path
+        and cache_dir is not None
+        and cleanup_candidates is not None
+        and _is_skill_generated_payload_file(payload_path, cache_dir)
+    ):
+        cleanup_candidates.append(payload_path)
+
+    return parsed
 
 
 def cmd_setup(args: argparse.Namespace) -> None:
     """Run interactive setup wizard, or apply a JSON config payload directly."""
-    if args.json_data:
-        from weekend_scout.config import load_config, save_config, get_config_path, get_cache_dir
-        from pathlib import Path as _P
-        incoming = json.loads(args.json_data)
-        old_config = load_config()
+    from weekend_scout.config import (
+        COUNTRY_CODE_MAP,
+        COUNTRY_LANGUAGE_MAP,
+        get_cache_dir,
+        get_config_path,
+        load_config,
+        save_config,
+    )
+    from weekend_scout.cities import ensure_geonames, find_city_coords
+    from pathlib import Path as _P
+
+    old_config = load_config()
+    cleanup_candidates: list[_P] = []
+    incoming = _load_json_argument(
+        inline_value=args.json_data,
+        file_path=args.json_file,
+        cache_dir=get_cache_dir(old_config),
+        cleanup_candidates=cleanup_candidates,
+        option_name="--json",
+        expected_type=dict,
+        expected_label="JSON object",
+    )
+    if incoming is not None:
+        if "search_language" not in incoming:
+            country = incoming.get("home_country")
+
+            if not country and incoming.get("home_city"):
+                geonames_path = ensure_geonames()
+                if geonames_path.exists():
+                    city_data = find_city_coords(incoming["home_city"], geonames_path)
+                    if city_data:
+                        country = COUNTRY_CODE_MAP.get(city_data["country"], "")
+                        if country and "home_country" not in incoming:
+                            incoming["home_country"] = country
+
+            if not country:
+                country = old_config.get("home_country", "")
+
+            if country:
+                incoming["search_language"] = COUNTRY_LANGUAGE_MAP.get(country, "en")
+
         config = dict(old_config)
         config.update(incoming)
         save_config(config)
@@ -44,6 +160,7 @@ def cmd_setup(args: argparse.Namespace) -> None:
                     stale = _P(cache_dir) / f"cities_{city}_{radius}.json"
                     if stale.exists():
                         stale.unlink()
+        _cleanup_payload_files(cleanup_candidates)
         print(json.dumps({"saved": True, "config_path": str(get_config_path())}, ensure_ascii=False))
     else:
         from weekend_scout.config import run_setup_wizard
@@ -101,7 +218,7 @@ def cmd_init(args: argparse.Namespace) -> None:
     import datetime
     from weekend_scout.config import load_config, get_config_path, COUNTRY_CODE_MAP, COUNTRY_LANGUAGE_MAP
     from weekend_scout.cities import (
-        get_city_list, generate_broad_queries, generate_targeted_template,
+        get_city_list, generate_broad_queries, generate_targeted_by_country,
         find_city_coords, ensure_geonames,
     )
     from weekend_scout.cache import query_events, get_searches_this_week, log_action
@@ -160,7 +277,7 @@ def cmd_init(args: argparse.Namespace) -> None:
     cached_events = query_events(config, saturday)
     searches_this_week = get_searches_this_week(config, saturday)
     broad_result = generate_broad_queries(config, saturday, sunday)
-    targeted_tmpl = generate_targeted_template(config.get("search_language", "en"))
+    targeted_by_country = generate_targeted_by_country(config, cities, saturday)
 
     config_block: dict = {
         "home_city": config.get("home_city"),
@@ -184,7 +301,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         "suggested_queries": {
             "vars": broad_result["vars"],
             "broad": broad_result["templates"],
-            "targeted_template": targeted_tmpl,
+            "targeted_by_country": targeted_by_country,
         },
     }
     if not coords_valid:
@@ -199,14 +316,25 @@ def cmd_init(args: argparse.Namespace) -> None:
 
 def cmd_save(args: argparse.Namespace) -> None:
     """Save events (JSON array) to the cache."""
-    from weekend_scout.config import load_config
+    from weekend_scout.config import load_config, get_cache_dir
     from weekend_scout.cache import save_events, log_action
 
     config = load_config()
-    events = json.loads(args.events)
+    cleanup_candidates = []
+    events = _load_json_argument(
+        inline_value=args.events,
+        file_path=args.events_file,
+        cache_dir=get_cache_dir(config),
+        cleanup_candidates=cleanup_candidates,
+        option_name="--events",
+        expected_type=list,
+        expected_label="JSON array",
+        required=True,
+    )
     saved, skipped = save_events(config, events)
     log_action(config, "events_saved", run_id=args.run_id,
                detail={"saved": saved, "skipped": skipped})
+    _cleanup_payload_files(cleanup_candidates)
     print(json.dumps({"saved": saved, "skipped": skipped}))
 
 
@@ -249,11 +377,21 @@ def cmd_cache_query(args: argparse.Namespace) -> None:
 
 def cmd_log_search(args: argparse.Namespace) -> None:
     """Log a completed web search to the search log."""
-    from weekend_scout.config import load_config
+    from weekend_scout.config import load_config, get_cache_dir
     from weekend_scout.cache import log_search
 
     config = load_config()
-    cities = json.loads(args.cities) if args.cities else []
+    cleanup_candidates = []
+    cities = _load_json_argument(
+        inline_value=args.cities,
+        file_path=args.cities_file,
+        cache_dir=get_cache_dir(config),
+        cleanup_candidates=cleanup_candidates,
+        option_name="--cities",
+        expected_type=list,
+        expected_label="JSON array",
+        default_json="[]",
+    )
     log_search(
         config=config,
         query=args.query,
@@ -264,16 +402,27 @@ def cmd_log_search(args: argparse.Namespace) -> None:
         run_id=args.run_id,
         events_discovered=args.events_discovered,
     )
+    _cleanup_payload_files(cleanup_candidates)
     print(json.dumps({"logged": True}))
 
 
 def cmd_log_action(args: argparse.Namespace) -> None:
     """Append a structured action log entry to action_log.jsonl."""
-    from weekend_scout.config import load_config
+    from weekend_scout.config import load_config, get_cache_dir
     from weekend_scout.cache import log_action
 
     config = load_config()
-    detail = json.loads(args.detail) if args.detail else {}
+    cleanup_candidates = []
+    detail = _load_json_argument(
+        inline_value=args.detail,
+        file_path=args.detail_file,
+        cache_dir=get_cache_dir(config),
+        cleanup_candidates=cleanup_candidates,
+        option_name="--detail",
+        expected_type=dict,
+        expected_label="JSON object",
+        default_json="{}",
+    )
     log_action(
         config,
         args.action,
@@ -283,6 +432,7 @@ def cmd_log_action(args: argparse.Namespace) -> None:
         source=args.source,
         target_weekend=args.target_weekend,
     )
+    _cleanup_payload_files(cleanup_candidates)
     print(json.dumps({"logged": True}))
 
 
@@ -312,8 +462,28 @@ def cmd_format_message(args: argparse.Namespace) -> None:
     from weekend_scout.cache import log_action
 
     config = load_config()
-    city_events = json.loads(args.city_events)
-    trips = json.loads(args.trips)
+    cache_dir = get_cache_dir(config)
+    cleanup_candidates = []
+    city_events = _load_json_argument(
+        inline_value=args.city_events,
+        file_path=args.city_events_file,
+        cache_dir=cache_dir,
+        cleanup_candidates=cleanup_candidates,
+        option_name="--city-events",
+        expected_type=list,
+        expected_label="JSON array",
+        default_json="[]",
+    )
+    trips = _load_json_argument(
+        inline_value=args.trips,
+        file_path=args.trips_file,
+        cache_dir=cache_dir,
+        cleanup_candidates=cleanup_candidates,
+        option_name="--trips",
+        expected_type=list,
+        expected_label="JSON array",
+        default_json="[]",
+    )
     low_results = args.low_results.lower() in ("true", "1", "yes") if args.low_results else False
     hint_searches = max(50, config.get("max_searches", 30) + 20)
     hint_fetches  = max(50, config.get("max_fetches",  30) + 20)
@@ -333,6 +503,7 @@ def cmd_format_message(args: argparse.Namespace) -> None:
                target_weekend=args.saturday,
                detail={"city_events": len(city_events), "trips": len(trips),
                        "char_count": len(msg)})
+    _cleanup_payload_files(cleanup_candidates)
     print(json.dumps({"written": str(output_path)}))
 
 
@@ -431,6 +602,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--json", dest="json_data", default=None, metavar="JSON",
         help="Apply JSON config payload directly (no wizard)",
     )
+    p_setup.add_argument(
+        "--json-file", dest="json_file", default=None, metavar="PATH",
+        help="Read JSON config payload from a UTF-8 .json file",
+    )
 
     # config
     p_cfg = sub.add_parser("config", help="Show or set configuration")
@@ -444,7 +619,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     # save
     p_save = sub.add_parser("save", help="Save discovered events to cache")
-    p_save.add_argument("--events", required=True, help="JSON array of event objects")
+    save_group = p_save.add_mutually_exclusive_group(required=True)
+    save_group.add_argument("--events", help="JSON array of event objects")
+    save_group.add_argument("--events-file", dest="events_file",
+                            help="Path to UTF-8 JSON array of event objects")
     p_save.add_argument("--run-id", default=None, dest="run_id", help="Run identifier from init")
 
     # send
@@ -465,6 +643,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_ls.add_argument("--target-weekend", required=True, help="ISO date of target Saturday")
     p_ls.add_argument("--result-count", type=int, default=0, help="Number of results returned")
     p_ls.add_argument("--cities", help="JSON array of city names covered")
+    p_ls.add_argument("--cities-file", dest="cities_file",
+                      help="Path to UTF-8 JSON array of city names covered")
     p_ls.add_argument("--phase", default="broad", choices=["broad", "aggregator", "targeted", "verification"])
     p_ls.add_argument("--run-id", default=None, dest="run_id", help="Run identifier from init")
     p_ls.add_argument("--events-discovered", type=int, default=0, dest="events_discovered",
@@ -475,6 +655,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_la.add_argument("--action", required=True, help="Action type (phase_start, score_summary, ...)")
     p_la.add_argument("--phase", default=None, help="Search phase context (A, B, C, D, ...)")
     p_la.add_argument("--detail", default=None, help="JSON object with action-specific data")
+    p_la.add_argument("--detail-file", default=None, dest="detail_file",
+                      help="Path to UTF-8 JSON object with action-specific data")
     p_la.add_argument("--run-id", default=None, dest="run_id", help="Run identifier from init")
     p_la.add_argument("--source", default="skill", help="Source: skill or python")
     p_la.add_argument("--target-weekend", default=None, dest="target_weekend", help="ISO Saturday date")
@@ -488,7 +670,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_fm.add_argument("--saturday", required=True, help="ISO date of target Saturday")
     p_fm.add_argument("--sunday", required=True, help="ISO date of target Sunday")
     p_fm.add_argument("--city-events", default="[]", help="JSON array of up to 3 event dicts")
+    p_fm.add_argument("--city-events-file", default=None, dest="city_events_file",
+                      help="Path to UTF-8 JSON array of up to 3 event dicts")
     p_fm.add_argument("--trips", default="[]", help="JSON array of trip option dicts")
+    p_fm.add_argument("--trips-file", default=None, dest="trips_file",
+                      help="Path to UTF-8 JSON array of trip option dicts")
     p_fm.add_argument("--output", default=None, help="Output file path (default: app cache dir)")
     p_fm.add_argument("--low-results", default=None, dest="low_results",
                       help="Pass 'true' to append a budget-increase hint to the message")

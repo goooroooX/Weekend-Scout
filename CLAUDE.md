@@ -27,12 +27,11 @@ When implementation differs from docs/weekend-scout-design-v2.md:
 ### Code standards
 - Python 3.10+ with type hints on all public functions
 - Cross-platform: use pathlib.Path everywhere, never hardcode Unix or Windows paths
-- Config directory: use platformdirs library for cross-platform config path
-  (~/.config/weekend-scout on Linux/Mac, AppData\Local\weekend-scout on Windows)
+- Config directory: use the repo-local `.weekend_scout/` directory
 - GeoNames data: downloaded automatically to `<config_dir>/cache/geonames/cities15000.txt`
   (not the project data/ directory, which no longer exists)
 - Region mapping: `weekend_scout/regions.py` Python module (not data/regions.json)
-- Minimal dependencies: only pyyaml, requests, platformdirs
+- Minimal dependencies: only pyyaml and requests
 - All CLI commands should work standalone for testing
 - Use argparse for CLI, with subcommands: setup, config, init, save, send,
   cache-query, log-search, cache-mark-served, install-skill, run

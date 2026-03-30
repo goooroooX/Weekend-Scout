@@ -188,8 +188,45 @@ def test_get_city_list_filters_home_districts(tmp_path, monkeypatch):
     result = get_city_list(config)
 
     all_names = result["tier1"] + result["tier2"] + result["tier3"]
-    assert "Wola" not in all_names       # district filtered
-    assert "Pruszkow" in all_names       # real city kept
+    assert "Wola|PL" not in all_names       # district filtered
+    assert "Pruszkow|PL" in all_names       # real city kept
+
+
+def test_get_city_list_includes_country_code_suffix_for_cross_border_cities(tmp_path, monkeypatch):
+    import weekend_scout.config as cfg_module
+    import weekend_scout.cities as cities_module
+    from weekend_scout.cities import get_city_list
+
+    monkeypatch.setattr(cfg_module, "get_cache_dir", lambda _config: tmp_path)
+    monkeypatch.setattr(cities_module, "_geonames_dir", lambda: tmp_path)
+
+    home_row = _make_geonames_row(
+        "1", "Berlin", "Berlin", "52.52", "13.40", "DE", "3500000",
+        feature_code="PPLC", admin2="11000", admin3="110000",
+    )
+    potsdam_row = _make_geonames_row(
+        "2", "Potsdam", "Potsdam", "52.40", "13.06", "DE", "187000",
+        feature_code="PPLA", admin2="12054", admin3="12054000",
+    )
+    szczecin_row = _make_geonames_row(
+        "3", "Szczecin", "Szczecin", "53.43", "14.55", "PL", "396000",
+        feature_code="PPLA", admin2="3262", admin3="326201",
+    )
+
+    geonames_file = tmp_path / "cities15000.txt"
+    geonames_file.write_text("\n".join([home_row, potsdam_row, szczecin_row]), encoding="utf-8")
+
+    config = {
+        "home_city": "Berlin",
+        "radius_km": 150,
+        "home_coordinates": {"lat": 52.52, "lon": 13.40},
+        "home_country": "Germany",
+    }
+    result = get_city_list(config)
+
+    all_names = result["tier1"] + result["tier2"] + result["tier3"]
+    assert "Potsdam|DE" in all_names
+    assert "Szczecin|PL" in all_names
 
 
 def test_generate_broad_queries_returns_dict():
@@ -342,6 +379,40 @@ def test_generate_targeted_template_fills_correctly():
     assert "28 marca 2026" in query
 
 
+def test_generate_targeted_by_country_builds_localized_entries():
+    from weekend_scout.cities import generate_targeted_by_country
+
+    config = {
+        "home_city": "Berlin",
+        "home_country": "Germany",
+        "search_language": "de",
+    }
+    cities = {"tier1": ["Potsdam|DE"], "tier2": [], "tier3": ["Szczecin|PL"]}
+
+    result = generate_targeted_by_country(config, cities, "2026-03-28")
+
+    assert result["DE"]["template"] == "{city} Veranstaltungen Freiluft {date}"
+    assert "März" in result["DE"]["date"]
+    assert result["PL"]["template"] == "{city} imprezy plenerowe {date}"
+    assert "marca" in result["PL"]["date"]
+
+
+def test_generate_targeted_by_country_falls_back_to_english_for_unknown_country():
+    from weekend_scout.cities import generate_targeted_by_country
+
+    config = {
+        "home_city": "Berlin",
+        "home_country": "Germany",
+        "search_language": "de",
+    }
+    cities = {"tier1": ["Somewhere|XX"], "tier2": [], "tier3": []}
+
+    result = generate_targeted_by_country(config, cities, "2026-03-28")
+
+    assert result["XX"]["template"] == "{city} outdoor events {date}"
+    assert "March" in result["XX"]["date"]
+
+
 def test_find_city_coords_returns_highest_population(tmp_path):
     from weekend_scout.cities import find_city_coords
     content = "\n".join([
@@ -408,6 +479,41 @@ def test_get_city_list_uses_cache(tmp_path, monkeypatch):
     assert "tier2" in result
     assert "Łódź" in result["tier1"]
     assert "Płock" in result["tier2"]
+
+
+def test_get_city_list_uses_cache(tmp_path, monkeypatch):
+    import weekend_scout.config as cfg_module
+    from weekend_scout.cities import get_city_list
+
+    monkeypatch.setattr(cfg_module, "get_cache_dir", lambda _config: tmp_path)
+
+    cache_data = {
+        "generated": "2026-03-26T10:00:00",
+        "home_city": "Warsaw",
+        "radius_km": 150,
+        "country": "Poland",
+        "cities": [
+            {"name": "Lodz", "name_local": "Lodz", "country": "PL",
+             "lat": 51.76, "lon": 19.46, "population": 672185,
+             "distance_km": 131, "tier": 1},
+            {"name": "Plock", "name_local": "Plock", "country": "PL",
+             "lat": 52.55, "lon": 19.71, "population": 119709,
+             "distance_km": 108, "tier": 2},
+        ],
+    }
+    cache_file = tmp_path / "cities_Warsaw_150.json"
+    cache_file.write_text(json.dumps(cache_data), encoding="utf-8")
+
+    config = {
+        "home_city": "Warsaw",
+        "radius_km": 150,
+        "home_coordinates": {"lat": 52.23, "lon": 21.01},
+        "home_country": "Poland",
+    }
+    result = get_city_list(config)
+
+    assert result["tier1"] == ["Lodz|PL"]
+    assert result["tier2"] == ["Plock|PL"]
 
 
 # --- download_geonames retry ---

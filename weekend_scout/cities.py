@@ -551,6 +551,11 @@ def assign_tier(population: int) -> int:
         return 3
 
 
+def _format_city_entry(city: dict[str, Any]) -> str:
+    """Return the tier entry format used by init output."""
+    return f"{city['name_local']}|{city['country']}"
+
+
 def get_city_list(config: dict[str, Any], bypass_cache: bool = False) -> dict[str, list[str]]:
     """Return cities within radius, grouped by tier, using cache when valid.
 
@@ -564,8 +569,8 @@ def get_city_list(config: dict[str, Any], bypass_cache: bool = False) -> dict[st
                       (e.g. when --city override geocoded new coordinates).
 
     Returns:
-        Dict with keys 'tier1', 'tier2', 'tier3', each a list of city name strings
-        (native/local names).
+        Dict with keys 'tier1', 'tier2', 'tier3', each a list of
+        "<name_local>|<country_code>" strings.
     """
     from weekend_scout.config import get_cache_dir
     from weekend_scout.distance import haversine_km
@@ -582,7 +587,7 @@ def get_city_list(config: dict[str, Any], bypass_cache: bool = False) -> dict[st
         for city in data.get("cities", []):
             tier_key = f"tier{city['tier']}"
             if tier_key in result:
-                result[tier_key].append(city["name_local"])
+                result[tier_key].append(_format_city_entry(city))
         return result
 
     # Cache miss — parse GeoNames file
@@ -639,7 +644,7 @@ def get_city_list(config: dict[str, Any], bypass_cache: bool = False) -> dict[st
     for city in nearby:
         tier_key = f"tier{city['tier']}"
         if tier_key in result:
-            result[tier_key].append(city["name_local"])
+            result[tier_key].append(_format_city_entry(city))
     return result
 
 
@@ -828,6 +833,48 @@ def generate_broad_queries(
             "date_en": date_en,
         },
     }
+
+
+def generate_targeted_by_country(
+    config: dict[str, Any], cities: dict[str, list[str]], saturday: str
+) -> dict[str, dict[str, str]]:
+    """Return targeted-query templates keyed by ISO country code.
+
+    Each entry contains a language-appropriate template plus a localized
+    date string for that country's search language.
+    """
+    from weekend_scout.config import COUNTRY_CODE_MAP, COUNTRY_LANGUAGE_MAP
+
+    country_codes: set[str] = set()
+
+    home_country = config.get("home_country", "")
+    if home_country:
+        home_code = next(
+            (code for code, country in COUNTRY_CODE_MAP.items() if country == home_country),
+            "",
+        )
+        if home_code:
+            country_codes.add(home_code)
+
+    for tier_entries in cities.values():
+        for entry in tier_entries:
+            if "|" not in entry:
+                continue
+            _, country_code = entry.rsplit("|", 1)
+            if country_code:
+                country_codes.add(country_code)
+
+    targeted: dict[str, dict[str, str]] = {}
+    for country_code in sorted(country_codes):
+        country_name = COUNTRY_CODE_MAP.get(country_code, "")
+        lang = COUNTRY_LANGUAGE_MAP.get(country_name, "en")
+        template = QUERY_TEMPLATES.get(lang, QUERY_TEMPLATES["en"])["targeted"]
+        targeted[country_code] = {
+            "template": template,
+            "date": format_date_local(saturday, lang),
+        }
+
+    return targeted
 
 
 def generate_targeted_template(lang: str) -> str:
