@@ -271,6 +271,8 @@ def test_cmd_init_returns_json(tmp_path, monkeypatch):
     assert sq["targeted_by_country"]["PL"]["date"]
     assert result["cities"]["tier1"] == ["Potsdam|DE"]
     assert result["cities"]["tier3"] == ["Szczecin|PL"]
+    assert result["config"]["max_city_options"] == 3
+    assert result["config"]["max_trip_options"] == 10
     assert result["config"]["max_searches"] == 30
     assert result["config"]["max_fetches"] == 30
 

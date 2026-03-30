@@ -30,7 +30,7 @@ _MONTHS = [
     "July", "August", "September", "October", "November", "December",
 ]
 _DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-_TRIP_PREFIX_RE = re.compile(r"^[A-J]\.\s+")
+_TRIP_PREFIX_RE = re.compile(r"^(?:[A-Z]|\d+)\.\s+")
 
 
 def _day_abbr(iso_date: str) -> str:
@@ -204,7 +204,7 @@ def format_scout_message(
         saturday: ISO date string of target Saturday.
         sunday: ISO date string of target Sunday.
         city_events: Top-ranked home city events (caller controls count).
-        trip_options: Up to 10 road trip option dicts.
+        trip_options: Road trip option dicts (caller controls count).
             Each trip dict should have keys:
               name (str), route (str), events (str), timing (str).
             Optional: url (str) appended as [link] on the events line.
@@ -242,7 +242,7 @@ def format_scout_message(
 
     if city_events:
         sections.append(f"<b>IN {html.escape(home_city.upper())}:</b>")
-        for i, event in enumerate(city_events[:3], 1):
+        for i, event in enumerate(city_events, 1):
             block = format_event_block(event)
             # Prepend number to the first line (which has the <b>name</b>)
             block_lines = block.split("\n")
@@ -251,15 +251,13 @@ def format_scout_message(
 
     if trip_options:
         sections.append("<b>ROAD TRIPS:</b>")
-        letters = "ABCDEFGHIJ"
-        for i, trip in enumerate(trip_options[:10]):
-            letter = letters[i]
+        for i, trip in enumerate(trip_options, 1):
             name = html.escape(_normalize_trip_name(trip.get("name") or ""))
             route = html.escape(trip.get("route") or "")
             events_text = html.escape(trip.get("events") or "")
             timing = html.escape(trip.get("timing") or "")
             trip_url = trip.get("url") or ""
-            parts = [f"{letter}. <b>{name}</b>"]
+            parts = [f"{i:02d}. <b>{name}</b>"]
             if route:
                 parts.append(f"   {route}")
             if events_text:
@@ -317,7 +315,7 @@ def format_scout_preview(
 
     if city_events:
         lines.extend(["", f"IN {home_city.upper()}"])
-        for i, event in enumerate(city_events[:3], 1):
+        for i, event in enumerate(city_events, 1):
             lines.append("")
             lines.append(f"{i}. {event.get('event_name', '')}")
             venue_parts = []
@@ -350,11 +348,10 @@ def format_scout_preview(
                 lines.append(f"   {source_url}")
 
     if trip_options:
-        letters = "ABCDEFGHIJ"
         lines.extend(["", "ROAD TRIPS"])
-        for i, trip in enumerate(trip_options[:10]):
+        for i, trip in enumerate(trip_options, 1):
             lines.append("")
-            lines.append(f"{letters[i]}. {_normalize_trip_name(trip.get('name') or '')}")
+            lines.append(f"{i:02d}. {_normalize_trip_name(trip.get('name') or '')}")
             route = trip.get("route") or ""
             if route:
                 lines.append(f"   {route}")

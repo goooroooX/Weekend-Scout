@@ -150,6 +150,8 @@ def test_codex_skill_uses_file_based_payload_commands():
     assert "tgt_by_country = output.suggested_queries.targeted_by_country" in content
     assert "target = tgt_by_country[city_country_code]" in content
     assert "target.template.format(city=city_name, date=target.date)" in content
+    assert "max_city_options = output.config.max_city_options" in content
+    assert "max_trip_options = output.config.max_trip_options" in content
     assert "`searches_used = 0`, `fetches_used = 0`" in content
     assert "`phase_searches = 0`, `phase_fetches = 0`, `phase_new_events = 0`" in content
     assert "Before every WebSearch or WebFetch:" in content
@@ -166,6 +168,9 @@ def test_codex_skill_uses_file_based_payload_commands():
     assert "`event_name`, `location_name`, `start_date`, optional `end_date`, `time_info`" in content
     assert "`name`, `route`, `events`, `timing`, optional `url`." in content
     assert "Pass the selected top home-city event dicts directly as the `city-events` JSON array" in content
+    assert "top `max_city_options` in home city + up to `max_trip_options` road trip options" in content
+    assert "Build up to `max_trip_options` options" in content
+    assert "Label them `01` through `NN` in the final message only." in content
     assert "Do not patch behavior ad hoc during execution." in content
     assert 'The `format-message` response returns both:' in content
     assert '`preview`: plain-text digest preview for showing in the conversation' in content
@@ -184,6 +189,9 @@ def test_codex_skill_uses_file_based_payload_commands():
     assert "--events '<JSON array>'" not in content
     assert "--city-events '<top_3_city_events_json>'" not in content
     assert "--trips '<trip_options_json>'" not in content
+    assert '--city-events-file "$city_events_json_path"' in content
+    assert "A through J" not in content
+    assert "top 3 in home city + up to 10 road trip options" not in content
     assert 'python -m weekend_scout setup --json "$setup_json"' not in content
     assert '--cities "$cities_json"' not in content
     assert '--detail "$detail_json"' not in content
@@ -199,6 +207,8 @@ def test_template_setup_uses_language_placeholder_and_pipe_tiers():
     assert 'search_language":"<lang>"' not in content
     assert '"<city>|<country_code>"' in content
     assert "split each tier entry once" in content
+    assert "max_city_options = output.config.max_city_options" in content
+    assert "max_trip_options = output.config.max_trip_options" in content
     assert "**Normal run rule:**" in content
     assert "Track usage mentally" not in content
     assert "`searches_used = 0`, `fetches_used = 0`" in content
@@ -215,6 +225,10 @@ def test_template_setup_uses_language_placeholder_and_pipe_tiers():
     assert "`format-message --trips` / `--trips-file` must receive a **JSON array** of trip dicts." in content
     assert '`preview`: plain-text digest preview for showing in the conversation' in content
     assert "Do **not** read the written HTML file back into the conversation." in content
+    assert "top `max_city_options` in home city + up to `max_trip_options` road trip options" in content
+    assert "Build up to `max_trip_options` options" in content
+    assert "Label them `01` through `NN` in the final message only." in content
+    assert "--city-events '<top_city_events_json>'" in content
     assert '"name":   "Łódź Day Trip"' in content
     assert '"name":   "A. Łódź Day Trip"' not in content
     assert '"sent": <true|false>' in content
@@ -225,3 +239,5 @@ def test_template_setup_uses_language_placeholder_and_pipe_tiers():
     assert "targeted_by_country" in content
     assert "targeted_template" not in content
     assert "choose the targeted-search language with this mapping" not in content
+    assert "A through J" not in content
+    assert "top 3 in home city + up to 10 road trip options" not in content

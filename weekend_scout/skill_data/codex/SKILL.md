@@ -120,6 +120,8 @@ Extract these fields from the JSON output and keep them in mind throughout:
 saturday     = output.config.target_weekend.saturday   (ISO date)
 sunday       = output.config.target_weekend.sunday     (ISO date)
 home_city    = output.config.home_city                 (departure/arrival label for trip routes)
+max_city_options = output.config.max_city_options      (max home-city events to include)
+max_trip_options = output.config.max_trip_options      (max road-trip options to include)
 max_searches = output.config.max_searches              (search budget limit)
 max_fetches  = output.config.max_fetches               (fetch budget limit)
 tier1        = output.cities.tier1                     (largest nearby cities as "<city>|<country_code>")
@@ -368,7 +370,7 @@ Score each event 1–10:
 - Source quality (official=1, aggregator=0.5): 0–1
 
 Pool: combine `cached` events + newly saved events.
-Select: top 3 in home city + up to 10 road trip options from nearby cities (tier1 first, then tier2, tier3).
+Select: top `max_city_options` in home city + up to `max_trip_options` road trip options from nearby cities (tier1 first, then tier2, tier3).
 
 After selecting, compute: `total_events = len(city_events_selected) + len(trip_options)`
 
@@ -382,8 +384,8 @@ python -m weekend_scout log-action --run-id "<run_id>" --action score_summary \
 ### Step 4: Build Trip Options
 
 For road trips, use tier as a distance proxy (tier1 = largest/closest, tier3 = smallest/farthest):
-Build up to 10 options — one per city that has confirmed events, working through tier1 → tier2 → tier3.
-Label them A through J in the final message only.
+Build up to `max_trip_options` options — one per city that has confirmed events, working through tier1 → tier2 → tier3.
+Label them `01` through `NN` in the final message only.
 
 For each trip option, build a dict that matches the `format-message` trip payload contract:
 ```json

@@ -285,6 +285,8 @@ def cmd_init(args: argparse.Namespace) -> None:
         "radius_km": config.get("radius_km"),
         "search_language": config.get("search_language"),
         "target_weekend": target_weekend,
+        "max_city_options": config.get("max_city_options", 3),
+        "max_trip_options": config.get("max_trip_options", 10),
         "max_searches": config.get("max_searches", 30),
         "max_fetches": config.get("max_fetches", 30),
         "exclude_served": config.get("exclude_served", False),
@@ -679,9 +681,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_fm = sub.add_parser("format-message", help="Format scout message and write to file")
     p_fm.add_argument("--saturday", required=True, help="ISO date of target Saturday")
     p_fm.add_argument("--sunday", required=True, help="ISO date of target Sunday")
-    p_fm.add_argument("--city-events", default="[]", help="JSON array of up to 3 event dicts")
+    p_fm.add_argument("--city-events", default="[]", help="JSON array of event dicts")
     p_fm.add_argument("--city-events-file", default=None, dest="city_events_file",
-                      help="Path to UTF-8 JSON array of up to 3 event dicts")
+                      help="Path to UTF-8 JSON array of event dicts")
     p_fm.add_argument("--trips", default="[]", help="JSON array of trip option dicts")
     p_fm.add_argument("--trips-file", default=None, dest="trips_file",
                       help="Path to UTF-8 JSON array of trip option dicts")

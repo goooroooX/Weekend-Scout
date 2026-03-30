@@ -266,24 +266,39 @@ def test_format_scout_message_road_trips():
     from weekend_scout.telegram import format_scout_message
     msg = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", [], [_trip()])
     assert "ROAD TRIPS:" in msg
-    assert "A. <b>Lodz Day Trip</b>" in msg
+    assert "01. <b>Lodz Day Trip</b>" in msg
 
 
 def test_format_scout_message_strips_prefixed_trip_name():
     from weekend_scout.telegram import format_scout_message
     msg = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", [], [_trip(name="A. Lodz Day Trip")])
-    assert "A. <b>Lodz Day Trip</b>" in msg
-    assert "A. <b>A. Lodz Day Trip</b>" not in msg
+    assert "01. <b>Lodz Day Trip</b>" in msg
+    assert "01. <b>A. Lodz Day Trip</b>" not in msg
 
 
-def test_format_scout_message_trip_cap_10():
+def test_format_scout_message_strips_numeric_trip_prefix():
+    from weekend_scout.telegram import format_scout_message
+    msg = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", [], [_trip(name="1. Lodz Day Trip")])
+    assert "01. <b>Lodz Day Trip</b>" in msg
+    assert "01. <b>1. Lodz Day Trip</b>" not in msg
+
+
+def test_format_scout_message_renders_all_trip_options():
     from weekend_scout.telegram import format_scout_message
     trips = [_trip(name=f"Trip {i}") for i in range(12)]
     msg = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", [], trips)
-    assert "Trip 0" in msg
-    assert "Trip 9" in msg
-    assert "Trip 10" not in msg
-    assert "Trip 11" not in msg
+    assert "01. <b>Trip 0</b>" in msg
+    assert "10. <b>Trip 9</b>" in msg
+    assert "11. <b>Trip 10</b>" in msg
+    assert "12. <b>Trip 11</b>" in msg
+
+
+def test_format_scout_message_renders_all_city_events():
+    from weekend_scout.telegram import format_scout_message
+    events = [_event(event_name=f"Fest {i}") for i in range(4)]
+    msg = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", events, [])
+    assert "1. <b>Fest 0</b>" in msg
+    assert "4. <b>Fest 3</b>" in msg
 
 
 def test_format_scout_message_no_trips_omits_section():
@@ -348,5 +363,16 @@ def test_format_scout_preview_is_plain_text():
     assert "<b>" not in preview
     assert "<i>" not in preview
     assert "[<a href=" not in preview
-    assert "A. Lodz Day Trip" in preview
+    assert "01. Lodz Day Trip" in preview
     assert "https://example.com/trip" in preview
+
+
+def test_format_scout_preview_renders_all_trip_options():
+    from weekend_scout.telegram import format_scout_preview
+    preview = format_scout_preview(
+        "Warsaw", "2026-04-04", "2026-04-05", [], [_trip(name=f"Trip {i}") for i in range(12)]
+    )
+    assert "01. Trip 0" in preview
+    assert "10. Trip 9" in preview
+    assert "11. Trip 10" in preview
+    assert "12. Trip 11" in preview
