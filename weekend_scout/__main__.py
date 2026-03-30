@@ -213,109 +213,6 @@ def cmd_config(args: argparse.Namespace) -> None:
         print(json.dumps(config, indent=2, ensure_ascii=False))
 
 
-def cmd_init(args: argparse.Namespace) -> None:
-    """Load config, city list, cache state, and query suggestions. Output JSON."""
-    import datetime
-    from weekend_scout.config import load_config, get_config_path, COUNTRY_CODE_MAP, COUNTRY_LANGUAGE_MAP
-    from weekend_scout.cities import (
-        get_city_list, generate_broad_queries, generate_targeted_by_country,
-        find_city_coords, ensure_geonames,
-    )
-    from weekend_scout.cache import query_events, get_searches_this_week, log_action
-    from weekend_scout.distance import next_weekend_dates
-
-    config = load_config()
-
-    # Guard: unconfigured state — home_city is required
-    if not config.get("home_city"):
-        print(json.dumps({
-            "needs_setup": True,
-            "message": "Weekend Scout is not configured. Run: python -m weekend_scout setup",
-            "config_path": str(get_config_path()),
-        }, ensure_ascii=False))
-        return
-
-    # Allow CLI overrides
-    city_geocoded: bool | None = None
-    if args.city:
-        config["home_city"] = args.city
-        geonames_path = ensure_geonames()
-        if geonames_path.exists():
-            city_data = find_city_coords(args.city, geonames_path)
-            if city_data:
-                config["home_coordinates"] = {"lat": city_data["lat"], "lon": city_data["lon"]}
-                country = COUNTRY_CODE_MAP.get(city_data["country"], "")
-                if country:
-                    config["home_country"] = country
-                    config["search_language"] = COUNTRY_LANGUAGE_MAP.get(country, "en")
-                city_geocoded = True
-            else:
-                city_geocoded = False
-
-    if args.radius:
-        try:
-            config["radius_km"] = int(args.radius)
-        except ValueError:
-            print(json.dumps({"error": "radius must be an integer"}))
-            sys.exit(1)
-
-    saturday, sunday = next_weekend_dates()
-    target_weekend = {"saturday": saturday, "sunday": sunday}
-    run_id = f"{saturday}_{datetime.datetime.now().strftime('%H%M')}"
-
-    # Skip city list when coordinates are unset (0,0 sentinel) to avoid a
-    # pointless GeoNames parse and prevent overwriting a valid cache with
-    # an empty one.
-    coords = config.get("home_coordinates", {})
-    coords_valid = not (coords.get("lat", 0.0) == 0.0 and coords.get("lon", 0.0) == 0.0)
-
-    if coords_valid:
-        cities = get_city_list(config, bypass_cache=args.city is not None)
-    else:
-        cities = {"tier1": [], "tier2": [], "tier3": []}
-
-    cached_events = query_events(config, saturday)
-    searches_this_week = get_searches_this_week(config, saturday)
-    broad_result = generate_broad_queries(config, saturday, sunday)
-    targeted_by_country = generate_targeted_by_country(config, cities, saturday)
-
-    config_block: dict = {
-        "home_city": config.get("home_city"),
-        "home_country": config.get("home_country", ""),
-        "radius_km": config.get("radius_km"),
-        "search_language": config.get("search_language"),
-        "target_weekend": target_weekend,
-        "max_city_options": config.get("max_city_options", 3),
-        "max_trip_options": config.get("max_trip_options", 10),
-        "max_searches": config.get("max_searches", 30),
-        "max_fetches": config.get("max_fetches", 30),
-        "exclude_served": config.get("exclude_served", False),
-    }
-    if city_geocoded is not None:
-        config_block["city_geocoded"] = city_geocoded
-
-    output = {
-        "run_id": run_id,
-        "config": config_block,
-        "cities": cities,
-        "cached_events": cached_events,
-        "searches_this_week": searches_this_week,
-        "suggested_queries": {
-            "vars": broad_result["vars"],
-            "broad": broad_result["templates"],
-            "targeted_by_country": targeted_by_country,
-        },
-    }
-    if not coords_valid:
-        output["warnings"] = ["coordinates_not_set: nearby city suggestions disabled"]
-    log_action(config, "run_init", run_id=run_id, target_weekend=saturday,
-               detail={"home_city": config.get("home_city"),
-                       "radius_km": config.get("radius_km"),
-                       "cached_count": len(cached_events),
-                       "tier1": cities.get("tier1", [])})
-    print(json.dumps(output, indent=2, ensure_ascii=False))
-
-
 def cmd_save(args: argparse.Namespace) -> None:
     """Save events (JSON array) to the cache."""
     from weekend_scout.config import load_config, get_cache_dir
@@ -519,6 +416,147 @@ def cmd_format_message(args: argparse.Namespace) -> None:
     print(json.dumps({"written": str(output_path), "preview": preview}, ensure_ascii=False))
 
 
+def _build_init_payload(
+    args: argparse.Namespace,
+    *,
+    compact_cache: bool,
+) -> tuple[dict[str, object], dict[str, object] | None]:
+    """Build the shared payload for init/init-skill commands."""
+    import datetime
+    from weekend_scout.config import load_config, get_config_path, COUNTRY_CODE_MAP, COUNTRY_LANGUAGE_MAP
+    from weekend_scout.cities import (
+        get_city_list, generate_broad_queries, generate_targeted_by_country,
+        find_city_coords, ensure_geonames,
+    )
+    from weekend_scout.cache import query_events, query_events_summary, get_searches_this_week
+    from weekend_scout.distance import next_weekend_dates
+
+    config = load_config()
+
+    if not config.get("home_city"):
+        return {
+            "needs_setup": True,
+            "message": "Weekend Scout is not configured. Run: python -m weekend_scout setup",
+            "config_path": str(get_config_path()),
+        }, None
+
+    city_geocoded: bool | None = None
+    if args.city:
+        config["home_city"] = args.city
+        geonames_path = ensure_geonames()
+        if geonames_path.exists():
+            city_data = find_city_coords(args.city, geonames_path)
+            if city_data:
+                config["home_coordinates"] = {"lat": city_data["lat"], "lon": city_data["lon"]}
+                country = COUNTRY_CODE_MAP.get(city_data["country"], "")
+                if country:
+                    config["home_country"] = country
+                    config["search_language"] = COUNTRY_LANGUAGE_MAP.get(country, "en")
+                city_geocoded = True
+            else:
+                city_geocoded = False
+
+    if args.radius:
+        try:
+            config["radius_km"] = int(args.radius)
+        except ValueError:
+            return {"error": "radius must be an integer"}, None
+
+    saturday, sunday = next_weekend_dates()
+    target_weekend = {"saturday": saturday, "sunday": sunday}
+    run_id = f"{saturday}_{datetime.datetime.now().strftime('%H%M')}"
+
+    coords = config.get("home_coordinates", {})
+    coords_valid = not (coords.get("lat", 0.0) == 0.0 and coords.get("lon", 0.0) == 0.0)
+
+    if coords_valid:
+        cities = get_city_list(config, bypass_cache=args.city is not None)
+    else:
+        cities = {"tier1": [], "tier2": [], "tier3": []}
+
+    cached_payload = (
+        query_events_summary(config, saturday)
+        if compact_cache
+        else query_events(config, saturday)
+    )
+    searches_this_week = get_searches_this_week(config, saturday)
+    broad_result = generate_broad_queries(config, saturday, sunday)
+    targeted_by_country = generate_targeted_by_country(config, cities, saturday)
+
+    config_block: dict[str, object] = {
+        "home_city": config.get("home_city"),
+        "home_country": config.get("home_country", ""),
+        "radius_km": config.get("radius_km"),
+        "search_language": config.get("search_language"),
+        "target_weekend": target_weekend,
+        "max_city_options": config.get("max_city_options", 3),
+        "max_trip_options": config.get("max_trip_options", 10),
+        "max_searches": config.get("max_searches", 30),
+        "max_fetches": config.get("max_fetches", 30),
+        "exclude_served": config.get("exclude_served", False),
+    }
+    if city_geocoded is not None:
+        config_block["city_geocoded"] = city_geocoded
+
+    output: dict[str, object] = {
+        "run_id": run_id,
+        "config": config_block,
+        "cities": cities,
+        "searches_this_week": searches_this_week,
+        "suggested_queries": {
+            "vars": broad_result["vars"],
+            "broad": broad_result["templates"],
+            "targeted_by_country": targeted_by_country,
+        },
+    }
+    output["cached" if compact_cache else "cached_events"] = cached_payload
+    if not coords_valid:
+        output["warnings"] = ["coordinates_not_set: nearby city suggestions disabled"]
+    return output, config
+
+
+def cmd_init(args: argparse.Namespace) -> None:
+    """Load config, city list, full cache state, and query suggestions. Output JSON."""
+    from weekend_scout.cache import log_action
+
+    output, config = _build_init_payload(args, compact_cache=False)
+    if config is None:
+        print(json.dumps(output, ensure_ascii=False))
+        if "error" in output:
+            sys.exit(1)
+        return
+
+    saturday = output["config"]["target_weekend"]["saturday"]
+    cached_events = output["cached_events"]
+    log_action(config, "run_init", run_id=output["run_id"], target_weekend=saturday,
+               detail={"home_city": config.get("home_city"),
+                       "radius_km": config.get("radius_km"),
+                       "cached_count": len(cached_events),
+                       "tier1": output["cities"].get("tier1", [])})
+    print(json.dumps(output, indent=2, ensure_ascii=False))
+
+
+def cmd_init_skill(args: argparse.Namespace) -> None:
+    """Load compact run context for the skill without full cached event rows."""
+    from weekend_scout.cache import log_action
+
+    output, config = _build_init_payload(args, compact_cache=True)
+    if config is None:
+        print(json.dumps(output, ensure_ascii=False))
+        if "error" in output:
+            sys.exit(1)
+        return
+
+    saturday = output["config"]["target_weekend"]["saturday"]
+    cached = output["cached"]
+    log_action(config, "run_init", run_id=output["run_id"], target_weekend=saturday,
+               detail={"home_city": config.get("home_city"),
+                       "radius_km": config.get("radius_km"),
+                       "cached_count": cached["count"],
+                       "tier1": output["cities"].get("tier1", [])})
+    print(json.dumps(output, ensure_ascii=False))
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     """Print instructions for a manual /weekend-scout run."""
     print(json.dumps({
@@ -629,6 +667,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.add_argument("--city", help="Override home city")
     p_init.add_argument("--radius", help="Override search radius in km")
 
+    # init-skill
+    p_init_skill = sub.add_parser("init-skill", help="Load compact skill startup context")
+    p_init_skill.add_argument("--city", help="Override home city")
+    p_init_skill.add_argument("--radius", help="Override search radius in km")
+
     # save
     p_save = sub.add_parser("save", help="Save discovered events to cache")
     save_group = p_save.add_mutually_exclusive_group(required=True)
@@ -724,6 +767,7 @@ COMMANDS = {
     "setup": cmd_setup,
     "config": cmd_config,
     "init": cmd_init,
+    "init-skill": cmd_init_skill,
     "find-city": cmd_find_city,
     "save": cmd_save,
     "send": cmd_send,

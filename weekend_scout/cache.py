@@ -226,6 +226,52 @@ def query_events(
     return [dict(row) for row in rows]
 
 
+def query_events_summary(
+    config: dict[str, Any], saturday: str
+) -> dict[str, Any]:
+    """Return compact cached-event metadata for the target weekend.
+
+    Uses the same weekend overlap, canceled-event filtering, and optional
+    served-event filtering as ``query_events()``, but returns only summary
+    data needed for startup coverage decisions.
+
+    Args:
+        config: Loaded configuration dictionary.
+        saturday: ISO date string of target Saturday.
+
+    Returns:
+        Dict with total event count, covered city names, and per-city counts.
+    """
+    sunday = (
+        datetime.date.fromisoformat(saturday) + datetime.timedelta(days=1)
+    ).isoformat()
+
+    exclude_served = config.get("exclude_served", False)
+    served_clause = "AND served = 0" if exclude_served else ""
+
+    with get_connection(config) as conn:
+        rows = conn.execute(
+            f"""
+            SELECT city, COUNT(*) AS event_count
+            FROM events
+            WHERE start_date <= ?
+              AND (end_date IS NULL OR end_date >= ?)
+              AND canceled = 0
+              {served_clause}
+            GROUP BY city
+            ORDER BY city
+            """,
+            (sunday, saturday),
+        ).fetchall()
+
+    city_counts = {row["city"]: row["event_count"] for row in rows}
+    return {
+        "count": sum(city_counts.values()),
+        "covered_cities": list(city_counts.keys()),
+        "city_counts": city_counts,
+    }
+
+
 def log_search(
     config: dict[str, Any],
     query: str,

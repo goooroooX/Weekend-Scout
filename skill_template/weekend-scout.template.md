@@ -71,7 +71,7 @@ metadata: {"openclaw":{"requires":{"bins":["python"]}}}
 ### Step 1: Initialize
 
 ```bash
-python -m weekend_scout init [--city CITY] [--radius KM]
+python -m weekend_scout init-skill [--city CITY] [--radius KM]
 ```
 
 **Check for setup issues before extracting variables:**
@@ -128,11 +128,11 @@ python -m weekend_scout setup --json-file "$setup_json_path"
 #@ENDIF
 
 Tell the user: *"Configured — scouting near <city>, <country>."*
-Then re-run `python -m weekend_scout init` and continue from variable extraction below.
+Then re-run `python -m weekend_scout init-skill` and continue from variable extraction below.
 
 ---
 
-The `init` JSON contains all config fields you need — do **not** run `config` separately.
+The `init-skill` JSON contains all config fields you need — do **not** run `config` separately.
 
 Extract these fields from the JSON output and keep them in mind throughout:
 
@@ -147,7 +147,9 @@ max_fetches  = output.config.max_fetches               (fetch budget limit)
 tier1        = output.cities.tier1                     (largest nearby cities as "<city>|<country_code>")
 tier2        = output.cities.tier2                     (medium-population nearby cities as "<city>|<country_code>")
 tier3        = output.cities.tier3                     (smallest nearby cities as "<city>|<country_code>")
-cached       = output.cached_events                    (already in cache — skip re-discovering)
+cached_count = output.cached.count                     (number of cached weekend events)
+cached_covered_cities = output.cached.covered_cities   (cities already covered by weekend cache)
+cached_city_counts = output.cached.city_counts         (per-city cached event counts)
 done_q       = output.searches_this_week               (queries already run this week — skip)
 run_id         = output.run_id                           (pass to all log-search and log-action calls)
 exclude_served = output.config.exclude_served           (bool — if true, cached excludes already-sent events)
@@ -170,10 +172,16 @@ Use `target.template` and `target.date` as the source of truth; do not translate
 
 ### Step 2: Search for Events
 
-**If invoked with `--cached-only`**: skip this entire step. Proceed directly to Step 3
-using only the `cached` events from Step 1.
+**If invoked with `--cached-only`**: skip this entire step. Immediately load the full cached
+weekend event rows with:
 
-**Offline pre-check (no tool calls):** Review `cached`. If it already has events for
+```bash
+python -m weekend_scout cache-query --date "<saturday>"
+``` 
+
+Store that result as `cached_full`, then proceed directly to Step 3 using only `cached_full`.
+
+**Offline pre-check (no tool calls):** Review `cached_covered_cities`. If it already has events for
 every city in `tier1` for the target weekend, skip directly to Step 3.
 
 **Budget: up to `max_searches` WebSearch calls + up to `max_fetches` WebFetch calls.**
@@ -360,7 +368,7 @@ Stop when budget is exhausted.
   ads, and content unrelated to the target weekend.
 - Each uncovered **tier2** city: 1 WebSearch — only if `searches_used < max_searches × 0.6`.
 - Each uncovered **tier3** city: 1 WebSearch — only if `searches_used < max_searches × 0.8`.
-- A city is "covered" if it has at least one event across `cached` + Phase A+B+C results.
+- A city is "covered" if it has at least one event across `cached_covered_cities` + Phase A+B+C results.
 - If all cities in all tiers are already covered, log skip:
 #@IF !codex
   ```bash
@@ -441,7 +449,13 @@ Score each event 1–10:
 - Free entry: 0–1
 - Source quality (official=1, aggregator=0.5): 0–1
 
-Pool: combine `cached` events + newly saved events.
+Before Step 3, load the full cached weekend event rows once with:
+
+```bash
+python -m weekend_scout cache-query --date "<saturday>"
+``` 
+
+Store that result as `cached_full` and combine `cached_full` + newly saved events for ranking.
 Select: top `max_city_options` in home city + up to `max_trip_options` road trip options from nearby cities (tier1 first, then tier2, tier3).
 
 After selecting, compute: `total_events = len(city_events_selected) + len(trip_options)`
@@ -590,3 +604,6 @@ outdoor concerts, open-air cinema, large sporting events with public attendance.
 **Exclude:** museum openings, indoor theater/cinema/opera, conferences, small recurring weekly
 farmers markets, private corporate events, ticketed indoor concerts.
 Religious services are excluded, but religious festivals and processions are included.
+
+
+

@@ -123,6 +123,16 @@ def test_openclaw_metadata_is_single_line_json_without_pip_installer():
 def test_codex_skill_uses_file_based_payload_commands():
     content = _read_text(Path(".agents/skills/weekend-scout/SKILL.md"))
 
+    assert "python -m weekend_scout init-skill [--city CITY] [--radius KM]" in content
+    assert "python -m weekend_scout init [--city CITY] [--radius KM]" not in content
+    assert "cached_count = output.cached.count" in content
+    assert "cached_covered_cities = output.cached.covered_cities" in content
+    assert "cached_city_counts = output.cached.city_counts" in content
+    assert "cached = output.cached_events" not in content
+    assert 'python -m weekend_scout cache-query --date "<saturday>"' in content
+    assert "Store that result as `cached_full`, then proceed directly to Step 3 using only `cached_full`." in content
+    assert "Before Step 3, load the full cached weekend event rows once with:" in content
+    assert "Store that result as `cached_full` and combine `cached_full` + newly saved events for ranking." in content
     assert "**Codex JSON file rule:**" in content
     assert "**Normal run rule:**" in content
     assert "do **not** inspect `weekend_scout` package" in content
@@ -203,10 +213,21 @@ def test_codex_skill_uses_file_based_payload_commands():
 def test_template_setup_uses_language_placeholder_and_pipe_tiers():
     content = _read_text(Path("skill_template/weekend-scout.template.md"))
 
+    assert "python -m weekend_scout init-skill [--city CITY] [--radius KM]" in content
+    assert "python -m weekend_scout init [--city CITY] [--radius KM]" not in content
+    assert "The `init-skill` JSON contains all config fields you need" in content
     assert 'search_language":"<language>"' in content
     assert 'search_language":"<lang>"' not in content
     assert '"<city>|<country_code>"' in content
     assert "split each tier entry once" in content
+    assert "cached_count = output.cached.count" in content
+    assert "cached_covered_cities = output.cached.covered_cities" in content
+    assert "cached_city_counts = output.cached.city_counts" in content
+    assert "cached = output.cached_events" not in content
+    assert 'python -m weekend_scout cache-query --date "<saturday>"' in content
+    assert "Store that result as `cached_full`, then proceed directly to Step 3 using only `cached_full`." in content
+    assert "Before Step 3, load the full cached weekend event rows once with:" in content
+    assert "Store that result as `cached_full` and combine `cached_full` + newly saved events for ranking." in content
     assert "max_city_options = output.config.max_city_options" in content
     assert "max_trip_options = output.config.max_trip_options" in content
     assert "**Normal run rule:**" in content

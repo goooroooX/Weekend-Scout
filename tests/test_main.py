@@ -258,6 +258,8 @@ def test_cmd_init_returns_json(tmp_path, monkeypatch):
     result = json.loads(output)
     assert "config" in result
     assert "cities" in result
+    assert "cached_events" in result
+    assert "cached" not in result
     assert "city_meta" not in result
     sq = result["suggested_queries"]
     assert "vars" in sq
@@ -275,6 +277,65 @@ def test_cmd_init_returns_json(tmp_path, monkeypatch):
     assert result["config"]["max_trip_options"] == 10
     assert result["config"]["max_searches"] == 30
     assert result["config"]["max_fetches"] == 30
+
+
+def test_cmd_init_skill_returns_compact_cached_metadata(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    import weekend_scout.cities as cities_module
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {"tier1": ["Potsdam|DE"], "tier2": [], "tier3": ["Szczecin|PL"]},
+    )
+    output = _run_cmd("init-skill", [], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert "config" in result
+    assert "cities" in result
+    assert "cached" in result
+    assert "cached_events" not in result
+    assert result["config"]["max_city_options"] == 3
+    assert result["config"]["max_trip_options"] == 10
+    assert result["cached"] == {"count": 0, "covered_cities": [], "city_counts": {}}
+    assert "searches_this_week" in result
+    assert "suggested_queries" in result
+
+
+def test_cmd_init_skill_cached_summary_matches_saved_events(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    import weekend_scout.cities as cities_module
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {"tier1": ["Berlin|DE", "Potsdam|DE"], "tier2": [], "tier3": []},
+    )
+    _run_cmd(
+        "save",
+        ["--events", json.dumps([
+            {"event_name": "A", "city": "Berlin", "start_date": "2026-04-04"},
+            {"event_name": "B", "city": "Berlin", "start_date": "2026-04-05"},
+            {"event_name": "C", "city": "Potsdam", "start_date": "2026-04-04"},
+        ])],
+        tmp_path,
+        monkeypatch,
+    )
+    output = _run_cmd("init-skill", [], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert result["cached"]["count"] == 3
+    assert result["cached"]["covered_cities"] == ["Berlin", "Potsdam"]
+    assert result["cached"]["city_counts"] == {"Berlin": 2, "Potsdam": 1}
+
+
+def test_cmd_init_skill_needs_setup_matches_init(tmp_path, monkeypatch):
+    output = _run_cmd("init-skill", [], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert result["needs_setup"] is True
+
+
+def test_cmd_init_skill_radius_invalid_returns_error(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    output = _run_cmd("init-skill", ["--radius", "abc"], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert "error" in result
 
 
 # --- cmd_save ---

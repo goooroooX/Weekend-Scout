@@ -183,6 +183,38 @@ def test_query_events_excludes_canceled(cfg):
     assert result == []
 
 
+def test_query_events_summary_returns_compact_counts(cfg):
+    from weekend_scout.cache import save_events, query_events_summary
+    save_events(cfg, [
+        _event(event_name="A", city="Berlin", start_date="2026-04-04"),
+        _event(event_name="B", city="Berlin", start_date="2026-04-05"),
+        _event(event_name="C", city="Potsdam", start_date="2026-04-04"),
+    ])
+    summary = query_events_summary(cfg, "2026-04-04")
+    assert summary["count"] == 3
+    assert summary["covered_cities"] == ["Berlin", "Potsdam"]
+    assert summary["city_counts"] == {"Berlin": 2, "Potsdam": 1}
+
+
+def test_query_events_summary_exclude_served_matches_query_events(cfg):
+    from weekend_scout.cache import save_events, query_events_summary, get_connection
+    save_events(cfg, [_event(event_name="Old", city="Berlin", start_date="2026-04-04")])
+    with get_connection(cfg) as conn:
+        conn.execute("UPDATE events SET served = 1")
+    cfg_excl = dict(cfg, exclude_served=True)
+    summary = query_events_summary(cfg_excl, "2026-04-04")
+    assert summary == {"count": 0, "covered_cities": [], "city_counts": {}}
+
+
+def test_query_events_summary_excludes_canceled(cfg):
+    from weekend_scout.cache import save_events, query_events_summary, get_connection
+    save_events(cfg, [_event(event_name="Gone", city="Berlin", start_date="2026-04-04")])
+    with get_connection(cfg) as conn:
+        conn.execute("UPDATE events SET canceled = 1")
+    summary = query_events_summary(cfg, "2026-04-04")
+    assert summary == {"count": 0, "covered_cities": [], "city_counts": {}}
+
+
 # --- log_search / get_searches_this_week ---
 
 def test_log_search_inserts_row(cfg):
