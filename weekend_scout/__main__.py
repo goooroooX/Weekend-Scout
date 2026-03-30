@@ -458,7 +458,7 @@ def cmd_format_message(args: argparse.Namespace) -> None:
     """Format a scout message and write it to a file."""
     from pathlib import Path
     from weekend_scout.config import load_config, get_cache_dir
-    from weekend_scout.telegram import format_scout_message
+    from weekend_scout.telegram import format_scout_message, format_scout_preview
     from weekend_scout.cache import log_action
 
     config = load_config()
@@ -497,6 +497,16 @@ def cmd_format_message(args: argparse.Namespace) -> None:
         hint_max_searches=hint_searches,
         hint_max_fetches=hint_fetches,
     )
+    preview = format_scout_preview(
+        config.get("home_city", ""),
+        args.saturday,
+        args.sunday,
+        city_events,
+        trips,
+        low_results_hint=low_results,
+        hint_max_searches=hint_searches,
+        hint_max_fetches=hint_fetches,
+    )
     output_path = Path(args.output) if args.output else get_cache_dir(config) / "scout_message.txt"
     output_path.write_text(msg, encoding="utf-8")
     log_action(config, "message_formatted", run_id=args.run_id,
@@ -504,7 +514,7 @@ def cmd_format_message(args: argparse.Namespace) -> None:
                detail={"city_events": len(city_events), "trips": len(trips),
                        "char_count": len(msg)})
     _cleanup_payload_files(cleanup_candidates)
-    print(json.dumps({"written": str(output_path)}))
+    print(json.dumps({"written": str(output_path), "preview": preview}, ensure_ascii=False))
 
 
 def cmd_run(args: argparse.Namespace) -> None:

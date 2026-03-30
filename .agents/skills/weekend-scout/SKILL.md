@@ -166,7 +166,8 @@ Initialize phase counters at the start of every phase A/B/C/D:
 Track usage explicitly throughout this step:
 - increment `searches_used` and `phase_searches` after every WebSearch
 - increment `fetches_used` and `phase_fetches` after every WebFetch
-- increment `phase_new_events` whenever that phase discovers a new event you keep
+- maintain a run-level unique-event set keyed by `(event_name, city, start_date)`
+- increment `phase_new_events` only when a kept event adds a new key to that set
 - Before any WebSearch: stop if `searches_used >= max_searches`
 - Before any WebFetch:  stop if `fetches_used  >= max_fetches`
 
@@ -188,6 +189,8 @@ Phase D  (verification) : up to 5 fetches (reserve capacity before Phase C)
 **Event collection:** Maintain a running list of discovered events throughout
 all phases. Do **not** call `save` during phases — call it once at the end of
 Step 2 with the complete list.
+Use the same uniqueness rule as runtime `save_events`: an event is unique by
+`event_name`, `city`, and `start_date`.
 
 After each phase A/B/C/D:
 - show the user a short phase summary with:
@@ -211,7 +214,9 @@ python -m weekend_scout log-search \
   --events-discovered <N> \
   --run-id "<run_id>"
 ```
-`<N>` in `--events-discovered` is an **integer count** (e.g. `3`), not a list. Use `0` if no events were identified in this search.
+`<N>` in `--events-discovered` is an **integer count** of newly kept unique events
+from that search/fetch under the runtime dedupe rule `(event_name, city, start_date)`.
+Use `0` if no new unique events were identified.
 
 **`save` payload contract** — `save --events` / `save --events-file` must receive a **JSON array**
 of event objects. Each event object must include:
@@ -378,7 +383,7 @@ python -m weekend_scout log-action --run-id "<run_id>" --action score_summary \
 
 For road trips, use tier as a distance proxy (tier1 = largest/closest, tier3 = smallest/farthest):
 Build up to 10 options — one per city that has confirmed events, working through tier1 → tier2 → tier3.
-Label them A through J.
+Label them A through J in the final message only.
 
 For each trip option, build a dict that matches the `format-message` trip payload contract:
 ```json
@@ -404,6 +409,9 @@ If the event has no known start time, use **09:30** as default departure.
 
 Pass the selected top home-city event dicts directly as the `city-events` JSON array, and pass
 trip option dicts that strictly match the trip payload contract above.
+The `format-message` response returns both:
+- `written`: HTML message file path for Telegram sending
+- `preview`: plain-text digest preview for showing in the conversation
 
 ```bash
 # Create `city_events_json_path` and `trips_json_path` first using the Codex JSON file rule above.
@@ -413,13 +421,13 @@ python -m weekend_scout format-message \
   --trips-file "$trips_json_path" \
   --run-id "<run_id>" \
   [--low-results true]   # include this flag when total_events < 3
-# → {"written": "<path>"}  — use this path for send:
+# → {"written": "<path>", "preview": "<plain text>"}  — use `written` for send and `preview` for the user:
 
 python -m weekend_scout send --file "<path from written>" --run-id "<run_id>"
 ```
 
-**Always display the message to the user** — read the written file and show its contents
-in the conversation (strip HTML tags when presenting; the content reads fine as plain text).
+**Always display the message to the user** — show the `preview` text returned by
+`format-message`. Do **not** read the written HTML file back into the conversation.
 
 If `{"sent": true}`: tell the user the digest was sent to Telegram.
 
@@ -439,10 +447,20 @@ If `{"sent": false}`:
 
 ### Step 6: Mark Served and Report
 
-```bash
-# Only if send succeeded ({"sent": true}):
-python -m weekend_scout cache-mark-served --date "<saturday>"
+If `{"sent": true}`:
+- run `python -m weekend_scout cache-mark-served --date "<saturday>"`
+- set `served_marked = true`, `send_reason = "sent"`
 
+If `{"sent": false}` because Telegram is not configured:
+- do **not** mark served
+- set `served_marked = false`, `send_reason = "telegram_not_configured"`
+
+If `{"sent": false}` because Telegram sending failed:
+- do **not** mark served
+- set `served_marked = false`, `send_reason = "send_failed"`
+
+After the send/no-send outcome is known, **always** log `run_complete`:
+```bash
 # Create `detail_json_path` first using the Codex JSON file rule above.
 python -m weekend_scout log-action --run-id "<run_id>" --action run_complete \
   --target-weekend "<saturday>" \

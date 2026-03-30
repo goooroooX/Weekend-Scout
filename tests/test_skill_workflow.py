@@ -67,14 +67,14 @@ def test_template_has_no_utf8_bom():
     assert not template_bytes.startswith(b"\xef\xbb\xbf")
 
 
-def test_claude_argument_hint_is_quoted_yaml_string():
+def test_claude_argument_hint_uses_bare_anthropic_style():
     template = _read_text(Path("skill_template/weekend-scout.template.md"))
     generated = _read_text(Path(".claude/skills/weekend-scout/SKILL.md"))
 
-    assert 'argument-hint: "[city] [radius-km] [--cached-only]"' in template
-    assert 'argument-hint: "[city] [radius-km] [--cached-only]"' in generated
-    assert "argument-hint: [city] [radius-km] [--cached-only]" not in template
-    assert "argument-hint: [city] [radius-km] [--cached-only]" not in generated
+    assert "argument-hint: [city] [radius-km] [--cached-only]" in template
+    assert "argument-hint: [city] [radius-km] [--cached-only]" in generated
+    assert 'argument-hint: "[city] [radius-km] [--cached-only]"' not in template
+    assert 'argument-hint: "[city] [radius-km] [--cached-only]"' not in generated
 
 
 def test_template_and_generated_skill_preserve_known_unicode():
@@ -156,6 +156,8 @@ def test_codex_skill_uses_file_based_payload_commands():
     assert "budget_checkpoint" not in content
     assert "`log-action --action phase_summary`" in content
     assert "`log-action --action run_complete`" in content
+    assert "unique-event set keyed by `(event_name, city, start_date)`" in content
+    assert "runtime dedupe rule `(event_name, city, start_date)`" in content
     assert "Do **not** call `save` during phases" in content
     assert "After each phase A/B/C/D:" in content
     assert "`save --events` / `save --events-file` must receive a **JSON array**" in content
@@ -165,6 +167,13 @@ def test_codex_skill_uses_file_based_payload_commands():
     assert "`name`, `route`, `events`, `timing`, optional `url`." in content
     assert "Pass the selected top home-city event dicts directly as the `city-events` JSON array" in content
     assert "Do not patch behavior ad hoc during execution." in content
+    assert 'The `format-message` response returns both:' in content
+    assert '`preview`: plain-text digest preview for showing in the conversation' in content
+    assert "Do **not** read the written HTML file back into the conversation." in content
+    assert '"name":   "Łódź Day Trip"' in content
+    assert '"name":   "A. Łódź Day Trip"' not in content
+    assert "After the send/no-send outcome is known, **always** log `run_complete`:" in content
+    assert '--detail-file "$detail_json_path"' in content
     assert "city_meta" not in content
     assert "targeted_template" not in content
     assert "choose the targeted-search language with this mapping" not in content
@@ -198,10 +207,20 @@ def test_template_setup_uses_language_placeholder_and_pipe_tiers():
     assert "budget_checkpoint" not in content
     assert "`log-action --action phase_summary`" in content
     assert "`log-action --action run_complete`" in content
+    assert "unique-event set keyed by `(event_name, city, start_date)`" in content
+    assert "runtime dedupe rule `(event_name, city, start_date)`" in content
     assert "Do **not** call `save` during phases" in content
     assert "`save --events` / `save --events-file` must receive a **JSON array**" in content
     assert "`format-message --city-events` / `--city-events-file` must receive a **JSON array** of event dicts." in content
     assert "`format-message --trips` / `--trips-file` must receive a **JSON array** of trip dicts." in content
+    assert '`preview`: plain-text digest preview for showing in the conversation' in content
+    assert "Do **not** read the written HTML file back into the conversation." in content
+    assert '"name":   "Łódź Day Trip"' in content
+    assert '"name":   "A. Łódź Day Trip"' not in content
+    assert '"sent": <true|false>' in content
+    assert '"send_reason": "<sent|telegram_not_configured|send_failed>"' in content
+    assert '"served_marked": <true|false>' in content
+    assert '"uncovered_tier1": ["<city>", "<city>"]' in content
     assert "city_meta" not in content
     assert "targeted_by_country" in content
     assert "targeted_template" not in content

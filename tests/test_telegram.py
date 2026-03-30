@@ -269,6 +269,13 @@ def test_format_scout_message_road_trips():
     assert "A. <b>Lodz Day Trip</b>" in msg
 
 
+def test_format_scout_message_strips_prefixed_trip_name():
+    from weekend_scout.telegram import format_scout_message
+    msg = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", [], [_trip(name="A. Lodz Day Trip")])
+    assert "A. <b>Lodz Day Trip</b>" in msg
+    assert "A. <b>A. Lodz Day Trip</b>" not in msg
+
+
 def test_format_scout_message_trip_cap_10():
     from weekend_scout.telegram import format_scout_message
     trips = [_trip(name=f"Trip {i}") for i in range(12)]
@@ -332,3 +339,14 @@ def test_format_scout_message_month_boundary():
     # March 30 - April 1 (hypothetical, just test formatting doesn't crash)
     msg = format_scout_message("Paris", "2026-03-28", "2026-03-29", [], [])
     assert "March 28-29, 2026" in msg
+
+
+def test_format_scout_preview_is_plain_text():
+    from weekend_scout.telegram import format_scout_preview
+    preview = format_scout_preview("Warsaw", "2026-04-04", "2026-04-05", [_event()], [_trip(url="https://example.com/trip")])
+    assert "Weekend Scout | April 4-5, 2026" in preview
+    assert "<b>" not in preview
+    assert "<i>" not in preview
+    assert "[<a href=" not in preview
+    assert "A. Lodz Day Trip" in preview
+    assert "https://example.com/trip" in preview

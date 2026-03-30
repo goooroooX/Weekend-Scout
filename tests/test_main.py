@@ -113,7 +113,8 @@ def test_format_message_creates_file(tmp_path, monkeypatch):
         ["--saturday", "2026-03-28", "--sunday", "2026-03-29", "--output", str(output)],
         tmp_path, monkeypatch,
     )
-    assert result == {"written": str(output)}
+    assert result["written"] == str(output)
+    assert "preview" in result
     assert output.exists()
 
 
@@ -136,12 +137,24 @@ def test_format_message_with_events(tmp_path, monkeypatch):
 
 def test_format_message_no_events_graceful(tmp_path, monkeypatch):
     output = tmp_path / "msg.txt"
-    _run_format_message(
+    result = _run_format_message(
         ["--saturday", "2026-03-28", "--sunday", "2026-03-29", "--output", str(output)],
         tmp_path, monkeypatch,
     )
     content = output.read_text(encoding="utf-8")
     assert "No events found" in content
+    assert "No events found" in result["preview"]
+
+
+def test_format_message_preview_is_plain_text(tmp_path, monkeypatch):
+    output = tmp_path / "msg.txt"
+    result = _run_format_message(
+        ["--saturday", "2026-03-28", "--sunday", "2026-03-29", "--output", str(output)],
+        tmp_path, monkeypatch,
+    )
+    assert "<b>" not in result["preview"]
+    assert "<i>" not in result["preview"]
+    assert "[<a href=" not in result["preview"]
 
 
 # --- cmd_config: error handling ---

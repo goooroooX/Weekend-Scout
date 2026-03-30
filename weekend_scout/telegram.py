@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import datetime
 import html
+import re
 import sys
 from typing import Any
 
@@ -29,12 +30,18 @@ _MONTHS = [
     "July", "August", "September", "October", "November", "December",
 ]
 _DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+_TRIP_PREFIX_RE = re.compile(r"^[A-J]\.\s+")
 
 
 def _day_abbr(iso_date: str) -> str:
     """Return short weekday abbreviation for an ISO date string."""
     d = datetime.date.fromisoformat(iso_date)
     return _DAYS[d.weekday()]
+
+
+def _normalize_trip_name(name: str) -> str:
+    """Strip any pre-numbered trip prefix so the formatter owns labeling."""
+    return _TRIP_PREFIX_RE.sub("", name).strip()
 
 
 def split_message(message: str, max_length: int = TELEGRAM_MAX_LENGTH) -> list[str]:
@@ -151,14 +158,14 @@ def format_event_block(event: dict[str, Any]) -> str:
     if day_time:
         venue_time_parts.append(day_time)
 
-    # Inline link tag — appended to description or venue line
+    # Inline link tag appended to description or venue line
     url = event.get("source_url") or ""
     link_tag = f' [<a href="{html.escape(url)}">link</a>]' if url else ""
 
     if venue_time_parts:
-        venue_line = "   📍 " + " | ".join(venue_time_parts)
+        venue_line = "   " + " | ".join(venue_time_parts)
         if not (event.get("description") or ""):
-            # No description — attach link to venue line
+            # No description: attach link to venue line
             venue_line += link_tag
             link_tag = ""
         lines.append(venue_line)
@@ -173,9 +180,9 @@ def format_event_block(event: dict[str, Any]) -> str:
     # Cost
     free_entry = event.get("free_entry")
     if free_entry is True or free_entry == 1:
-        lines.append("   ✅ Free")
+        lines.append("   Free")
     elif free_entry is False or free_entry == 0:
-        lines.append("   💰 Paid")
+        lines.append("   Paid")
 
     return "\n".join(lines)
 
@@ -200,7 +207,7 @@ def format_scout_message(
         trip_options: Up to 10 road trip option dicts.
             Each trip dict should have keys:
               name (str), route (str), events (str), timing (str).
-            Optional: url (str) — appended as [link] on the events line.
+            Optional: url (str) appended as [link] on the events line.
         low_results_hint: When True, appends a hint suggesting the user
             increase the search budget.
 
@@ -216,11 +223,11 @@ def format_scout_message(
         sun_month = _MONTHS[sun.month - 1]
         date_range = f"{month} {sat.day} - {sun_month} {sun.day}, {sat.year}"
 
-    header = f"<b>🗓 Weekend Scout | {date_range}</b>"
+    header = f"<b>Weekend Scout | {date_range}</b>"
 
     if not city_events and not trip_options:
         hint = (
-            "\n\n💡 <i>No events found. To discover more, increase your search budget:\n"
+            "\n\n<i>No events found. To discover more, increase your search budget:\n"
             f"python -m weekend_scout config max_searches {hint_max_searches}\n"
             f"python -m weekend_scout config max_fetches {hint_max_fetches}</i>"
             if low_results_hint else ""
@@ -228,13 +235,13 @@ def format_scout_message(
         return (
             f"{header}\n\n"
             f"No events found for this weekend.{hint}\n\n"
-            "<i>— Scouted by Weekend Scout</i>"
+            "<i>Scouted by Weekend Scout</i>"
         )
 
     sections: list[str] = [header]
 
     if city_events:
-        sections.append(f"<b>🏙 IN {html.escape(home_city.upper())}:</b>")
+        sections.append(f"<b>IN {html.escape(home_city.upper())}:</b>")
         for i, event in enumerate(city_events[:3], 1):
             block = format_event_block(event)
             # Prepend number to the first line (which has the <b>name</b>)
@@ -243,32 +250,132 @@ def format_scout_message(
             sections.append("\n".join(block_lines))
 
     if trip_options:
-        sections.append("<b>🚗 ROAD TRIPS:</b>")
+        sections.append("<b>ROAD TRIPS:</b>")
         letters = "ABCDEFGHIJ"
         for i, trip in enumerate(trip_options[:10]):
             letter = letters[i]
-            name = html.escape(trip.get("name") or "")
+            name = html.escape(_normalize_trip_name(trip.get("name") or ""))
             route = html.escape(trip.get("route") or "")
             events_text = html.escape(trip.get("events") or "")
             timing = html.escape(trip.get("timing") or "")
             trip_url = trip.get("url") or ""
             parts = [f"{letter}. <b>{name}</b>"]
             if route:
-                parts.append(f"   🗺 {route}")
+                parts.append(f"   {route}")
             if events_text:
                 trip_link = f' [<a href="{html.escape(trip_url)}">link</a>]' if trip_url else ""
-                parts.append(f"   🎪 {events_text}{trip_link}")
+                parts.append(f"   {events_text}{trip_link}")
             if timing:
-                parts.append(f"   🕘 {timing}")
+                parts.append(f"   {timing}")
             sections.append("\n".join(parts))
 
     if low_results_hint:
         total = len(city_events) + len(trip_options)
         sections.append(
-            f"💡 <i>Only {total} event(s) found. To discover more, increase your search budget:\n"
+            f"<i>Only {total} event(s) found. To discover more, increase your search budget:\n"
             f"python -m weekend_scout config max_searches {hint_max_searches}\n"
             f"python -m weekend_scout config max_fetches {hint_max_fetches}</i>"
         )
 
-    sections.append("<i>— Scouted by Weekend Scout</i>")
+    sections.append("<i>Scouted by Weekend Scout</i>")
     return "\n\n".join(sections)
+
+
+def format_scout_preview(
+    home_city: str,
+    saturday: str,
+    sunday: str,
+    city_events: list[dict[str, Any]],
+    trip_options: list[dict[str, Any]],
+    low_results_hint: bool = False,
+    hint_max_searches: int = 50,
+    hint_max_fetches: int = 50,
+) -> str:
+    """Format a plain-text preview of the scout digest for CLI/chat display."""
+    sat = datetime.date.fromisoformat(saturday)
+    sun = datetime.date.fromisoformat(sunday)
+    month = _MONTHS[sat.month - 1]
+    if sat.month == sun.month:
+        date_range = f"{month} {sat.day}-{sun.day}, {sat.year}"
+    else:
+        sun_month = _MONTHS[sun.month - 1]
+        date_range = f"{month} {sat.day} - {sun_month} {sun.day}, {sat.year}"
+
+    lines: list[str] = [f"Weekend Scout | {date_range}"]
+
+    if not city_events and not trip_options:
+        lines.extend(["", "No events found for this weekend."])
+        if low_results_hint:
+            lines.extend([
+                "",
+                "Only 0 event(s) found. To discover more, increase your search budget:",
+                f"python -m weekend_scout config max_searches {hint_max_searches}",
+                f"python -m weekend_scout config max_fetches {hint_max_fetches}",
+            ])
+        lines.extend(["", "Scouted by Weekend Scout"])
+        return "\n".join(lines)
+
+    if city_events:
+        lines.extend(["", f"IN {home_city.upper()}"])
+        for i, event in enumerate(city_events[:3], 1):
+            lines.append("")
+            lines.append(f"{i}. {event.get('event_name', '')}")
+            venue_parts = []
+            venue = event.get("location_name") or ""
+            if venue:
+                venue_parts.append(venue)
+            start_date = event.get("start_date") or ""
+            end_date = event.get("end_date") or ""
+            day_str = ""
+            if start_date:
+                day_str = _day_abbr(start_date)
+                if end_date and end_date != start_date:
+                    day_str = f"{day_str}-{_day_abbr(end_date)}"
+            time_info = event.get("time_info") or ""
+            if day_str and time_info:
+                venue_parts.append(f"{day_str} {time_info}")
+            elif day_str:
+                venue_parts.append(day_str)
+            elif time_info:
+                venue_parts.append(time_info)
+            if venue_parts:
+                lines.append(f"   {' | '.join(venue_parts)}")
+            desc = event.get("description") or ""
+            if desc:
+                if len(desc) > 120:
+                    desc = desc[:117] + "..."
+                lines.append(f"   {desc}")
+            source_url = event.get("source_url") or ""
+            if source_url:
+                lines.append(f"   {source_url}")
+
+    if trip_options:
+        letters = "ABCDEFGHIJ"
+        lines.extend(["", "ROAD TRIPS"])
+        for i, trip in enumerate(trip_options[:10]):
+            lines.append("")
+            lines.append(f"{letters[i]}. {_normalize_trip_name(trip.get('name') or '')}")
+            route = trip.get("route") or ""
+            if route:
+                lines.append(f"   {route}")
+            events_text = trip.get("events") or ""
+            if events_text:
+                lines.append(f"   {events_text}")
+            timing = trip.get("timing") or ""
+            if timing:
+                lines.append(f"   {timing}")
+            trip_url = trip.get("url") or ""
+            if trip_url:
+                lines.append(f"   {trip_url}")
+
+    if low_results_hint:
+        total = len(city_events) + len(trip_options)
+        lines.extend([
+            "",
+            f"Only {total} event(s) found. To discover more, increase your search budget:",
+            f"python -m weekend_scout config max_searches {hint_max_searches}",
+            f"python -m weekend_scout config max_fetches {hint_max_fetches}",
+        ])
+
+    lines.extend(["", "Scouted by Weekend Scout"])
+    return "\n".join(lines)
