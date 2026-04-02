@@ -179,6 +179,9 @@ weekend event rows with:
 python -m weekend_scout cache-query --date "<saturday>"
 ``` 
 
+Here, `saturday` means `output.config.target_weekend.saturday` in ISO format (`YYYY-MM-DD`),
+for example `2026-04-04`.
+
 Store that result as `cached_full`, then proceed directly to Step 3 using only `cached_full`.
 
 **Offline pre-check (no tool calls):** Review `cached_covered_cities`. If it already has events for
@@ -455,6 +458,9 @@ Before Step 3, load the full cached weekend event rows once with:
 python -m weekend_scout cache-query --date "<saturday>"
 ``` 
 
+Here, `saturday` means the same ISO Saturday date from `init-skill`
+(`output.config.target_weekend.saturday`), for example `2026-04-04`.
+
 Store that result as `cached_full` and combine `cached_full` + newly saved events for ranking.
 Select: top `max_city_options` in home city + up to `max_trip_options` road trip options from nearby cities (tier1 first, then tier2, tier3).
 
@@ -554,6 +560,7 @@ If `{"sent": false}`:
 
 If `{"sent": true}`:
 - run `python -m weekend_scout cache-mark-served --date "<saturday>"`
+  where `saturday` is the ISO Saturday date from `init-skill` (for example `2026-04-04`)
 - set `served_marked = true`, `send_reason = "sent"`
 
 If `{"sent": false}` because Telegram is not configured:
@@ -604,6 +611,5 @@ outdoor concerts, open-air cinema, large sporting events with public attendance.
 **Exclude:** museum openings, indoor theater/cinema/opera, conferences, small recurring weekly
 farmers markets, private corporate events, ticketed indoor concerts.
 Religious services are excluded, but religious festivals and processions are included.
-
 
 

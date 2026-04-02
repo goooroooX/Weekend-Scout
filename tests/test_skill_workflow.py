@@ -130,8 +130,10 @@ def test_codex_skill_uses_file_based_payload_commands():
     assert "cached_city_counts = output.cached.city_counts" in content
     assert "cached = output.cached_events" not in content
     assert 'python -m weekend_scout cache-query --date "<saturday>"' in content
+    assert "Here, `saturday` means `output.config.target_weekend.saturday` in ISO format (`YYYY-MM-DD`)," in content
     assert "Store that result as `cached_full`, then proceed directly to Step 3 using only `cached_full`." in content
     assert "Before Step 3, load the full cached weekend event rows once with:" in content
+    assert "Here, `saturday` means the same ISO Saturday date from `init-skill`" in content
     assert "Store that result as `cached_full` and combine `cached_full` + newly saved events for ranking." in content
     assert "**Codex JSON file rule:**" in content
     assert "**Normal run rule:**" in content
@@ -188,6 +190,7 @@ def test_codex_skill_uses_file_based_payload_commands():
     assert '"name":   "Łódź Day Trip"' in content
     assert '"name":   "A. Łódź Day Trip"' not in content
     assert "After the send/no-send outcome is known, **always** log `run_complete`:" in content
+    assert 'where `saturday` is the ISO Saturday date from `init-skill` (for example `2026-04-04`)' in content
     assert '--detail-file "$detail_json_path"' in content
     assert "city_meta" not in content
     assert "targeted_template" not in content
@@ -225,8 +228,10 @@ def test_template_setup_uses_language_placeholder_and_pipe_tiers():
     assert "cached_city_counts = output.cached.city_counts" in content
     assert "cached = output.cached_events" not in content
     assert 'python -m weekend_scout cache-query --date "<saturday>"' in content
+    assert "Here, `saturday` means `output.config.target_weekend.saturday` in ISO format (`YYYY-MM-DD`)," in content
     assert "Store that result as `cached_full`, then proceed directly to Step 3 using only `cached_full`." in content
     assert "Before Step 3, load the full cached weekend event rows once with:" in content
+    assert "Here, `saturday` means the same ISO Saturday date from `init-skill`" in content
     assert "Store that result as `cached_full` and combine `cached_full` + newly saved events for ranking." in content
     assert "max_city_options = output.config.max_city_options" in content
     assert "max_trip_options = output.config.max_trip_options" in content
