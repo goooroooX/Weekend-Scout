@@ -195,14 +195,30 @@ def test_codex_skill_uses_file_based_payload_commands():
     assert "#### 2.6 Phase C -- Targeted city searches" in content
     assert "#### 2.7 Phase D -- Verification (1-5 fetches)" in content
     assert "#### 2.8 Save discovered events" in content
-    assert "**SEARCH STEP** -- execute this sequence for every WebSearch:" in content
-    assert "**FETCH STEP** -- execute this sequence for every WebFetch:" in content
+    assert "**SEARCH STEP [SEARCH_STEP]** -- execute this sequence for every WebSearch:" in content
+    assert "**FETCH STEP [FETCH_STEP]** -- execute this sequence for every WebFetch:" in content
+    assert "For every WebSearch, execute `SEARCH_STEP` exactly as written." in content
+    assert "Do not continue until `SEARCH_STEP` is complete." in content
+    assert "Use only `FETCH_STEP` for URL/page extraction in Phase B and Phase D." in content
     assert "**Tier 1 loop** -- for each uncovered tier1 city:" in content
     assert "**Tier 2 loop** -- only if `searches_used < max_searches * 0.6`:" in content
     assert "**Tier 3 loop** -- only if `searches_used < max_searches * 0.8`:" in content
+    assert "**Hard rules for this step:**" in content
+    assert "A -> B -> C -> D -> save -> cache-query -> score -> format/send" in content
+    assert "Do **not** perform any WebSearch or WebFetch after Phase D completes." in content
+    assert "Do **not** call `cache-query` before `save` except in the documented `--cached-only` path." in content
+    assert "Every phase must end with either a `skip` log or a `phase_summary` log before moving on." in content
+    assert "one-call transport files for CLI payloads" in content
+    assert "not persistent cache" in content
     assert "always write a fresh" in content
     assert "Do NOT batch log-search calls at the end of a phase." in content
     assert "Do NOT re-fetch a URL already fetched in this run." in content
+    assert "After Phase A completes, continue only to Phase B." in content
+    assert "Phase B is URL-based extraction. Use only `FETCH_STEP` for queued page work, not ad hoc substitute search-only flows." in content
+    assert "Follow the emitted tier order exactly." in content
+    assert "Do not start Phase D until Phase C ends with `phase_summary` or `skip`." in content
+    assert "After Phase D completes, discovery work is over. Do not return to targeted or broad searching." in content
+    assert "Discovery must already be complete before this step starts." in content
     assert '"name":   "Łódź Day Trip"' in content
     assert '"name":   "A. Łódź Day Trip"' not in content
     assert "After the send/no-send outcome is known, **always** log `run_complete`:" in content
@@ -264,14 +280,30 @@ def test_template_setup_uses_language_placeholder_and_pipe_tiers():
     assert "#### 2.6 Phase C -- Targeted city searches" in content
     assert "#### 2.7 Phase D -- Verification (1-5 fetches)" in content
     assert "#### 2.8 Save discovered events" in content
-    assert "**SEARCH STEP** -- execute this sequence for every WebSearch:" in content
-    assert "**FETCH STEP** -- execute this sequence for every WebFetch:" in content
+    assert "**SEARCH STEP [SEARCH_STEP]** -- execute this sequence for every WebSearch:" in content
+    assert "**FETCH STEP [FETCH_STEP]** -- execute this sequence for every WebFetch:" in content
+    assert "For every WebSearch, execute `SEARCH_STEP` exactly as written." in content
+    assert "Do not continue until `SEARCH_STEP` is complete." in content
+    assert "Use only `FETCH_STEP` for URL/page extraction in Phase B and Phase D." in content
     assert "**Tier 1 loop** -- for each uncovered tier1 city:" in content
     assert "**Tier 2 loop** -- only if `searches_used < max_searches * 0.6`:" in content
     assert "**Tier 3 loop** -- only if `searches_used < max_searches * 0.8`:" in content
+    assert "**Hard rules for this step:**" in content
+    assert "A -> B -> C -> D -> save -> cache-query -> score -> format/send" in content
+    assert "Do **not** perform any WebSearch or WebFetch after Phase D completes." in content
+    assert "Do **not** call `cache-query` before `save` except in the documented `--cached-only` path." in content
+    assert "Every phase must end with either a `skip` log or a `phase_summary` log before moving on." in content
+    assert "one-call transport files for CLI payloads" in content
+    assert "not persistent cache" in content
     assert "always write a fresh" in content
     assert "Do NOT batch log-search calls at the end of a phase." in content
     assert "Do NOT re-fetch a URL already fetched in this run." in content
+    assert "After Phase A completes, continue only to Phase B." in content
+    assert "Phase B is URL-based extraction. Use only `FETCH_STEP` for queued page work, not ad hoc substitute search-only flows." in content
+    assert "Follow the emitted tier order exactly." in content
+    assert "Do not start Phase D until Phase C ends with `phase_summary` or `skip`." in content
+    assert "After Phase D completes, discovery work is over. Do not return to targeted or broad searching." in content
+    assert "Discovery must already be complete before this step starts." in content
     assert "budget_checkpoint" not in content
     assert "`log-action --action phase_summary`" in content
     assert "`log-action --action run_complete`" in content
