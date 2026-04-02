@@ -81,7 +81,7 @@ def test_template_and_generated_skill_preserve_known_unicode():
     template = _read_text(Path("skill_template/weekend-scout.template.md"))
     generated = _read_text(Path(".claude/skills/weekend-scout/SKILL.md"))
 
-    for literal in ("—", "→", "×", "Łódź"):
+    for literal in ("Łódź", "→", "Sat–Sun"):
         assert literal in template
         assert literal in generated
 
@@ -187,6 +187,22 @@ def test_codex_skill_uses_file_based_payload_commands():
     assert 'The `format-message` response returns both:' in content
     assert '`preview`: plain-text digest preview for showing in the conversation' in content
     assert "Do **not** read the written HTML file back into the conversation." in content
+    assert "#### 2.1 Budget and counters" in content
+    assert "#### 2.2 Reusable protocols" in content
+    assert "#### 2.3 Log and payload patterns" in content
+    assert "#### 2.4 Phase A -- Broad sweep (3-5 searches)" in content
+    assert "#### 2.5 Phase B -- Aggregator deep-dive (shares Phase A's fetch budget)" in content
+    assert "#### 2.6 Phase C -- Targeted city searches" in content
+    assert "#### 2.7 Phase D -- Verification (1-5 fetches)" in content
+    assert "#### 2.8 Save discovered events" in content
+    assert "**SEARCH STEP** -- execute this sequence for every WebSearch:" in content
+    assert "**FETCH STEP** -- execute this sequence for every WebFetch:" in content
+    assert "**Tier 1 loop** -- for each uncovered tier1 city:" in content
+    assert "**Tier 2 loop** -- only if `searches_used < max_searches * 0.6`:" in content
+    assert "**Tier 3 loop** -- only if `searches_used < max_searches * 0.8`:" in content
+    assert "always write a fresh" in content
+    assert "Do NOT batch log-search calls at the end of a phase." in content
+    assert "Do NOT re-fetch a URL already fetched in this run." in content
     assert '"name":   "Łódź Day Trip"' in content
     assert '"name":   "A. Łódź Day Trip"' not in content
     assert "After the send/no-send outcome is known, **always** log `run_complete`:" in content
@@ -240,6 +256,22 @@ def test_template_setup_uses_language_placeholder_and_pipe_tiers():
     assert "`searches_used = 0`, `fetches_used = 0`" in content
     assert "`phase_searches = 0`, `phase_fetches = 0`, `phase_new_events = 0`" in content
     assert "Before every WebSearch or WebFetch:" in content
+    assert "#### 2.1 Budget and counters" in content
+    assert "#### 2.2 Reusable protocols" in content
+    assert "#### 2.3 Log and payload patterns" in content
+    assert "#### 2.4 Phase A -- Broad sweep (3-5 searches)" in content
+    assert "#### 2.5 Phase B -- Aggregator deep-dive (shares Phase A's fetch budget)" in content
+    assert "#### 2.6 Phase C -- Targeted city searches" in content
+    assert "#### 2.7 Phase D -- Verification (1-5 fetches)" in content
+    assert "#### 2.8 Save discovered events" in content
+    assert "**SEARCH STEP** -- execute this sequence for every WebSearch:" in content
+    assert "**FETCH STEP** -- execute this sequence for every WebFetch:" in content
+    assert "**Tier 1 loop** -- for each uncovered tier1 city:" in content
+    assert "**Tier 2 loop** -- only if `searches_used < max_searches * 0.6`:" in content
+    assert "**Tier 3 loop** -- only if `searches_used < max_searches * 0.8`:" in content
+    assert "always write a fresh" in content
+    assert "Do NOT batch log-search calls at the end of a phase." in content
+    assert "Do NOT re-fetch a URL already fetched in this run." in content
     assert "budget_checkpoint" not in content
     assert "`log-action --action phase_summary`" in content
     assert "`log-action --action run_complete`" in content
