@@ -180,8 +180,8 @@ def test_codex_skill_uses_file_based_payload_commands():
     assert "`event_name`, `location_name`, `start_date`, optional `end_date`, `time_info`" in content
     assert "`name`, `route`, `events`, `timing`, optional `url`." in content
     assert "Pass the selected top home-city event dicts directly as the `city-events` JSON array" in content
-    assert "top `max_city_options` in home city + up to `max_trip_options` road trip options" in content
-    assert "Build up to `max_trip_options` options" in content
+    assert "Build two ranked shortlists from `cached_full` + newly saved events:" in content
+    assert "Build up to `max_trip_options`, aiming for at least 3 credible trip options" in content
     assert "Label them `01` through `NN` in the final message only." in content
     assert "Do not patch behavior ad hoc during execution." in content
     assert 'The `format-message` response returns both:' in content
@@ -208,6 +208,9 @@ def test_codex_skill_uses_file_based_payload_commands():
     assert "Do **not** perform any WebSearch or WebFetch after Phase D completes." in content
     assert "Do **not** call `cache-query` before `save` except in the documented `--cached-only` path." in content
     assert "Every phase must end with either a `skip` log or a `phase_summary` log before moving on." in content
+    assert "Do **not** stop early just because some events were found." in content
+    assert "If uncovered tier1 cities remain, continue searching while budget remains." in content
+    assert "there are fewer than 3 credible trip cities" in content
     assert "one-call transport files for CLI payloads" in content
     assert "not persistent cache" in content
     assert "always write a fresh" in content
@@ -215,10 +218,26 @@ def test_codex_skill_uses_file_based_payload_commands():
     assert "Do NOT re-fetch a URL already fetched in this run." in content
     assert "After Phase A completes, continue only to Phase B." in content
     assert "Phase B is URL-based extraction. Use only `FETCH_STEP` for queued page work, not ad hoc substitute search-only flows." in content
+    assert "Out-of-scope hits may be mentioned as discarded evidence" in content
+    assert "must not be saved as usable trip candidates." in content
+    assert "Broad/aggregator hits outside the radius do **not** justify ending targeted search" in content
     assert "Follow the emitted tier order exactly." in content
     assert "Do not start Phase D until Phase C ends with `phase_summary` or `skip`." in content
     assert "After Phase D completes, discovery work is over. Do not return to targeted or broad searching." in content
     assert "Discovery must already be complete before this step starts." in content
+    assert "Build two ranked shortlists from `cached_full` + newly saved events:" in content
+    assert "`home_city_pool`: events in `home_city`" in content
+    assert "`trip_city_pool`: events outside `home_city` but still within the configured travel scope" in content
+    assert "cities whose candidates are indoor, weakly relevant, or too uncertain to justify a trip" in content
+    assert "`score_summary.total_pool` should describe the actual ranked pool before final selection" in content
+    assert "Build trip options procedurally:" in content
+    assert "Group candidate weekend events by city using `trip_city_pool` from Step 3." in content
+    assert "Build at most one trip option per city." in content
+    assert "aiming for at least 3 credible trip options" in content
+    assert "Do **not** invent trip bundles from unrelated weak findings." in content
+    assert "If fewer than 3 credible trip cities exist after all search phases" in content
+    assert "Do not create ad hoc heredoc JSON for trip options during reasoning." in content
+    assert "Keep selected event/trip dicts conceptual until this step" in content
     assert '"name":   "Łódź Day Trip"' in content
     assert '"name":   "A. Łódź Day Trip"' not in content
     assert "After the send/no-send outcome is known, **always** log `run_complete`:" in content
@@ -293,6 +312,9 @@ def test_template_setup_uses_language_placeholder_and_pipe_tiers():
     assert "Do **not** perform any WebSearch or WebFetch after Phase D completes." in content
     assert "Do **not** call `cache-query` before `save` except in the documented `--cached-only` path." in content
     assert "Every phase must end with either a `skip` log or a `phase_summary` log before moving on." in content
+    assert "Do **not** stop early just because some events were found." in content
+    assert "If uncovered tier1 cities remain, continue searching while budget remains." in content
+    assert "there are fewer than 3 credible trip cities" in content
     assert "one-call transport files for CLI payloads" in content
     assert "not persistent cache" in content
     assert "always write a fresh" in content
@@ -300,10 +322,26 @@ def test_template_setup_uses_language_placeholder_and_pipe_tiers():
     assert "Do NOT re-fetch a URL already fetched in this run." in content
     assert "After Phase A completes, continue only to Phase B." in content
     assert "Phase B is URL-based extraction. Use only `FETCH_STEP` for queued page work, not ad hoc substitute search-only flows." in content
+    assert "Out-of-scope hits may be mentioned as discarded evidence" in content
+    assert "must not be saved as usable trip candidates." in content
+    assert "Broad/aggregator hits outside the radius do **not** justify ending targeted search" in content
     assert "Follow the emitted tier order exactly." in content
     assert "Do not start Phase D until Phase C ends with `phase_summary` or `skip`." in content
     assert "After Phase D completes, discovery work is over. Do not return to targeted or broad searching." in content
     assert "Discovery must already be complete before this step starts." in content
+    assert "Build two ranked shortlists from `cached_full` + newly saved events:" in content
+    assert "`home_city_pool`: events in `home_city`" in content
+    assert "`trip_city_pool`: events outside `home_city` but still within the configured travel scope" in content
+    assert "cities whose candidates are indoor, weakly relevant, or too uncertain to justify a trip" in content
+    assert "`score_summary.total_pool` should describe the actual ranked pool before final selection" in content
+    assert "Build trip options procedurally:" in content
+    assert "Group candidate weekend events by city using `trip_city_pool` from Step 3." in content
+    assert "Build at most one trip option per city." in content
+    assert "aiming for at least 3 credible trip options" in content
+    assert "Do **not** invent trip bundles from unrelated weak findings." in content
+    assert "If fewer than 3 credible trip cities exist after all search phases" in content
+    assert "Do not create ad hoc heredoc JSON for trip options during reasoning." in content
+    assert "Keep selected event/trip dicts conceptual until this step" in content
     assert "budget_checkpoint" not in content
     assert "`log-action --action phase_summary`" in content
     assert "`log-action --action run_complete`" in content
@@ -315,8 +353,8 @@ def test_template_setup_uses_language_placeholder_and_pipe_tiers():
     assert "`format-message --trips` / `--trips-file` must receive a **JSON array** of trip dicts." in content
     assert '`preview`: plain-text digest preview for showing in the conversation' in content
     assert "Do **not** read the written HTML file back into the conversation." in content
-    assert "top `max_city_options` in home city + up to `max_trip_options` road trip options" in content
-    assert "Build up to `max_trip_options` options" in content
+    assert "Build two ranked shortlists from `cached_full` + newly saved events:" in content
+    assert "Build up to `max_trip_options`, aiming for at least 3 credible trip options" in content
     assert "Label them `01` through `NN` in the final message only." in content
     assert "--city-events '<top_city_events_json>'" in content
     assert '"name":   "Łódź Day Trip"' in content

@@ -77,8 +77,7 @@ python -m weekend_scout init-skill [--city CITY] [--radius KM]
 Ask the user:
 
 > "Weekend Scout needs a quick one-time setup.
-> What city do you live in? (Include the country if the name is common across countries,
-> e.g. 'Lyon, France'.) How far are you willing to drive for a day trip? (default: 150 km)"
+> What city do you live in, and How far (in km) are you willing to drive for a day trip? (example: Warsaw, 150)"
 
 Wait for the reply. Parse: `setup_city`, optional `setup_country`, `setup_radius` (default 150).
 Then proceed to **resolve coordinates** (1d-resolve).
@@ -162,6 +161,9 @@ Use `target.template` and `target.date` as the source of truth; do not translate
 - Do **not** call `cache-query` before `save` except in the documented `--cached-only` path.
 - Every phase must end with either a `skip` log or a `phase_summary` log before moving on.
 - Do not silently abandon tier loops while budget remains; if you stop early, state the reason.
+- Do **not** stop early just because some events were found.
+- If uncovered tier1 cities remain, continue searching while budget remains.
+- If home-city picks are still below `max_city_options` or there are fewer than 3 credible trip cities, continue into the next eligible city/tier while thresholds allow.
 
 **If invoked with `--cached-only`**: skip this entire step. Immediately load the full cached
 weekend event rows with:
@@ -231,6 +233,7 @@ After each phase A/B/C/D:
    with detail containing:
    `phase`, `searches_used_in_phase`, `fetches_used_in_phase`,
    `new_events_in_phase`, `cumulative_searches_used`, `cumulative_fetches_used`.
+3. If home-city or nearby-trip coverage is still thin, continue to the next eligible phase or city while budget thresholds allow.
 
 After ALL phases complete (or are skipped), Step 6 requires a `log-action --action run_complete`
 with the full budget and coverage summary. Track counters throughout so the data is ready.
@@ -355,8 +358,11 @@ python -m weekend_scout log-action --run-id "<run_id>" --action skip \
       > festivals, and street events happening on [DATES] within the area covered by this page.
       > For each: event name, city, venue, dates/times, 1-sentence description, free entry or not.
       > Exclude: museums, galleries, theaters, cinemas, indoor events, weekly markets."
+   b. Keep only events that are within the configured travel scope and actually useful for this run.
+      Out-of-scope hits may be mentioned as discarded evidence, but must not be saved as usable trip candidates.
 4. Show phase summary and write `phase_summary` via `log-action --action phase_summary`.
 5. Phase B is URL-based extraction. Use only `FETCH_STEP` for queued page work, not ad hoc substitute search-only flows.
+6. Broad/aggregator hits outside the radius do **not** justify ending targeted search if nearby-city coverage is still weak.
 
 #### 2.6 Phase C -- Targeted city searches
 
@@ -470,8 +476,19 @@ Score each event 1-10:
 - Free entry: 0-1
 - Source quality (official=1, aggregator=0.5): 0-1
 
-Select: top `max_city_options` in home city + up to `max_trip_options` road trip options from nearby cities (tier1 first, then tier2, tier3).
+Build two ranked shortlists from `cached_full` + newly saved events:
+- `home_city_pool`: events in `home_city`
+- `trip_city_pool`: events outside `home_city` but still within the configured travel scope
 
+For `trip_city_pool`, exclude:
+- out-of-radius cities
+- cities whose candidates are indoor, weakly relevant, or too uncertain to justify a trip
+
+Select from those shortlists:
+- top `max_city_options` in home city
+- up to `max_trip_options` road trip options from nearby cities (tier1 first, then tier2, tier3)
+
+`score_summary.total_pool` should describe the actual ranked pool before final selection, not just the displayed result count.
 After selecting, compute: `total_events = len(city_events_selected) + len(trip_options)`
 
 ```bash
@@ -483,8 +500,19 @@ python -m weekend_scout log-action --run-id "<run_id>" --action score_summary \
 
 ### Step 4: Build Trip Options
 
-For road trips, use tier as a distance proxy (tier1 = largest/closest, tier3 = smallest/farthest):
-Build up to `max_trip_options` options -- one per city that has confirmed events, working through tier1 --> tier2 --> tier3.
+Build trip options procedurally:
+1. Group candidate weekend events by city using `trip_city_pool` from Step 3.
+2. Exclude `home_city` from trip building.
+3. Keep only cities that have at least one confirmed or otherwise strong outdoor weekend event.
+4. Build at most one trip option per city.
+5. Rank candidate cities by tier order first, then event quality.
+6. Build up to `max_trip_options`, aiming for at least 3 credible trip options when budgeted search should reasonably support that.
+7. If one event clearly dominates for a city, use one event in the trip summary.
+8. If multiple events in the same city materially improve the trip, combine at most 2-3 concise items.
+9. Do **not** invent trip bundles from unrelated weak findings.
+10. If fewer than 3 credible trip cities exist after all search phases, say so explicitly and build the best available smaller set without padding with weak trips.
+
+For road trips, use tier as a distance proxy (tier1 = largest/closest, tier3 = smallest/farthest).
 Label them `01` through `NN` in the final message only.
 (`NN` = the sequential number of the last trip, e.g. `01`-`06` for six trips.)
 
@@ -518,6 +546,9 @@ The `format-message` response returns both:
 
 ```bash
 # Create `city_events_json_path` and `trips_json_path` first using the Codex JSON file rule above.
+# Do not create ad hoc heredoc JSON for trip options during reasoning.
+# Keep selected event/trip dicts conceptual until this step, then write `city_events_json_path`
+# and `trips_json_path` once for `format-message`.
 python -m weekend_scout format-message \
   --saturday "<saturday>" --sunday "<sunday>" \
   --city-events-file "$city_events_json_path" \
