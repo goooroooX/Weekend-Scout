@@ -9,6 +9,11 @@ Provides subcommands:
   cache-query       -- query cached events for a weekend date
   log-search        -- log a completed search to the search log
   log-action        -- append a structured action log entry
+  phase-c-cities    -- load a later-tier phase-C city batch
+  phase-summary     -- log a canonical phase summary for a run phase
+  score-summary     -- log a canonical flat score summary
+  run-complete      -- log a canonical run_complete entry
+  audit-run         -- validate one logged scout run by run_id
   cache-mark-served -- mark events as sent to Telegram
   format-message    -- format scout message and write to file
   install-skill     -- copy bundled skill files to the global skills directory
@@ -100,6 +105,24 @@ def _load_json_argument(
         cleanup_candidates.append(payload_path)
 
     return parsed
+
+
+def _parse_bool_arg(value: str, *, option_name: str) -> bool:
+    """Parse a CLI boolean from a common true/false string."""
+    lowered = value.strip().lower()
+    if lowered in {"true", "1", "yes"}:
+        return True
+    if lowered in {"false", "0", "no"}:
+        return False
+    _print_error_and_exit(f"{option_name} must be true or false")
+
+
+def _extract_saturday_from_run_id(run_id: str) -> str:
+    """Extract the ISO Saturday prefix from a run_id."""
+    match = re.fullmatch(r"(\d{4}-\d{2}-\d{2})_\d{4}", run_id)
+    if not match:
+        _print_error_and_exit(f"run_id must look like YYYY-MM-DD_HHMM, got: {run_id}")
+    return match.group(1)
 
 
 def cmd_setup(args: argparse.Namespace) -> None:
@@ -416,6 +439,191 @@ def cmd_format_message(args: argparse.Namespace) -> None:
     print(json.dumps({"written": str(output_path), "preview": preview}, ensure_ascii=False))
 
 
+def _build_targeted_city_cards(
+    entries: list[str],
+    *,
+    tier: int,
+    searches_this_week: list[str],
+    targeted_by_country: dict[str, dict[str, str]],
+    max_searches_per_city: int,
+    max_fetches_per_city: int,
+    budget_gate: str | None,
+) -> list[dict[str, object]]:
+    """Build explicit targeted-search task cards for one city tier."""
+    cards: list[dict[str, object]] = []
+    for entry in entries:
+        if "|" not in entry:
+            continue
+        city_name, country_code = entry.rsplit("|", 1)
+        target = targeted_by_country.get(country_code)
+        if not target:
+            continue
+        query = target["template"].format(city=city_name, date=target["date"])
+        cards.append({
+            "city_entry": entry,
+            "city_name": city_name,
+            "country_code": country_code,
+            "tier": tier,
+            "query": query,
+            "already_done": query in searches_this_week,
+            "max_searches": max_searches_per_city,
+            "max_fetches": max_fetches_per_city,
+            "budget_gate": budget_gate,
+        })
+    return cards
+
+
+def _build_workflow_cards(
+    *,
+    config: dict[str, object],
+    cities: dict[str, list[str]],
+    cached_summary: dict[str, object],
+    searches_this_week: list[str],
+    broad_result: dict[str, object],
+    targeted_by_country: dict[str, dict[str, str]],
+    run_id: str,
+    compact: bool,
+) -> dict[str, object]:
+    """Build explicit workflow/task-card data for the runtime skill."""
+    max_searches = int(config.get("max_searches", 30))
+    max_fetches = int(config.get("max_fetches", 30))
+    tier2_count = len(cities.get("tier2", []))
+    tier3_count = len(cities.get("tier3", []))
+    broad_queries = []
+    for template in broad_result["templates"]:
+        query = template.format(**broad_result["vars"])
+        broad_queries.append({
+            "query": query,
+            "already_done": query in searches_this_week,
+            "phase_label": "broad",
+            "cities": [str(config.get("home_city", ""))],
+        })
+
+    return {
+        "version": "2026-04-03",
+        "phase_order": ["A", "B", "C", "D", "save", "cache-query", "score", "format-send"],
+        "audit_command": f'python -m weekend_scout audit-run --run-id "{run_id}"',
+        "coverage": {
+            "cached_covered_cities": cached_summary.get("covered_cities", []),
+            "cached_city_counts": cached_summary.get("city_counts", {}),
+            "tier1_required_cities": [
+                entry.rsplit("|", 1)[0] if "|" in entry else entry
+                for entry in cities.get("tier1", [])
+            ],
+            "minimum_home_city_events": int(config.get("max_city_options", 3)),
+            "minimum_trip_cities": min(3, int(config.get("max_trip_options", 10))),
+            "exclude_served": bool(config.get("exclude_served", False)),
+        },
+        "log_checkpoints": {
+            "phase_completion_required": ["A", "B", "C", "D"],
+            "phase_summary_requires_phase_start": ["A", "B", "C", "D"],
+            "skip_phase_for_bypass": "search",
+            "required_run_complete_fields": [
+                "events_sent",
+                "new_events",
+                "cached_events",
+                "searches_used",
+                "max_searches",
+                "fetches_used",
+                "max_fetches",
+                "sent",
+                "send_reason",
+                "served_marked",
+                "uncovered_tier1",
+            ],
+        },
+        "task_cards": {
+            "phase_a": {
+                "search_limit": min(5, max_searches),
+                "queries": broad_queries,
+            },
+            "phase_b": {
+                "shared_fetch_limit": min(6, max_fetches),
+                "phase_label": "aggregator",
+                "extract_prompt": (
+                    "List all outdoor festivals, fairs, markets, city days, reenactments, "
+                    "food festivals, street events, and other open-air public events happening "
+                    "on the target weekend. Return event name, city, venue, dates/times, "
+                    "one-sentence description, and whether entry appears free."
+                ),
+            },
+            "phase_c": (
+                {
+                    "tier1": _build_targeted_city_cards(
+                        cities.get("tier1", []),
+                        tier=1,
+                        searches_this_week=searches_this_week,
+                        targeted_by_country=targeted_by_country,
+                        max_searches_per_city=2,
+                        max_fetches_per_city=1,
+                        budget_gate=None,
+                    ),
+                    "tier2_request": {
+                        "available_count": tier2_count,
+                        "default_limit": 6,
+                        "budget_gate": "searches_used < max_searches * 0.6",
+                        "request_command": (
+                            'python -m weekend_scout phase-c-cities --run-id '
+                            f'"{run_id}" --tier 2 --offset <offset> --limit 6 '
+                            '--covered-cities-file "$covered_cities_path" --searches-used <searches_used>'
+                        ),
+                    },
+                    "tier3_request": {
+                        "available_count": tier3_count,
+                        "default_limit": 6,
+                        "budget_gate": "searches_used < max_searches * 0.8",
+                        "request_command": (
+                            'python -m weekend_scout phase-c-cities --run-id '
+                            f'"{run_id}" --tier 3 --offset <offset> --limit 6 '
+                            '--covered-cities-file "$covered_cities_path" --searches-used <searches_used>'
+                        ),
+                    },
+                    "later_tiers_note": (
+                        "Request tier2 or tier3 in small batches only after tier1 is done, "
+                        "coverage is still thin, and the relevant budget gate still passes."
+                    ),
+                }
+                if compact else
+                {
+                    "tier1": _build_targeted_city_cards(
+                        cities.get("tier1", []),
+                        tier=1,
+                        searches_this_week=searches_this_week,
+                        targeted_by_country=targeted_by_country,
+                        max_searches_per_city=2,
+                        max_fetches_per_city=1,
+                        budget_gate=None,
+                    ),
+                    "tier2": _build_targeted_city_cards(
+                        cities.get("tier2", []),
+                        tier=2,
+                        searches_this_week=searches_this_week,
+                        targeted_by_country=targeted_by_country,
+                        max_searches_per_city=1,
+                        max_fetches_per_city=0,
+                        budget_gate="searches_used < max_searches * 0.6",
+                    ),
+                    "tier3": _build_targeted_city_cards(
+                        cities.get("tier3", []),
+                        tier=3,
+                        searches_this_week=searches_this_week,
+                        targeted_by_country=targeted_by_country,
+                        max_searches_per_city=1,
+                        max_fetches_per_city=0,
+                        budget_gate="searches_used < max_searches * 0.8",
+                    ),
+                }
+            ),
+            "phase_d": {
+                "phase_label": "verification",
+                "max_candidates": 5,
+                "max_fetches": min(5, max_fetches),
+                "reserve_fetches_before_targeted": min(5, max_fetches),
+            },
+        },
+    }
+
+
 def _build_init_payload(
     args: argparse.Namespace,
     *,
@@ -474,11 +682,8 @@ def _build_init_payload(
     else:
         cities = {"tier1": [], "tier2": [], "tier3": []}
 
-    cached_payload = (
-        query_events_summary(config, saturday)
-        if compact_cache
-        else query_events(config, saturday)
-    )
+    cached_summary = query_events_summary(config, saturday)
+    cached_payload = cached_summary if compact_cache else query_events(config, saturday)
     searches_this_week = get_searches_this_week(config, saturday)
     broad_result = generate_broad_queries(config, saturday, sunday)
     targeted_by_country = generate_targeted_by_country(config, cities, saturday)
@@ -501,14 +706,30 @@ def _build_init_payload(
     output: dict[str, object] = {
         "run_id": run_id,
         "config": config_block,
-        "cities": cities,
-        "searches_this_week": searches_this_week,
-        "suggested_queries": {
+        "cities": _build_compact_cities_payload(cities) if compact_cache else cities,
+        "workflow": _build_workflow_cards(
+            config=config_block,
+            cities=cities,
+            cached_summary=cached_summary,
+            searches_this_week=searches_this_week,
+            broad_result=broad_result,
+            targeted_by_country=targeted_by_country,
+            run_id=run_id,
+            compact=compact_cache,
+        ),
+    }
+    if compact_cache:
+        output["workflow"]["compact_note"] = (
+            "Later phase-C tiers are fetched on demand. Compact init-skill does not include "
+            "full tier2/tier3 city lists."
+        )
+    else:
+        output["searches_this_week"] = searches_this_week
+        output["suggested_queries"] = {
             "vars": broad_result["vars"],
             "broad": broad_result["templates"],
             "targeted_by_country": targeted_by_country,
-        },
-    }
+        }
     output["cached" if compact_cache else "cached_events"] = cached_payload
     if not coords_valid:
         output["warnings"] = ["coordinates_not_set: nearby city suggestions disabled"]
@@ -557,6 +778,173 @@ def cmd_init_skill(args: argparse.Namespace) -> None:
     print(json.dumps(output, ensure_ascii=False))
 
 
+def cmd_phase_c_cities(args: argparse.Namespace) -> None:
+    """Return one filtered phase-C batch for tier2 or tier3."""
+    from weekend_scout.config import load_config, get_cache_dir
+    from weekend_scout.cities import get_city_list, generate_targeted_by_country
+    from weekend_scout.cache import get_searches_this_week
+
+    if args.offset < 0:
+        _print_error_and_exit("--offset must be >= 0")
+    if args.limit <= 0:
+        _print_error_and_exit("--limit must be > 0")
+
+    config = load_config()
+    saturday = _extract_saturday_from_run_id(args.run_id)
+    cities = get_city_list(config)
+    tier_key = f"tier{args.tier}"
+    tier_entries = cities.get(tier_key, [])
+
+    cleanup_candidates = []
+    covered_cities = _load_json_argument(
+        inline_value=args.covered_cities,
+        file_path=args.covered_cities_file,
+        cache_dir=get_cache_dir(config),
+        cleanup_candidates=cleanup_candidates,
+        option_name="--covered-cities",
+        expected_type=list,
+        expected_label="JSON array",
+        default_json="[]",
+    )
+
+    searches_this_week = get_searches_this_week(config, saturday)
+    targeted_by_country = generate_targeted_by_country(config, cities, saturday)
+
+    if args.tier == 2:
+        budget_gate = "searches_used < max_searches * 0.6"
+        eligible = args.searches_used < config.get("max_searches", 30) * 0.6
+    else:
+        budget_gate = "searches_used < max_searches * 0.8"
+        eligible = args.searches_used < config.get("max_searches", 30) * 0.8
+
+    all_cards = _build_targeted_city_cards(
+        tier_entries,
+        tier=args.tier,
+        searches_this_week=searches_this_week,
+        targeted_by_country=targeted_by_country,
+        max_searches_per_city=1,
+        max_fetches_per_city=0,
+        budget_gate=budget_gate,
+    )
+    covered = {str(city) for city in covered_cities}
+    filtered_cards = [
+        card for card in all_cards
+        if card["city_name"] not in covered and not card["already_done"]
+    ]
+
+    if not eligible:
+        result = {
+            "run_id": args.run_id,
+            "tier": args.tier,
+            "offset": args.offset,
+            "limit": args.limit,
+            "eligible": False,
+            "reason": "budget_gate_blocked",
+            "budget_gate": budget_gate,
+            "available_count": len(filtered_cards),
+            "cards": [],
+            "has_more": False,
+            "next_offset": args.offset,
+        }
+        _cleanup_payload_files(cleanup_candidates)
+        print(json.dumps(result, ensure_ascii=False))
+        return
+
+    batch = filtered_cards[args.offset: args.offset + args.limit]
+    next_offset = args.offset + len(batch)
+    result = {
+        "run_id": args.run_id,
+        "tier": args.tier,
+        "offset": args.offset,
+        "limit": args.limit,
+        "eligible": True,
+        "budget_gate": budget_gate,
+        "available_count": len(filtered_cards),
+        "cards": batch,
+        "has_more": next_offset < len(filtered_cards),
+        "next_offset": next_offset if next_offset < len(filtered_cards) else None,
+        "request_note": "Finish and log the current batch before requesting the next batch.",
+    }
+    _cleanup_payload_files(cleanup_candidates)
+    print(json.dumps(result, ensure_ascii=False))
+
+
+def cmd_phase_summary(args: argparse.Namespace) -> None:
+    """Log one canonical phase_summary entry for a run phase."""
+    from weekend_scout.config import load_config
+    from weekend_scout.cache import log_phase_summary
+
+    config = load_config()
+    detail, logged = log_phase_summary(
+        config,
+        run_id=args.run_id,
+        phase=args.phase,
+        target_weekend=args.target_weekend,
+    )
+    print(json.dumps({"logged": logged, "phase": args.phase, "detail": detail}, ensure_ascii=False))
+
+
+def cmd_score_summary(args: argparse.Namespace) -> None:
+    """Log one canonical flat score_summary entry."""
+    from weekend_scout.config import load_config
+    from weekend_scout.cache import log_score_summary
+
+    config = load_config()
+    detail, logged = log_score_summary(
+        config,
+        run_id=args.run_id,
+        target_weekend=args.target_weekend,
+        total_pool=args.total_pool,
+        city_events_selected=args.city_events_selected,
+        trip_options=args.trip_options,
+    )
+    print(json.dumps({"logged": logged, "detail": detail}, ensure_ascii=False))
+
+
+def cmd_run_complete(args: argparse.Namespace) -> None:
+    """Log one canonical run_complete entry with computed usage counts."""
+    from weekend_scout.config import load_config, get_cache_dir
+    from weekend_scout.cache import log_run_complete
+
+    config = load_config()
+    cleanup_candidates = []
+    uncovered_tier1 = _load_json_argument(
+        inline_value=args.uncovered_tier1,
+        file_path=args.uncovered_tier1_file,
+        cache_dir=get_cache_dir(config),
+        cleanup_candidates=cleanup_candidates,
+        option_name="--uncovered-tier1",
+        expected_type=list,
+        expected_label="JSON array",
+        default_json="[]",
+    )
+    detail, logged = log_run_complete(
+        config,
+        run_id=args.run_id,
+        target_weekend=args.target_weekend,
+        events_sent=args.events_sent,
+        cached_events=args.cached_events,
+        sent=_parse_bool_arg(args.sent, option_name="--sent"),
+        send_reason=args.send_reason,
+        served_marked=_parse_bool_arg(args.served_marked, option_name="--served-marked"),
+        uncovered_tier1=[str(city) for city in uncovered_tier1],
+    )
+    _cleanup_payload_files(cleanup_candidates)
+    print(json.dumps({"logged": logged, "detail": detail}, ensure_ascii=False))
+
+
+def cmd_audit_run(args: argparse.Namespace) -> None:
+    """Audit one logged scout run; only fail non-zero in strict mode."""
+    from weekend_scout.config import load_config
+    from weekend_scout.cache import audit_run
+
+    config = load_config()
+    result = audit_run(config, args.run_id)
+    print(json.dumps(result, ensure_ascii=False))
+    if args.strict and not result["ok"]:
+        sys.exit(1)
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     """Print instructions for a manual /weekend-scout run."""
     print(json.dumps({
@@ -571,6 +959,15 @@ def _get_install_targets() -> dict[str, "Path"]:
         "claude-code": _P.home() / ".claude"   / "skills" / "weekend-scout",
         "codex":       _P.home() / ".agents"   / "skills" / "weekend-scout",
         "openclaw":    _P.home() / ".openclaw" / "skills" / "weekend-scout",
+    }
+
+
+def _build_compact_cities_payload(cities: dict[str, list[str]]) -> dict[str, object]:
+    """Build the compact init-skill city payload."""
+    return {
+        "tier1": cities.get("tier1", []),
+        "tier2_count": len(cities.get("tier2", [])),
+        "tier3_count": len(cities.get("tier3", [])),
     }
 
 
@@ -672,6 +1069,57 @@ def build_parser() -> argparse.ArgumentParser:
     p_init_skill.add_argument("--city", help="Override home city")
     p_init_skill.add_argument("--radius", help="Override search radius in km")
 
+    # phase-c-cities
+    p_pcc = sub.add_parser("phase-c-cities", help="Load one on-demand phase-C city batch")
+    p_pcc.add_argument("--run-id", required=True, dest="run_id", help="Run identifier from init-skill")
+    p_pcc.add_argument("--tier", required=True, type=int, choices=[2, 3], help="Later city tier to request")
+    p_pcc.add_argument("--offset", type=int, default=0, help="Filtered-batch offset")
+    p_pcc.add_argument("--limit", type=int, default=6, help="Maximum number of city cards to return")
+    p_pcc.add_argument("--covered-cities", default=None, help="JSON array of already-covered city names")
+    p_pcc.add_argument("--covered-cities-file", default=None, dest="covered_cities_file",
+                       help="Path to UTF-8 JSON array of already-covered city names")
+    p_pcc.add_argument("--searches-used", required=True, type=int, dest="searches_used",
+                       help="Current searches_used counter from the run")
+
+    # phase-summary
+    p_ps = sub.add_parser("phase-summary", help="Log one canonical phase_summary entry")
+    p_ps.add_argument("--run-id", required=True, dest="run_id", help="Run identifier from init-skill")
+    p_ps.add_argument("--phase", required=True, choices=["A", "B", "C", "D"], help="Run phase to summarize")
+    p_ps.add_argument("--target-weekend", required=True, dest="target_weekend", help="ISO Saturday date")
+
+    # score-summary
+    p_ss = sub.add_parser("score-summary", help="Log one canonical flat score_summary entry")
+    p_ss.add_argument("--run-id", required=True, dest="run_id", help="Run identifier from init-skill")
+    p_ss.add_argument("--target-weekend", required=True, dest="target_weekend", help="ISO Saturday date")
+    p_ss.add_argument("--total-pool", required=True, type=int, dest="total_pool", help="Total ranked pool size")
+    p_ss.add_argument("--city-events-selected", required=True, type=int, dest="city_events_selected",
+                      help="Number of selected home-city events")
+    p_ss.add_argument("--trip-options", required=True, type=int, dest="trip_options",
+                      help="Number of selected trip options")
+
+    # run-complete
+    p_rc = sub.add_parser("run-complete", help="Log one canonical run_complete entry")
+    p_rc.add_argument("--run-id", required=True, dest="run_id", help="Run identifier from init-skill")
+    p_rc.add_argument("--target-weekend", required=True, dest="target_weekend", help="ISO Saturday date")
+    p_rc.add_argument("--events-sent", required=True, type=int, dest="events_sent", help="Digest item count")
+    p_rc.add_argument("--cached-events", required=True, type=int, dest="cached_events", help="Cached weekend event count")
+    p_rc.add_argument("--sent", required=True, help="Whether Telegram send succeeded (true/false)")
+    p_rc.add_argument("--send-reason", required=True, dest="send_reason",
+                      choices=["sent", "telegram_not_configured", "send_failed"],
+                      help="Final delivery outcome")
+    p_rc.add_argument("--served-marked", required=True, dest="served_marked",
+                      help="Whether cache-mark-served was executed (true/false)")
+    p_rc.add_argument("--uncovered-tier1", default=None, dest="uncovered_tier1",
+                      help="JSON array of tier1 city names still uncovered")
+    p_rc.add_argument("--uncovered-tier1-file", default=None, dest="uncovered_tier1_file",
+                      help="Path to UTF-8 JSON array of tier1 city names still uncovered")
+
+    # audit-run
+    p_audit = sub.add_parser("audit-run", help="Audit a logged scout run by run_id")
+    p_audit.add_argument("--run-id", required=True, dest="run_id", help="Run identifier from init-skill")
+    p_audit.add_argument("--strict", action="store_true",
+                         help="Exit non-zero when the audit reports ok=false")
+
     # save
     p_save = sub.add_parser("save", help="Save discovered events to cache")
     save_group = p_save.add_mutually_exclusive_group(required=True)
@@ -768,6 +1216,11 @@ COMMANDS = {
     "config": cmd_config,
     "init": cmd_init,
     "init-skill": cmd_init_skill,
+    "phase-c-cities": cmd_phase_c_cities,
+    "phase-summary": cmd_phase_summary,
+    "score-summary": cmd_score_summary,
+    "run-complete": cmd_run_complete,
+    "audit-run": cmd_audit_run,
     "find-city": cmd_find_city,
     "save": cmd_save,
     "send": cmd_send,

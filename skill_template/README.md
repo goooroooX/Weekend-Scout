@@ -1,6 +1,6 @@
 # Skill Template Generator
 
-Generates platform-specific SKILL.md files from a single template source of truth.
+Generates platform-specific skill folders from a single template source of truth.
 
 ## Quick start
 
@@ -8,7 +8,7 @@ Generates platform-specific SKILL.md files from a single template source of trut
 
 ## How it works
 
-The template (`weekend-scout.template.md`) uses two mechanisms:
+The core template (`weekend-scout.template.md`) uses two mechanisms:
 
 ### Conditional blocks: `#@IF` / `#@ENDIF`
 
@@ -45,6 +45,8 @@ If a `%%VAR%%` has no matching key, the generator raises an error (no silent pas
 ## Files
 
 - `platforms.yaml` — platform definitions and variables
-- `weekend-scout.template.md` — the template (source of truth for all platforms)
+- `weekend-scout.template.md` — the core orchestrator template
+- `resources/common/` — bundled references/scripts copied to every generated skill
+- `resources/<platform>/` — platform-specific bundled references/scripts
 - `generate.py` — the generator script
 - `README.md` — this file

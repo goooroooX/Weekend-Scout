@@ -149,3 +149,16 @@
 | 11.2 | Keep `.openclaw/skills/` as generated repo artifact but document it as packaging/staging only | DONE (2026-03-29) | Supported installed OpenClaw location remains `~/.openclaw/skills/` |
 | 11.3 | Fix OpenClaw generated metadata format and remove unsupported pip installer metadata | DONE (2026-03-29) | `metadata` now single-line JSON; removed `kind: "pip"` block |
 | 11.4 | Update installers, docs, and tests for the new Codex install target | DONE (2026-03-29) | Codex now installs to `~/.agents/skills/` |
+
+## Phase 12: Skill Reliability Refactor
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 12.1 | Add `audit-run` CLI validation for logged scout runs | DONE (2026-04-03) | Validates phase sequencing, phase completion, post-D discovery, accounting, and run_complete consistency |
+| 12.2 | Extend `init-skill` with explicit workflow task cards | DONE (2026-04-03) | Compact `init-skill` now keeps broad queries and tier1 cards only; later tiers are requested on demand in small batches |
+| 12.3 | Refactor generated runtime skill into orchestrator + bundled references | DONE (2026-04-03) | Core SKILL.md now points to `onboarding`, `search-workflow`, `scoring-and-trips`, and `delivery-and-audit` references instead of inlining the full protocol |
+| 12.4 | Extend generator/package data to mirror bundled skill resources | DONE (2026-04-03) | `skill_template/resources/` now mirrors into repo skills and `weekend_scout/skill_data/` |
+| 12.5 | Add regression coverage for workflow auditing and split references | DONE (2026-04-03) | Added fixture-based audit regression coverage and tests for bundled reference mirroring |
+| 12.6 | Add deterministic helper commands for phase/score/run summaries | DONE (2026-04-03) | Added `phase-summary`, `score-summary`, and `run-complete` so the skill no longer hand-builds summary payloads |
+| 12.7 | Add on-demand `phase-c-cities` batching for later targeted-search tiers | DONE (2026-04-03) | Tier2/tier3 now come back in explicit small batches filtered against covered cities and already-done searches |
+| 12.8 | Make audit advisory in normal runtime flow | DONE (2026-04-03) | `audit-run` is non-blocking by default and only fails the command in `--strict` mode |

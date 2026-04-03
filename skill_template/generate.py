@@ -26,6 +26,18 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 PLATFORMS_FILE = SCRIPT_DIR / "platforms.yaml"
 TEMPLATE_FILE = SCRIPT_DIR / "weekend-scout.template.md"
+RESOURCES_DIR = SCRIPT_DIR / "resources"
+TEXT_RESOURCE_EXTENSIONS = {
+    ".md",
+    ".markdown",
+    ".yaml",
+    ".yml",
+    ".json",
+    ".txt",
+    ".py",
+    ".ps1",
+    ".sh",
+}
 
 # skill_data/ mirror mapping: platform_id -> subdir inside weekend_scout/skill_data/
 SKILL_DATA_TARGETS: dict[str, str] = {
@@ -161,6 +173,19 @@ def generate_for_platform(
     content = substitute_vars(processed, variables)
 
     files: dict[str, str] = {"SKILL.md": content}
+
+    for resource_dir in (RESOURCES_DIR / "common", RESOURCES_DIR / platform_id):
+        if not resource_dir.exists():
+            continue
+        for resource_path in sorted(p for p in resource_dir.rglob("*") if p.is_file()):
+            rel_path = resource_path.relative_to(resource_dir).as_posix()
+            if resource_path.suffix.lower() not in TEXT_RESOURCE_EXTENSIONS:
+                raise ValueError(
+                    f"Unsupported resource type {resource_path.suffix!r} for {resource_path}"
+                )
+            resource_text = resource_path.read_text(encoding="utf-8")
+            resource_text = process_directives(resource_text, platform_id)
+            files[rel_path] = substitute_vars(resource_text, variables)
 
     # Extra files (e.g. agents/openai.yaml for Codex)
     for rel_path, file_content in platform_cfg.get("extra_files", {}).items():

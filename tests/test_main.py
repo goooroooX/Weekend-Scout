@@ -241,6 +241,38 @@ def _write_skill_tmp_payload(tmp_path: Path, name: str, payload, *, encoding: st
     return _write_json_file(cache_dir / f"_tmp_{name}.tmp", payload, encoding=encoding)
 
 
+def _write_action_log_fixture(tmp_path: Path, lines: list[dict]) -> Path:
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    log_path = cache_dir / "action_log.jsonl"
+    log_path.write_text(
+        "\n".join(json.dumps(line, ensure_ascii=False) for line in lines) + "\n",
+        encoding="utf-8",
+    )
+    return log_path
+
+
+def _invoke_command_no_catch(name: str, args: list[str], tmp_path, monkeypatch):
+    """Invoke one command directly and return (captured, raised_system_exit)."""
+    import weekend_scout.config as cfg_module
+    config_file = tmp_path / "config.yaml"
+    monkeypatch.setattr(cfg_module, "get_config_path", lambda: config_file)
+    monkeypatch.setattr(cfg_module, "get_config_dir", lambda: tmp_path)
+
+    from weekend_scout.__main__ import build_parser, COMMANDS
+    parser = build_parser()
+    parsed = parser.parse_args([name] + args)
+
+    captured = []
+    monkeypatch.setattr("builtins.print", lambda *a, **kw: captured.append(str(a[0])))
+    raised = None
+    try:
+        COMMANDS[name](parsed)
+    except SystemExit as exc:
+        raised = exc
+    return captured[-1] if captured else "", raised
+
+
 def test_cmd_init_radius_invalid_returns_error(tmp_path, monkeypatch):
     _write_minimal_config(tmp_path)
     output = _run_cmd("init", ["--radius", "abc"], tmp_path, monkeypatch)
@@ -271,6 +303,14 @@ def test_cmd_init_returns_json(tmp_path, monkeypatch):
     assert sq["targeted_by_country"]["DE"]["date"]
     assert "{city}" in sq["targeted_by_country"]["PL"]["template"]
     assert sq["targeted_by_country"]["PL"]["date"]
+    workflow = result["workflow"]
+    assert workflow["phase_order"] == ["A", "B", "C", "D", "save", "cache-query", "score", "format-send"]
+    assert workflow["coverage"]["minimum_home_city_events"] == 3
+    assert workflow["coverage"]["minimum_trip_cities"] == 3
+    assert workflow["task_cards"]["phase_a"]["queries"]
+    assert workflow["task_cards"]["phase_c"]["tier1"][0]["query"]
+    assert workflow["task_cards"]["phase_c"]["tier1"][0]["max_searches"] == 2
+    assert workflow["task_cards"]["phase_d"]["max_candidates"] == 5
     assert result["cities"]["tier1"] == ["Potsdam|DE"]
     assert result["cities"]["tier3"] == ["Szczecin|PL"]
     assert result["config"]["max_city_options"] == 3
@@ -293,11 +333,66 @@ def test_cmd_init_skill_returns_compact_cached_metadata(tmp_path, monkeypatch):
     assert "cities" in result
     assert "cached" in result
     assert "cached_events" not in result
+    assert "searches_this_week" not in result
     assert result["config"]["max_city_options"] == 3
     assert result["config"]["max_trip_options"] == 10
     assert result["cached"] == {"count": 0, "covered_cities": [], "city_counts": {}}
-    assert "searches_this_week" in result
-    assert "suggested_queries" in result
+    assert "suggested_queries" not in result
+    assert result["cities"] == {"tier1": ["Potsdam|DE"], "tier2_count": 0, "tier3_count": 1}
+    workflow = result["workflow"]
+    assert workflow["audit_command"].endswith(f'--run-id "{result["run_id"]}"')
+    assert workflow["task_cards"]["phase_b"]["shared_fetch_limit"] == 6
+    assert workflow["task_cards"]["phase_c"]["tier1"][0]["city_name"] == "Potsdam"
+    assert workflow["task_cards"]["phase_c"]["tier2_request"]["available_count"] == 0
+    assert workflow["task_cards"]["phase_c"]["tier3_request"]["available_count"] == 1
+    assert workflow["log_checkpoints"]["phase_completion_required"] == ["A", "B", "C", "D"]
+    assert "compact_note" in workflow
+
+
+def test_cmd_init_skill_marks_done_queries_in_task_cards(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    import weekend_scout.cities as cities_module
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {"tier1": ["Potsdam|DE"], "tier2": [], "tier3": []},
+    )
+    first_result = json.loads(_run_cmd("init-skill", [], tmp_path, monkeypatch))
+    query = first_result["workflow"]["task_cards"]["phase_c"]["tier1"][0]["query"]
+    _run_cmd(
+        "log-search",
+        ["--query", query, "--target-weekend", "2026-04-04",
+         "--phase", "targeted", "--result-count", "1", "--cities", '["Potsdam"]'],
+        tmp_path, monkeypatch,
+    )
+    output = _run_cmd("init-skill", [], tmp_path, monkeypatch)
+    result = json.loads(output)
+    tier1_card = result["workflow"]["task_cards"]["phase_c"]["tier1"][0]
+    assert tier1_card["query"] == query
+    assert tier1_card["already_done"] is True
+
+
+def test_cmd_init_skill_compact_payload_omits_full_later_tiers(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    import weekend_scout.cities as cities_module
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {
+            "tier1": ["Potsdam|DE"],
+            "tier2": ["Berlin|DE", "Brandenburg|DE"],
+            "tier3": ["Szczecin|PL", "Lublin|PL"],
+        },
+    )
+    result = json.loads(_run_cmd("init-skill", [], tmp_path, monkeypatch))
+    assert result["cities"]["tier1"] == ["Potsdam|DE"]
+    assert result["cities"]["tier2_count"] == 2
+    assert result["cities"]["tier3_count"] == 2
+    phase_c = result["workflow"]["task_cards"]["phase_c"]
+    assert "tier2" not in phase_c
+    assert "tier3" not in phase_c
+    assert phase_c["tier2_request"]["default_limit"] == 6
+    assert phase_c["tier3_request"]["default_limit"] == 6
 
 
 def test_cmd_init_skill_cached_summary_matches_saved_events(tmp_path, monkeypatch):
@@ -552,6 +647,348 @@ def test_cmd_log_action_detail_file_invalid_json_returns_error(tmp_path, monkeyp
     result = json.loads(output)
     assert "error" in result
     assert "Invalid JSON in --detail-file" in result["error"]
+
+
+def test_cmd_phase_c_cities_batches_and_filters(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    import weekend_scout.cities as cities_module
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {
+            "tier1": ["Potsdam|DE"],
+            "tier2": ["Berlin|DE", "Brandenburg|DE", "Leipzig|DE", "Dresden|DE"],
+            "tier3": [],
+        },
+    )
+    initial = json.loads(
+        _run_cmd(
+            "phase-c-cities",
+            ["--run-id", "2026-04-04_1200", "--tier", "2", "--offset", "0", "--limit", "4",
+             "--covered-cities", "[]", "--searches-used", "0"],
+            tmp_path, monkeypatch,
+        )
+    )
+    done_query = initial["cards"][1]["query"]
+    _run_cmd(
+        "log-search",
+        ["--query", done_query, "--target-weekend", "2026-04-04",
+         "--phase", "targeted", "--cities", '["Brandenburg"]'],
+        tmp_path, monkeypatch,
+    )
+    covered_path = _write_skill_tmp_payload(tmp_path, "covered", ["Berlin"])
+    result = json.loads(
+        _run_cmd(
+            "phase-c-cities",
+            ["--run-id", "2026-04-04_1200", "--tier", "2", "--offset", "0", "--limit", "2",
+             "--covered-cities-file", str(covered_path), "--searches-used", "0"],
+            tmp_path, monkeypatch,
+        )
+    )
+    assert result["eligible"] is True
+    assert [card["city_name"] for card in result["cards"]] == ["Leipzig", "Dresden"]
+    assert result["available_count"] == 2
+    assert result["has_more"] is False
+    assert not covered_path.exists()
+
+
+def test_cmd_phase_c_cities_respects_budget_gate(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    import weekend_scout.cities as cities_module
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {"tier1": [], "tier2": ["Berlin|DE"], "tier3": []},
+    )
+    result = json.loads(
+        _run_cmd(
+            "phase-c-cities",
+            ["--run-id", "2026-04-04_1200", "--tier", "2", "--offset", "0", "--limit", "6",
+             "--covered-cities", "[]", "--searches-used", "30"],
+            tmp_path, monkeypatch,
+        )
+    )
+    assert result["eligible"] is False
+    assert result["reason"] == "budget_gate_blocked"
+    assert result["cards"] == []
+
+
+def test_cmd_phase_summary_logs_canonical_counts(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    _write_action_log_fixture(
+        tmp_path,
+        [
+            {"ts": "2026-04-03T12:24:45", "run_id": "run-a", "source": "python", "action": "run_init", "phase": None, "target_weekend": "2026-04-04", "detail": {"cached_count": 0, "tier1": ["Radom|PL"]}},
+            {"ts": "2026-04-03T12:24:50", "run_id": "run-a", "source": "skill", "action": "phase_start", "phase": "A", "target_weekend": "2026-04-04", "detail": {}},
+            {"ts": "2026-04-03T12:24:55", "run_id": "run-a", "source": "skill", "action": "search", "phase": "broad", "target_weekend": "2026-04-04", "detail": {"query": "q1", "result_count": 3, "cities": ["Warsaw"], "events_discovered": 1}},
+            {"ts": "2026-04-03T12:25:00", "run_id": "run-a", "source": "skill", "action": "search", "phase": "broad", "target_weekend": "2026-04-04", "detail": {"query": "q2", "result_count": 2, "cities": ["Warsaw"], "events_discovered": 0}},
+        ],
+    )
+    result = json.loads(
+        _run_cmd(
+            "phase-summary",
+            ["--run-id", "run-a", "--phase", "A", "--target-weekend", "2026-04-04"],
+            tmp_path, monkeypatch,
+        )
+    )
+    assert result["logged"] is True
+    assert result["detail"] == {
+        "searches_used_in_phase": 2,
+        "fetches_used_in_phase": 0,
+        "new_events_in_phase": 1,
+        "cumulative_searches_used": 2,
+        "cumulative_fetches_used": 0,
+    }
+
+
+def test_cmd_score_summary_logs_flat_payload(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    result = json.loads(
+        _run_cmd(
+            "score-summary",
+            ["--run-id", "run-score", "--target-weekend", "2026-04-04",
+             "--total-pool", "7", "--city-events-selected", "3", "--trip-options", "1"],
+            tmp_path, monkeypatch,
+        )
+    )
+    assert result["logged"] is True
+    assert result["detail"] == {"total_pool": 7, "city_events_selected": 3, "trip_options": 1}
+
+
+def test_cmd_run_complete_computes_counts_from_log(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    _write_action_log_fixture(
+        tmp_path,
+        [
+            {"ts": "2026-04-03T12:24:45", "run_id": "run-complete", "source": "python", "action": "run_init", "phase": None, "target_weekend": "2026-04-04", "detail": {"cached_count": 2, "tier1": ["Radom|PL"]}},
+            {"ts": "2026-04-03T12:24:50", "run_id": "run-complete", "source": "skill", "action": "search", "phase": "broad", "target_weekend": "2026-04-04", "detail": {"query": "q1", "result_count": 3, "cities": ["Warsaw"], "events_discovered": 1}},
+            {"ts": "2026-04-03T12:25:00", "run_id": "run-complete", "source": "skill", "action": "fetch", "phase": "aggregator", "target_weekend": "2026-04-04", "detail": {"query": "u1", "result_count": 2, "cities": ["Warsaw"], "events_discovered": 2}},
+            {"ts": "2026-04-03T12:25:10", "run_id": "run-complete", "source": "python", "action": "events_saved", "phase": None, "target_weekend": None, "detail": {"saved": 3, "skipped": 0}},
+        ],
+    )
+    uncovered_path = _write_skill_tmp_payload(tmp_path, "uncovered", ["Radom"])
+    result = json.loads(
+        _run_cmd(
+            "run-complete",
+            ["--run-id", "run-complete", "--target-weekend", "2026-04-04",
+             "--events-sent", "4", "--cached-events", "2", "--sent", "false",
+             "--send-reason", "telegram_not_configured", "--served-marked", "false",
+             "--uncovered-tier1-file", str(uncovered_path)],
+            tmp_path, monkeypatch,
+        )
+    )
+    assert result["logged"] is True
+    assert result["detail"]["new_events"] == 3
+    assert result["detail"]["searches_used"] == 1
+    assert result["detail"]["fetches_used"] == 1
+    assert result["detail"]["events_sent"] == 4
+    assert not uncovered_path.exists()
+
+
+def test_cmd_audit_run_flags_known_phase_drift(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    fixture_path = Path("tests/fixtures/phase_drift_2026-04-03.jsonl")
+    _write_action_log_fixture(
+        tmp_path,
+        [json.loads(line) for line in fixture_path.read_text(encoding="utf-8").splitlines() if line.strip()],
+    )
+    result = json.loads(
+        _run_cmd("audit-run", ["--run-id", "2026-04-04_1224"], tmp_path, monkeypatch)
+    )
+    assert result["ok"] is False
+    assert any("Phase A" in error for error in result["errors"])
+    assert any("phase_summary without a matching phase_start" in error for error in result["errors"])
+
+
+def test_cmd_audit_run_default_is_advisory(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    fixture_path = Path("tests/fixtures/run_2026-04-03_1529.jsonl")
+    _write_action_log_fixture(
+        tmp_path,
+        [json.loads(line) for line in fixture_path.read_text(encoding="utf-8").splitlines() if line.strip()],
+    )
+    _, raised = _invoke_command_no_catch(
+        "audit-run", ["--run-id", "2026-04-04_1529"], tmp_path, monkeypatch
+    )
+    assert raised is None
+
+
+def test_cmd_audit_run_strict_exits_non_zero(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    fixture_path = Path("tests/fixtures/run_2026-04-03_1529.jsonl")
+    _write_action_log_fixture(
+        tmp_path,
+        [json.loads(line) for line in fixture_path.read_text(encoding="utf-8").splitlines() if line.strip()],
+    )
+    _, raised = _invoke_command_no_catch(
+        "audit-run", ["--run-id", "2026-04-04_1529", "--strict"], tmp_path, monkeypatch
+    )
+    assert isinstance(raised, SystemExit)
+    assert raised.code == 1
+
+
+def test_cmd_audit_run_flags_score_summary_shape_on_last_failed_run(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    fixture_path = Path("tests/fixtures/run_2026-04-03_1529.jsonl")
+    _write_action_log_fixture(
+        tmp_path,
+        [json.loads(line) for line in fixture_path.read_text(encoding="utf-8").splitlines() if line.strip()],
+    )
+    result = json.loads(
+        _run_cmd("audit-run", ["--run-id", "2026-04-04_1529"], tmp_path, monkeypatch)
+    )
+    assert result["ok"] is False
+    assert any("score_summary total_pool must be an integer" in error for error in result["errors"])
+
+
+def test_cmd_audit_run_accepts_valid_run(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    _write_action_log_fixture(
+        tmp_path,
+        [
+            {
+                "ts": "2026-04-03T12:24:45",
+                "run_id": "run-ok",
+                "source": "python",
+                "action": "run_init",
+                "phase": None,
+                "target_weekend": "2026-04-04",
+                "detail": {"home_city": "Warsaw", "radius_km": 150, "cached_count": 0, "tier1": ["Radom|PL"]},
+            },
+            {
+                "ts": "2026-04-03T12:24:50",
+                "run_id": "run-ok",
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "A",
+                "target_weekend": "2026-04-04",
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:55",
+                "run_id": "run-ok",
+                "source": "skill",
+                "action": "search",
+                "phase": "broad",
+                "target_weekend": "2026-04-04",
+                "detail": {"query": "broad query", "result_count": 3, "cities": ["Warsaw"], "events_discovered": 1},
+            },
+            {
+                "ts": "2026-04-03T12:25:00",
+                "run_id": "run-ok",
+                "source": "skill",
+                "action": "phase_summary",
+                "phase": "A",
+                "target_weekend": "2026-04-04",
+                "detail": {
+                    "searches_used_in_phase": 1,
+                    "fetches_used_in_phase": 0,
+                    "new_events_in_phase": 1,
+                    "cumulative_searches_used": 1,
+                    "cumulative_fetches_used": 0,
+                },
+            },
+            {
+                "ts": "2026-04-03T12:25:05",
+                "run_id": "run-ok",
+                "source": "skill",
+                "action": "skip",
+                "phase": "B",
+                "target_weekend": "2026-04-04",
+                "detail": {"reason": "no_aggregator_urls"},
+            },
+            {
+                "ts": "2026-04-03T12:25:10",
+                "run_id": "run-ok",
+                "source": "skill",
+                "action": "skip",
+                "phase": "C",
+                "target_weekend": "2026-04-04",
+                "detail": {"reason": "all_cities_covered"},
+            },
+            {
+                "ts": "2026-04-03T12:25:15",
+                "run_id": "run-ok",
+                "source": "skill",
+                "action": "skip",
+                "phase": "D",
+                "target_weekend": "2026-04-04",
+                "detail": {"reason": "all_confirmed"},
+            },
+            {
+                "ts": "2026-04-03T12:25:20",
+                "run_id": "run-ok",
+                "source": "python",
+                "action": "events_saved",
+                "phase": None,
+                "target_weekend": None,
+                "detail": {"saved": 1, "skipped": 0},
+            },
+            {
+                "ts": "2026-04-03T12:25:25",
+                "run_id": "run-ok",
+                "source": "skill",
+                "action": "score_summary",
+                "phase": None,
+                "target_weekend": "2026-04-04",
+                "detail": {"total_pool": 1, "city_events_selected": 1, "trip_options": 0},
+            },
+            {
+                "ts": "2026-04-03T12:25:30",
+                "run_id": "run-ok",
+                "source": "python",
+                "action": "message_formatted",
+                "phase": None,
+                "target_weekend": "2026-04-04",
+                "detail": {"city_events": 1, "trips": 0, "char_count": 250},
+            },
+            {
+                "ts": "2026-04-03T12:25:35",
+                "run_id": "run-ok",
+                "source": "python",
+                "action": "telegram_send",
+                "phase": None,
+                "target_weekend": None,
+                "detail": {"success": True, "char_count": 250},
+            },
+            {
+                "ts": "2026-04-03T12:25:40",
+                "run_id": "run-ok",
+                "source": "python",
+                "action": "events_served",
+                "phase": None,
+                "target_weekend": "2026-04-04",
+                "detail": {"count": 1},
+            },
+            {
+                "ts": "2026-04-03T12:25:45",
+                "run_id": "run-ok",
+                "source": "skill",
+                "action": "run_complete",
+                "phase": None,
+                "target_weekend": "2026-04-04",
+                "detail": {
+                    "events_sent": 1,
+                    "new_events": 1,
+                    "cached_events": 0,
+                    "searches_used": 1,
+                    "max_searches": 30,
+                    "fetches_used": 0,
+                    "max_fetches": 30,
+                    "sent": True,
+                    "send_reason": "sent",
+                    "served_marked": True,
+                    "uncovered_tier1": [],
+                },
+            },
+        ],
+    )
+    result = json.loads(
+        _run_cmd("audit-run", ["--run-id", "run-ok"], tmp_path, monkeypatch)
+    )
+    assert result["ok"] is True
+    assert result["summary"]["searches_used"] == 1
+    assert result["summary"]["completed_phases"] == ["A", "B", "C", "D"]
 
 
 # --- cmd_cache_mark_served ---
