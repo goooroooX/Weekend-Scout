@@ -485,12 +485,20 @@ def log_phase_summary(
     run_id: str,
     phase: str,
     target_weekend: str,
-) -> tuple[dict[str, Any], bool]:
-    """Log one canonical phase_summary entry, unless it already exists."""
+) -> tuple[dict[str, Any], bool, str | None]:
+    """Log one canonical phase_summary entry, unless it is invalid or duplicate."""
     entries = read_action_log(config, run_id=run_id)
+    completion_entry = _existing_run_entry(entries, action="skip", phase=phase)
+    if completion_entry is not None:
+        return dict(completion_entry.get("detail") or {}), False, "phase already completed by skip"
+
     existing = _existing_run_entry(entries, action="phase_summary", phase=phase)
     if existing is not None:
-        return dict(existing.get("detail") or {}), False
+        return dict(existing.get("detail") or {}), False, "phase already summarized"
+
+    started = _existing_run_entry(entries, action="phase_start", phase=phase)
+    if started is None:
+        return {}, False, "phase_start missing"
 
     detail = build_phase_summary_detail(config, run_id, phase)
     log_action(
@@ -502,7 +510,7 @@ def log_phase_summary(
         source="skill",
         target_weekend=target_weekend,
     )
-    return detail, True
+    return detail, True, None
 
 
 def log_score_summary(
@@ -541,7 +549,6 @@ def build_run_complete_detail(
     *,
     run_id: str,
     events_sent: int,
-    cached_events: int,
     sent: bool,
     send_reason: str,
     served_marked: bool,
@@ -558,6 +565,9 @@ def build_run_complete_detail(
         new_events = int((events_saved_entry.get("detail") or {}).get("saved", 0))
     else:
         new_events = sum(phase["new_events"] for phase in activity.values())
+
+    run_init_entry = _existing_run_entry(entries, action="run_init")
+    cached_events = int((run_init_entry.get("detail") or {}).get("cached_count", 0)) if run_init_entry else 0
 
     return {
         "events_sent": events_sent,
@@ -580,7 +590,6 @@ def log_run_complete(
     run_id: str,
     target_weekend: str,
     events_sent: int,
-    cached_events: int,
     sent: bool,
     send_reason: str,
     served_marked: bool,
@@ -596,7 +605,6 @@ def log_run_complete(
         config,
         run_id=run_id,
         events_sent=events_sent,
-        cached_events=cached_events,
         sent=sent,
         send_reason=send_reason,
         served_marked=served_marked,

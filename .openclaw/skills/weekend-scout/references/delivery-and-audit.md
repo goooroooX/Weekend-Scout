@@ -151,7 +151,6 @@ It does **not** become zero just because Telegram was unconfigured. Delivery sta
 python -m weekend_scout run-complete --run-id "<run_id>" \
   --target-weekend "<saturday>" \
   --events-sent <city_count + trip_count> \
-  --cached-events <cached_count> \
   --sent <true|false> \
   --send-reason <sent|telegram_not_configured|send_failed> \
   --served-marked <true|false> \
@@ -175,6 +174,7 @@ Always report first:
 - how many events were found and how many were new vs cached
 - budget used: `searches_used/max_searches`, `fetches_used/max_fetches`
 - any cities with zero coverage, especially tier1 cities
+- the normal digest preview
 
 If `total_events < 3`, also tell the user:
 

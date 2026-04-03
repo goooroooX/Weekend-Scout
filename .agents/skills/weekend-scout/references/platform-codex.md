@@ -8,12 +8,14 @@
 </json-file-rule>
 
 <recommended-paths>
-- `setup_json_path`
-- `cities_json_path`
-- `detail_json_path`
-- `events_json_path`
-- `city_events_json_path`
-- `trips_json_path`
+- `setup_json_path` -> `_tmp_setup.tmp`
+- `cities_json_path` -> `_tmp_cities.tmp`
+- `detail_json_path` -> `_tmp_detail.tmp`
+- `events_json_path` -> `_tmp_events.tmp`
+- `city_events_json_path` -> `_tmp_city_events.tmp`
+- `trips_json_path` -> `_tmp_trips.tmp`
+- `covered_cities_path` -> `_tmp_covered_cities.tmp`
+- `uncovered_tier1_path` -> `_tmp_uncovered_tier1.tmp`
 </recommended-paths>
 
 <powershell-example>

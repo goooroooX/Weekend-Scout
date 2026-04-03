@@ -138,6 +138,9 @@ Use only `FETCH STEP` for queued page extraction in Phase B and Phase D.
 
 After every search or fetch, call `log-search`.
 
+- Broad searches must log `cities = [home_city]`.
+- Targeted and verification searches/fetches must log `cities = [city_name]` for the city being worked.
+
 ```bash
 python -m weekend_scout log-search \
   --query "<query_or_url>" --target-weekend "<saturday>" \
@@ -181,9 +184,9 @@ python -m weekend_scout phase-summary --run-id "<run_id>" --phase <A|B|C|D> --ta
 
 ## Phase A: Broad sweep
 
-Use `workflow.task_cards.phase_a.queries` in the emitted order.
+Use `workflow.phase_a.queries` in the emitted order.
 
-Skip check: if every broad query card is already marked `already_done`, log `skip` for Phase A and jump to Phase B.
+Skip check: if every broad query card is already marked `query_already_done`, log `skip` for Phase A and jump to Phase B.
 
 ```bash
 python -m weekend_scout log-action --run-id "<run_id>" --action skip \
@@ -195,7 +198,7 @@ Otherwise:
 1. Log Phase A start.
 2. Reset phase counters.
 3. For each broad query card:
-   - skip cards already marked `already_done`
+   - skip cards already marked `query_already_done`
    - execute `SEARCH STEP`
    - keep direct event hits immediately
    - queue aggregator URLs for Phase B
@@ -230,7 +233,7 @@ Otherwise:
 
 ## Phase C: Targeted city searches
 
-Use `workflow.task_cards.phase_c.tier1` first. Request tier2 and tier3 on demand only after the earlier tier is finished and coverage is still thin.
+Use `workflow.phase_c.tier1` first. Request tier2 and tier3 on demand only after the earlier tier is finished and coverage is still thin.
 
 Rules:
 
@@ -263,6 +266,7 @@ python -m weekend_scout phase-c-cities --run-id "<run_id>" --tier 2 \
 ```
 - Use only the returned batch cards.
 - Finish and log the current batch before requesting the next one.
+- Do **not** call `phase-summary` between tier batches. Keep Phase C open while you request more cities.
 
 Tier 3:
 
@@ -270,6 +274,7 @@ Tier 3:
 - Request the next batch explicitly with the same `phase-c-cities` command pattern, but `--tier 3`.
 - Use only the returned batch cards.
 - Finish and log the current batch before requesting the next one.
+- Do **not** call `phase-summary` between tier batches. Keep Phase C open while you request more cities.
 
 After all tiers:
 

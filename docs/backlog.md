@@ -162,3 +162,8 @@
 | 12.6 | Add deterministic helper commands for phase/score/run summaries | DONE (2026-04-03) | Added `phase-summary`, `score-summary`, and `run-complete` so the skill no longer hand-builds summary payloads |
 | 12.7 | Add on-demand `phase-c-cities` batching for later targeted-search tiers | DONE (2026-04-03) | Tier2/tier3 now come back in explicit small batches filtered against covered cities and already-done searches |
 | 12.8 | Make audit advisory in normal runtime flow | DONE (2026-04-03) | `audit-run` is non-blocking by default and only fails the command in `--strict` mode |
+| 12.9 | Align `init` and `init-skill` around one compact runtime contract | DONE (2026-04-03) | `init` now mirrors `init-skill` at the top level and moves full debug-only material under `debug` |
+| 12.10 | Shrink `workflow` to dynamic run data only | DONE (2026-04-03) | Removed static policy from runtime `workflow`; references now own phase order and logging rules |
+| 12.11 | Add safe transport-artifact cleanup in cache dir | DONE (2026-04-03) | `init`/`init-skill` clean known transport files at startup, and `run-complete` cleans them again after success |
+| 12.12 | Log later-tier batch requests in action_log | DONE (2026-04-03) | `phase_c_batch_requested` now records tier, offset, limit, coverage, eligibility, and returned counts |
+| 12.13 | Trim remaining init workflow card noise | DONE (2026-04-03) | Removed unused `minimum_trip_cities` / per-card metadata, renamed `already_done` to `query_already_done`, and kept full later-tier cards only in `init.debug` |

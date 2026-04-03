@@ -8,7 +8,7 @@ commands below are the contract.
 
 ## 1. Full setup flow (`needs_setup: true`)
 
-Ask the user:
+Ask the user (and provide input example):
 
 > "Weekend Scout needs a quick one-time setup. What city do you live in, and How far (in km) are you willing to drive for a day trip? (example: Warsaw, 100)"
 

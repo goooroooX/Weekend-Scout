@@ -65,10 +65,14 @@ run_id
 workflow
 ```
 
-- Treat `workflow.phase_order` as the only valid discovery order.
-- Treat `workflow.task_cards` and `workflow.log_checkpoints` as authoritative runtime data.
+- Treat `workflow` as dynamic run data only:
+  - `workflow.audit_command`
+  - `workflow.coverage`
+  - `workflow.phase_a`
+  - `workflow.phase_c`
+  - `workflow.phase_d`
 - In compact `init-skill`, tier2 and tier3 are not preloaded; request them later on demand.
-- Do not recompute localized broad or targeted queries when `workflow.task_cards` already provide them.
+- Do not recompute localized broad or targeted queries when `workflow.phase_a` or `workflow.phase_c.tier1` already provide them.
 
 ### Step 2: Search
 

@@ -141,8 +141,12 @@ Use only `FETCH STEP` for queued page extraction in Phase B and Phase D.
 
 After every search or fetch, call `log-search`.
 
+- Broad searches must log `cities = [home_city]`.
+- Targeted and verification searches/fetches must log `cities = [city_name]` for the city being worked.
+
 Before writing the cities payload, read `references/platform-codex.md`.
 Write a fresh payload file immediately before each `log-search` call. Never reuse a path that may have been auto-deleted by the CLI.
+Use a `_tmp_*.tmp` filename for each transport payload in this step, for example `_tmp_cities.tmp`, `_tmp_detail.tmp`, or `_tmp_events.tmp`.
 Write the covered city list JSON array to `cities_json_path`, then run:
 
 ```bash
@@ -188,9 +192,9 @@ python -m weekend_scout phase-summary --run-id "<run_id>" --phase <A|B|C|D> --ta
 
 ## Phase A: Broad sweep
 
-Use `workflow.task_cards.phase_a.queries` in the emitted order.
+Use `workflow.phase_a.queries` in the emitted order.
 
-Skip check: if every broad query card is already marked `already_done`, log `skip` for Phase A and jump to Phase B.
+Skip check: if every broad query card is already marked `query_already_done`, log `skip` for Phase A and jump to Phase B.
 
 Write `{"reason": "all_queries_in_done_q"}` to `detail_json_path`, then run:
 
@@ -204,7 +208,7 @@ Otherwise:
 1. Log Phase A start.
 2. Reset phase counters.
 3. For each broad query card:
-   - skip cards already marked `already_done`
+   - skip cards already marked `query_already_done`
    - execute `SEARCH STEP`
    - keep direct event hits immediately
    - queue aggregator URLs for Phase B
@@ -241,7 +245,7 @@ Otherwise:
 
 ## Phase C: Targeted city searches
 
-Use `workflow.task_cards.phase_c.tier1` first. Request tier2 and tier3 on demand only after the earlier tier is finished and coverage is still thin.
+Use `workflow.phase_c.tier1` first. Request tier2 and tier3 on demand only after the earlier tier is finished and coverage is still thin.
 
 Rules:
 
@@ -268,7 +272,7 @@ Tier 2:
 
 - Run only when `searches_used < max_searches * 0.6` and coverage is still thin.
 - Request the next batch explicitly:
-Before requesting the batch, read `references/platform-codex.md`, write the current covered-city array to `covered_cities_path`, then run:
+Before requesting the batch, read `references/platform-codex.md`, write the current covered-city array to a fresh `_tmp_covered_cities.tmp` file, then run:
 ```bash
 python -m weekend_scout phase-c-cities --run-id "<run_id>" --tier 2 \
   --offset <offset> --limit 6 \
@@ -277,6 +281,7 @@ python -m weekend_scout phase-c-cities --run-id "<run_id>" --tier 2 \
 ```
 - Use only the returned batch cards.
 - Finish and log the current batch before requesting the next one.
+- Do **not** call `phase-summary` between tier batches. Keep Phase C open while you request more cities.
 
 Tier 3:
 
@@ -284,6 +289,7 @@ Tier 3:
 - Request the next batch explicitly with the same `phase-c-cities` command pattern, but `--tier 3`.
 - Use only the returned batch cards.
 - Finish and log the current batch before requesting the next one.
+- Do **not** call `phase-summary` between tier batches. Keep Phase C open while you request more cities.
 
 After all tiers:
 

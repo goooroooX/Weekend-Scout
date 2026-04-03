@@ -77,6 +77,7 @@ python -m weekend_scout send --file "<path from written>" --run-id "<run_id>"
 #@ENDIF
 #@IF codex
 Before writing JSON payloads, read `references/platform-codex.md`.
+Use fresh `_tmp_*.tmp` transport filenames only, for example `_tmp_city_events.tmp` and `_tmp_trips.tmp`.
 Write the selected home-city event array to `city_events_json_path` and the selected trip array to `trips_json_path`, then run:
 
 ```bash
@@ -169,7 +170,6 @@ It does **not** become zero just because Telegram was unconfigured. Delivery sta
 python -m weekend_scout run-complete --run-id "<run_id>" \
   --target-weekend "<saturday>" \
   --events-sent <city_count + trip_count> \
-  --cached-events <cached_count> \
   --sent <true|false> \
   --send-reason <sent|telegram_not_configured|send_failed> \
   --served-marked <true|false> \
@@ -177,13 +177,12 @@ python -m weekend_scout run-complete --run-id "<run_id>" \
 ```
 #@ENDIF
 #@IF codex
-Before writing the uncovered-tier1 payload, read `references/platform-codex.md`, write the uncovered tier1 array to `uncovered_tier1_path`, then run:
+Before writing the uncovered-tier1 payload, read `references/platform-codex.md`, write the uncovered tier1 array to a fresh `_tmp_uncovered_tier1.tmp` file, then run:
 
 ```bash
 python -m weekend_scout run-complete --run-id "<run_id>" \
   --target-weekend "<saturday>" \
   --events-sent <city_count + trip_count> \
-  --cached-events <cached_count> \
   --sent <true|false> \
   --send-reason <sent|telegram_not_configured|send_failed> \
   --served-marked <true|false> \
@@ -208,6 +207,7 @@ Always report first:
 - how many events were found and how many were new vs cached
 - budget used: `searches_used/max_searches`, `fetches_used/max_fetches`
 - any cities with zero coverage, especially tier1 cities
+- the normal digest preview
 
 If `total_events < 3`, also tell the user:
 
