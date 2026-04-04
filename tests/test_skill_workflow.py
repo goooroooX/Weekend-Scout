@@ -224,6 +224,7 @@ def test_search_workflow_restores_monolith_guardrails():
     content = _read_text(Path("skill_template/resources/common/references/search-workflow.md"))
 
     assert "## Event filter" in content
+    assert "### Status line templates" in content
     assert "religious festivals and processions" in content
     assert "religious services" in content
     assert "After Phase A completes, continue only to Phase B." in content
@@ -245,12 +246,27 @@ def test_search_workflow_restores_monolith_guardrails():
     assert "max_searches * 0.6" not in content
     assert "max_searches * 0.8" not in content
     assert "--searches-used" not in content
+    assert "Show the progress line." not in content
     assert "Do **not** skip tier2 or tier3 because coverage looks good elsewhere." in content
     assert "validation_fetches_used/validation_fetch_limit" in content
+    assert 'STATUS phase=<A|C> action=WebSearch searches=<searches_used>/<max_searches> fetches=<fetches_used>/<max_fetches> target="<query>"' in content
+    assert 'STATUS phase=<B|C> action=WebFetch searches=<searches_used>/<max_searches> fetches=<fetches_used>/<max_fetches> target="<url>"' in content
+    assert 'STATUS phase=D action=WebFetch searches=<searches_used>/<max_searches> fetches=<fetches_used>/<max_fetches> validation_fetches=<validation_fetches_used>/<validation_fetch_limit> target="<url>"' in content
+    assert "2. Show the exact `SEARCH STATUS` line." in content
+    assert "2. Show the exact status line for the current fetch type:" in content
     assert "SEARCH STEP` with `phase_label = broad`" in content
     assert "FETCH STEP` with `phase_label = aggregator`" in content
     assert "SEARCH STEP` with `phase_label = targeted`" in content
     assert "FETCH STEP` with `phase_label = verification`" in content
+    assert "Queued aggregator URL work in Phase B uses the exact `DISCOVERY FETCH STATUS` line." in content
+    assert "Targeted searches in Phase C use the exact `SEARCH STATUS` line with `phase=C`." in content
+    assert "Any targeted fetch in Phase C uses the exact `DISCOVERY FETCH STATUS` line with `phase=C`." in content
+    assert "Tier2 targeted searches in Phase C use the exact `SEARCH STATUS` line with `phase=C`." in content
+    assert "Any targeted fetch in tier2 uses the exact `DISCOVERY FETCH STATUS` line with `phase=C`." in content
+    assert "Tier3 targeted searches in Phase C use the exact `SEARCH STATUS` line with `phase=C`." in content
+    assert "Any targeted fetch in tier3 uses the exact `DISCOVERY FETCH STATUS` line with `phase=C`." in content
+    assert "verification fetches in Phase D use the exact `VALIDATION FETCH STATUS` line" in content
+    assert "the `VALIDATION FETCH STATUS` line must include `validation_fetches_used/validation_fetch_limit`" in content
     assert "python -m weekend_scout phase-summary" in content
     assert "python -m weekend_scout phase-c-cities --run-id" in content
     assert "Finish and log the current batch before requesting the next one." in content

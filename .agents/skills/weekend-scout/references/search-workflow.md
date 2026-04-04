@@ -103,6 +103,29 @@ Before every `WebSearch` or `WebFetch`, show the user a short progress line with
 - `validation_fetches_used/validation_fetch_limit` for verification fetches in Phase D
 - the exact query or URL about to be used
 
+### Status line templates
+
+Use these templates verbatim. Substitute the actual counters and query/URL values,
+and do **not** add extra prose on the same line.
+
+- `SEARCH STATUS`
+
+```text
+STATUS phase=<A|C> action=WebSearch searches=<searches_used>/<max_searches> fetches=<fetches_used>/<max_fetches> target="<query>"
+```
+
+- `DISCOVERY FETCH STATUS`
+
+```text
+STATUS phase=<B|C> action=WebFetch searches=<searches_used>/<max_searches> fetches=<fetches_used>/<max_fetches> target="<url>"
+```
+
+- `VALIDATION FETCH STATUS`
+
+```text
+STATUS phase=D action=WebFetch searches=<searches_used>/<max_searches> fetches=<fetches_used>/<max_fetches> validation_fetches=<validation_fetches_used>/<validation_fetch_limit> target="<url>"
+```
+
 Budget allocation guidance:
 
 ```text
@@ -120,7 +143,7 @@ Phase D (verification): up to 5 validation fetches from the fixed reserve
 For every `WebSearch`, execute this sequence exactly:
 
 1. Gate on `searches_used >= max_searches`.
-2. Show the progress line.
+2. Show the exact `SEARCH STATUS` line.
 3. Execute `WebSearch(query)`.
 4. Increment `searches_used` and `phase_searches`.
 5. Keep only relevant outdoor weekend events.
@@ -136,7 +159,9 @@ For every `WebFetch`, execute this sequence exactly:
 1. Gate on the correct fetch budget:
    - discovery fetch in Phases B/C: stop if `fetches_used >= max_fetches`
    - verification fetch in Phase D: stop if `validation_fetches_used >= validation_fetch_limit`
-2. Show the progress line.
+2. Show the exact status line for the current fetch type:
+   - discovery fetch in Phases B/C: show the exact `DISCOVERY FETCH STATUS` line
+   - verification fetch in Phase D: show the exact `VALIDATION FETCH STATUS` line
 3. Execute `WebFetch(url, prompt)`.
 4. Increment the correct counter and `phase_fetches`:
    - discovery fetch in Phases B/C: increment `fetches_used`
@@ -265,6 +290,8 @@ python -m weekend_scout log-action --run-id "<run_id>" --action phase_start \
 2. Reset phase counters.
 3. For each queued aggregator URL, execute `FETCH STEP` with `phase_label = aggregator` and this prompt:
 
+Queued aggregator URL work in Phase B uses the exact `DISCOVERY FETCH STATUS` line.
+
 > "List ALL outdoor events, festivals, fairs, markets, city days, reenactments, food
 > festivals, and street events happening on [DATES] within the area covered by this page.
 > For each: event name, city, venue, dates/times, 1-sentence description, free entry or not.
@@ -317,8 +344,10 @@ Tier 1:
 
 - Use each tier1 card base query first.
 - For each tier1 card, execute `SEARCH STEP` with `phase_label = targeted`.
+- Targeted searches in Phase C use the exact `SEARCH STATUS` line with `phase=C`.
 - If the first search returns nothing useful, build one more specific second query variant and run one more `SEARCH STEP` with `phase_label = targeted`.
 - If a promising URL appears, use at most one targeted `FETCH STEP` with `phase_label = targeted` for that city.
+- Any targeted fetch in Phase C uses the exact `DISCOVERY FETCH STATUS` line with `phase=C`.
 
 Tier 2:
 
@@ -331,6 +360,8 @@ python -m weekend_scout phase-c-cities --run-id "<run_id>" --tier 2 \
   --covered-cities-file "$covered_cities_path"
 ```
 - Use only the returned batch cards.
+- Tier2 targeted searches in Phase C use the exact `SEARCH STATUS` line with `phase=C`.
+- Any targeted fetch in tier2 uses the exact `DISCOVERY FETCH STATUS` line with `phase=C`.
 - Finish and log the current batch before requesting the next one.
 - If a batch returns `has_more = true` and `searches_used < max_searches`, request the next tier2 batch.
 - If the batch returns `has_more = false`, tier2 is exhausted; continue to tier3 if main search budget remains.
@@ -347,6 +378,8 @@ python -m weekend_scout phase-c-cities --run-id "<run_id>" --tier 3 \
   --covered-cities-file "$covered_cities_path"
 ```
 - Use only the returned batch cards.
+- Tier3 targeted searches in Phase C use the exact `SEARCH STATUS` line with `phase=C`.
+- Any targeted fetch in tier3 uses the exact `DISCOVERY FETCH STATUS` line with `phase=C`.
 - Finish and log the current batch before requesting the next one.
 - If a batch returns `has_more = true` and `searches_used < max_searches`, request the next tier3 batch.
 - If the batch returns `has_more = false`, tier3 is exhausted.
@@ -391,6 +424,8 @@ python -m weekend_scout log-action --run-id "<run_id>" --action phase_start \
 2. Reset phase counters.
 3. Select the top five most promising unconfirmed candidate events.
 4. For each candidate with a known source URL:
+   - verification fetches in Phase D use the exact `VALIDATION FETCH STATUS` line
+   - the `VALIDATION FETCH STATUS` line must include `validation_fetches_used/validation_fetch_limit`
    - do not re-fetch a URL already fetched in this run
    - execute `FETCH STEP` with `phase_label = verification`
    - update `confidence` to `"confirmed"` only when the source matches the timing/details
