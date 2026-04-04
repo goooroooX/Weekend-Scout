@@ -28,6 +28,8 @@ import json
 import re
 import sys
 
+from weekend_scout.cache import VALIDATION_FETCH_LIMIT
+
 
 def _print_error_and_exit(message: str) -> "NoReturn":
     print(json.dumps({"error": message}, ensure_ascii=False))
@@ -515,7 +517,6 @@ def _build_workflow_cards(
 ) -> dict[str, object]:
     """Build minimal dynamic workflow data for the runtime skill."""
     max_searches = int(config.get("max_searches", 30))
-    max_fetches = int(config.get("max_fetches", 30))
     tier2_count = len(cities.get("tier2", []))
     tier3_count = len(cities.get("tier3", []))
     broad_queries = []
@@ -551,28 +552,25 @@ def _build_workflow_cards(
             "tier2_request": {
                 "available_count": tier2_count,
                 "default_limit": 6,
-                "budget_gate": "searches_used < max_searches * 0.6",
                 "request_command": (
                     'python -m weekend_scout phase-c-cities --run-id '
                     f'"{run_id}" --tier 2 --offset <offset> --limit 6 '
-                    '--covered-cities-file "$covered_cities_path" --searches-used <searches_used>'
+                    '--covered-cities-file "$covered_cities_path"'
                 ),
             },
             "tier3_request": {
                 "available_count": tier3_count,
                 "default_limit": 6,
-                "budget_gate": "searches_used < max_searches * 0.8",
                 "request_command": (
                     'python -m weekend_scout phase-c-cities --run-id '
                     f'"{run_id}" --tier 3 --offset <offset> --limit 6 '
-                    '--covered-cities-file "$covered_cities_path" --searches-used <searches_used>'
+                    '--covered-cities-file "$covered_cities_path"'
                 ),
             },
         },
         "phase_d": {
             "max_candidates": 5,
-            "max_fetches": min(5, max_fetches),
-            "reserve_fetches_before_targeted": min(5, max_fetches),
+            "validation_fetch_limit": VALIDATION_FETCH_LIMIT,
         },
     }
 
@@ -766,11 +764,6 @@ def cmd_phase_c_cities(args: argparse.Namespace) -> None:
     searches_this_week = get_searches_this_week(config, saturday)
     targeted_by_country = generate_targeted_by_country(config, cities, saturday)
 
-    if args.tier == 2:
-        eligible = args.searches_used < config.get("max_searches", 30) * 0.6
-    else:
-        eligible = args.searches_used < config.get("max_searches", 30) * 0.8
-
     all_cards = _build_targeted_city_cards(
         tier_entries,
         searches_this_week=searches_this_week,
@@ -782,42 +775,6 @@ def cmd_phase_c_cities(args: argparse.Namespace) -> None:
         if card["city_name"] not in covered and not card["query_already_done"]
     ]
 
-    if not eligible:
-        result = {
-            "run_id": args.run_id,
-            "tier": args.tier,
-            "offset": args.offset,
-            "limit": args.limit,
-            "eligible": False,
-            "reason": "budget_gate_blocked",
-            "available_count": len(filtered_cards),
-            "cards": [],
-            "has_more": False,
-            "next_offset": args.offset,
-        }
-        log_action(
-            config,
-            "phase_c_batch_requested",
-            phase="C",
-            run_id=args.run_id,
-            source="skill",
-            target_weekend=saturday,
-            detail={
-                "tier": args.tier,
-                "offset": args.offset,
-                "limit": args.limit,
-                "searches_used": args.searches_used,
-                "covered_count": len(covered_cities),
-                "eligible": False,
-                "returned_count": 0,
-                "has_more": False,
-                "next_offset": args.offset,
-            },
-        )
-        _cleanup_payload_files(cleanup_candidates)
-        print(json.dumps(result, ensure_ascii=False))
-        return
-
     batch = filtered_cards[args.offset: args.offset + args.limit]
     next_offset = args.offset + len(batch)
     result = {
@@ -825,7 +782,6 @@ def cmd_phase_c_cities(args: argparse.Namespace) -> None:
         "tier": args.tier,
         "offset": args.offset,
         "limit": args.limit,
-        "eligible": True,
         "available_count": len(filtered_cards),
         "cards": batch,
         "has_more": next_offset < len(filtered_cards),
@@ -843,9 +799,7 @@ def cmd_phase_c_cities(args: argparse.Namespace) -> None:
             "tier": args.tier,
             "offset": args.offset,
             "limit": args.limit,
-            "searches_used": args.searches_used,
             "covered_count": len(covered_cities),
-            "eligible": True,
             "returned_count": len(batch),
             "has_more": result["has_more"],
             "next_offset": result["next_offset"],
@@ -1100,8 +1054,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_pcc.add_argument("--covered-cities", default=None, help="JSON array of already-covered city names")
     p_pcc.add_argument("--covered-cities-file", default=None, dest="covered_cities_file",
                        help="Path to UTF-8 JSON array of already-covered city names")
-    p_pcc.add_argument("--searches-used", required=True, type=int, dest="searches_used",
-                       help="Current searches_used counter from the run")
+    p_pcc.add_argument("--searches-used", default=None, type=int, dest="searches_used",
+                       help="Deprecated no-op kept for one-release compatibility")
 
     # phase-summary
     p_ps = sub.add_parser("phase-summary", help="Log one canonical phase_summary entry")

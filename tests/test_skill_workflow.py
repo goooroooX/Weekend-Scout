@@ -1,6 +1,7 @@
 """Tests for generated skill structure, packaging, and install target paths."""
 
 from pathlib import Path
+import re
 
 
 def _norm(path: Path) -> str:
@@ -9,6 +10,40 @@ def _norm(path: Path) -> str:
 
 def _read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def _extract_weekend_scout_commands(text: str) -> list[str]:
+    commands: list[str] = []
+    current: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if line.startswith("python -m weekend_scout "):
+            if current:
+                commands.append(" ".join(current))
+                current = []
+            current.append(line.rstrip("\\").strip())
+            if not raw_line.rstrip().endswith("\\"):
+                commands.append(" ".join(current))
+                current = []
+        elif current:
+            current.append(line.rstrip("\\").strip())
+            if not raw_line.rstrip().endswith("\\"):
+                commands.append(" ".join(current))
+                current = []
+    if current:
+        commands.append(" ".join(current))
+    return [" ".join(cmd.replace("\\", " ").split()) for cmd in commands]
+
+
+def _commands_named(text: str, name: str) -> list[str]:
+    return [cmd for cmd in _extract_weekend_scout_commands(text) if f"python -m weekend_scout {name} " in f"{cmd} "]
+
+
+def _assert_command_with_parts(commands: list[str], *, label: str, parts: list[str]) -> None:
+    for command in commands:
+        if all(part in command for part in parts):
+            return
+    raise AssertionError(f"Missing {label} command with required parts: {parts!r}")
 
 
 def test_codex_install_targets_use_agents_dir():
@@ -139,6 +174,11 @@ def test_core_runtime_skills_are_short_and_reference_driven():
         assert "**FETCH STEP [FETCH_STEP]**" not in content
         assert "For every WebSearch, execute `SEARCH_STEP` exactly as written." not in content
         assert "Do **not** invent trip bundles from unrelated weak findings." not in content
+        assert "sole authority for Step 2 phase lifecycle" in content
+        assert "Required `python -m weekend_scout ...` commands must succeed before the run continues." in content
+        assert "Do **not** fabricate missing logs, synthesize helper outputs, or continue after such a failure." in content
+        assert "If a bundled reference documents a negative-but-valid outcome" in content
+        assert "phase_start missing" not in content
         assert "Do not use for codebase maintenance or skill edits." in content
         assert "weekend-scout-maintenance" not in content
 
@@ -149,6 +189,7 @@ def test_codex_transport_rule_moved_to_reference_file():
 
     assert "references/platform-codex.md" in core_content
     assert "**Codex JSON file rule:**" not in core_content
+    assert "transport-only snippets" in ref_content
     assert "Set-Content -LiteralPath $payload_path -Encoding utf8" in ref_content
     assert ".weekend_scout/cache" in ref_content
     assert "_tmp_detail.tmp" in ref_content
@@ -176,6 +217,7 @@ def test_onboarding_reference_uses_compact_two_question_prompt():
         content = _read_text(path)
         assert "Ask the user (and provide input example):" in content
         assert expected in content
+        assert "documented onboarding fallback, not contract drift" in content
 
 
 def test_search_workflow_restores_monolith_guardrails():
@@ -194,9 +236,32 @@ def test_search_workflow_restores_monolith_guardrails():
     assert "Targeted and verification searches/fetches must log `cities = [city_name]`" in content
     assert "query_already_done" in content
     assert "`already_done`" not in content
+    assert "Required Step 2 CLI calls must succeed before discovery continues." in content
+    assert "Do **not** repair failed Step 2 state by retroactive logging or manual" in content
+    assert "payload synthesis." in content
+    assert "phase_start missing" not in content
+    assert "If that helper returns `logged: false` or an `error`" not in content
+    assert "coverage is still thin" not in content
+    assert "max_searches * 0.6" not in content
+    assert "max_searches * 0.8" not in content
+    assert "--searches-used" not in content
+    assert "Do **not** skip tier2 or tier3 because coverage looks good elsewhere." in content
+    assert "validation_fetches_used/validation_fetch_limit" in content
+    assert "SEARCH STEP` with `phase_label = broad`" in content
+    assert "FETCH STEP` with `phase_label = aggregator`" in content
+    assert "SEARCH STEP` with `phase_label = targeted`" in content
+    assert "FETCH STEP` with `phase_label = verification`" in content
     assert "python -m weekend_scout phase-summary" in content
     assert "python -m weekend_scout phase-c-cities --run-id" in content
     assert "Finish and log the current batch before requesting the next one." in content
+    assert "--phase A --target-weekend \"<saturday>\"" in content
+    assert "--phase B --target-weekend \"<saturday>\"" in content
+    assert "--phase C --target-weekend \"<saturday>\"" in content
+    assert "--phase D --target-weekend \"<saturday>\"" in content
+    assert "phase-summary --run-id \"<run_id>\" --phase A --target-weekend \"<saturday>\"" in content
+    assert "phase-summary --run-id \"<run_id>\" --phase B --target-weekend \"<saturday>\"" in content
+    assert "phase-summary --run-id \"<run_id>\" --phase C --target-weekend \"<saturday>\"" in content
+    assert "phase-summary --run-id \"<run_id>\" --phase D --target-weekend \"<saturday>\"" in content
     assert "Do **not** call `phase-summary` between tier batches." in content
 
 
@@ -204,12 +269,15 @@ def test_delivery_reference_uses_helper_commands_and_debug_audit():
     content = _read_text(Path("skill_template/resources/common/references/delivery-and-audit.md"))
 
     assert "python -m weekend_scout run-complete --run-id" in content
-    assert "`audit-run` is debug-only by default." in content
+    assert "`audit-run` is debug-only by default" in content
+    assert '`send` returning `{"sent": false}` is a documented delivery outcome, not contract drift' in content
+    assert "`audit-run` returning `ok: false` is debug information, not contract drift" in content
     assert "Always report first:" in content
     assert "DEBUG INFORMATION" in content
     assert "Do **not** tell the user to fix the skill" in content
     assert "Only after the audit passes" not in content
     assert "--cached-events" not in content
+    assert "validation budget used: `validation_fetches_used/validation_fetch_limit`" in content
     assert "_tmp_city_events.tmp" in content
     assert "_tmp_uncovered_tier1.tmp" in content
 
@@ -249,3 +317,140 @@ def test_no_semantic_transport_filenames_in_skill_sources():
         content = _read_text(path)
         for token in forbidden:
             assert token not in content, f"{path} still mentions semantic transport file {token}"
+
+
+def test_authoritative_reference_commands_match_cli_contract():
+    onboarding = _read_text(Path("skill_template/resources/common/references/onboarding.md"))
+    search = _read_text(Path("skill_template/resources/common/references/search-workflow.md"))
+    scoring = _read_text(Path("skill_template/resources/common/references/scoring-and-trips.md"))
+    delivery = _read_text(Path("skill_template/resources/common/references/delivery-and-audit.md"))
+
+    onboarding_commands = _extract_weekend_scout_commands(onboarding)
+    search_commands = _extract_weekend_scout_commands(search)
+    scoring_commands = _extract_weekend_scout_commands(scoring)
+    delivery_commands = _extract_weekend_scout_commands(delivery)
+
+    _assert_command_with_parts(
+        _commands_named(onboarding, "find-city"),
+        label="find-city",
+        parts=["--name \"<setup_city>\""],
+    )
+    assert any("--json '{" in cmd for cmd in _commands_named(onboarding, "setup"))
+    _assert_command_with_parts(
+        _commands_named(onboarding, "setup"),
+        label="setup --json-file",
+        parts=["--json-file \"$setup_json_path\""],
+    )
+    _assert_command_with_parts(
+        _commands_named(onboarding, "init-skill"),
+        label="init-skill rerun",
+        parts=[],
+    )
+
+    for phase in ("A", "B", "C", "D"):
+        _assert_command_with_parts(
+            _commands_named(search, "log-action"),
+            label=f"phase_start {phase}",
+            parts=["--run-id \"<run_id>\"", "--action phase_start", f"--phase {phase}", "--target-weekend \"<saturday>\""],
+        )
+        _assert_command_with_parts(
+            _commands_named(search, "phase-summary"),
+            label=f"phase-summary {phase}",
+            parts=["--run-id \"<run_id>\"", f"--phase {phase}", "--target-weekend \"<saturday>\""],
+        )
+
+    _assert_command_with_parts(
+        _commands_named(search, "log-search"),
+        label="log-search inline",
+        parts=["--query \"<query_or_url>\"", "--target-weekend \"<saturday>\"", "--cities '[\"<city>\"]'", "--phase <broad|aggregator|targeted|verification>", "--result-count <N>", "--events-discovered <N>", "--run-id \"<run_id>\""],
+    )
+    _assert_command_with_parts(
+        _commands_named(search, "log-search"),
+        label="log-search file",
+        parts=["--query \"<query_or_url>\"", "--target-weekend \"<saturday>\"", "--cities-file \"$cities_json_path\"", "--phase <broad|aggregator|targeted|verification>", "--result-count <N>", "--events-discovered <N>", "--run-id \"<run_id>\""],
+    )
+    _assert_command_with_parts(
+        _commands_named(search, "phase-c-cities"),
+        label="phase-c-cities tier2",
+        parts=["--run-id \"<run_id>\"", "--tier 2", "--offset <offset>", "--limit 6"],
+    )
+    _assert_command_with_parts(
+        _commands_named(search, "phase-c-cities"),
+        label="phase-c-cities tier3",
+        parts=["--run-id \"<run_id>\"", "--tier 3", "--offset <offset>", "--limit 6"],
+    )
+    _assert_command_with_parts(
+        _commands_named(search, "save"),
+        label="save inline",
+        parts=["--run-id \"<run_id>\"", "--events '<JSON array>'"],
+    )
+    _assert_command_with_parts(
+        _commands_named(search, "save"),
+        label="save file",
+        parts=["--run-id \"<run_id>\"", "--events-file \"$events_json_path\""],
+    )
+    _assert_command_with_parts(
+        _commands_named(search, "cache-query"),
+        label="cache-query",
+        parts=["--date \"<saturday>\""],
+    )
+
+    _assert_command_with_parts(
+        _commands_named(scoring, "score-summary"),
+        label="score-summary",
+        parts=["--run-id \"<run_id>\"", "--target-weekend \"<saturday>\"", "--total-pool <N>", "--city-events-selected <N>", "--trip-options <N>"],
+    )
+
+    _assert_command_with_parts(
+        _commands_named(delivery, "format-message"),
+        label="format-message inline",
+        parts=["--saturday \"<saturday>\"", "--sunday \"<sunday>\"", "--city-events '<top_city_events_json>'", "--trips '<trip_options_json>'", "--run-id \"<run_id>\""],
+    )
+    _assert_command_with_parts(
+        _commands_named(delivery, "format-message"),
+        label="format-message file",
+        parts=["--saturday \"<saturday>\"", "--sunday \"<sunday>\"", "--city-events-file \"$city_events_json_path\"", "--trips-file \"$trips_json_path\"", "--run-id \"<run_id>\""],
+    )
+    _assert_command_with_parts(
+        _commands_named(delivery, "send"),
+        label="send",
+        parts=["--file \"<path from written>\"", "--run-id \"<run_id>\""],
+    )
+    _assert_command_with_parts(
+        _commands_named(delivery, "cache-mark-served"),
+        label="cache-mark-served",
+        parts=["--date \"<saturday>\""],
+    )
+    _assert_command_with_parts(
+        _commands_named(delivery, "run-complete"),
+        label="run-complete",
+        parts=["--run-id \"<run_id>\"", "--target-weekend \"<saturday>\"", "--events-sent <city_count + trip_count>", "--sent <true|false>", "--send-reason <sent|telegram_not_configured|send_failed>", "--served-marked <true|false>"],
+    )
+    _assert_command_with_parts(
+        _commands_named(delivery, "audit-run"),
+        label="audit-run",
+        parts=["--run-id \"<run_id>\""],
+    )
+
+    all_commands = "\n".join(search_commands + scoring_commands + delivery_commands + onboarding_commands)
+    assert "--cached-events" not in all_commands
+    assert "--searches-used" not in all_commands
+
+
+def test_authoritative_references_use_placeholder_formats_consistently():
+    refs = [
+        _read_text(Path("skill_template/resources/common/references/onboarding.md")),
+        _read_text(Path("skill_template/resources/common/references/search-workflow.md")),
+        _read_text(Path("skill_template/resources/common/references/scoring-and-trips.md")),
+        _read_text(Path("skill_template/resources/common/references/delivery-and-audit.md")),
+    ]
+    combined = "\n".join(refs)
+
+    assert "\"<run_id>\"" in combined
+    assert "\"<saturday>\"" in combined
+    assert "\"<sunday>\"" in combined
+    assert "\"$cities_json_path\"" in combined
+    assert "\"$events_json_path\"" in combined
+    assert "<N>" in combined
+    assert "'[\"<city>\", \"<city>\"]'" in combined
+    assert not re.search(r"--events-sent \"<city_count \+ trip_count>\"", combined)

@@ -63,13 +63,16 @@ python -m weekend_scout log-action --run-id "<run_id>" --action skip \
 
 ## Budget and counters
 
-Budget: up to `max_searches` `WebSearch` calls and up to `max_fetches` `WebFetch` calls.
-Bash/CLI calls are free.
+Budget: up to `max_searches` `WebSearch` calls and up to `max_fetches` discovery `WebFetch`
+calls during Phases A-C. Phase D gets a separate fixed validation reserve from
+`workflow.phase_d.validation_fetch_limit`. Bash/CLI calls are free.
 
 Initialize before Phase A:
 
 - `searches_used = 0`
 - `fetches_used = 0`
+- `validation_fetches_used = 0`
+- `validation_fetch_limit = workflow.phase_d.validation_fetch_limit`
 
 Initialize at the start of every phase A/B/C/D:
 
@@ -80,30 +83,33 @@ Initialize at the start of every phase A/B/C/D:
 Track usage explicitly:
 
 - Increment `searches_used` and `phase_searches` after every `WebSearch`.
-- Increment `fetches_used` and `phase_fetches` after every `WebFetch`.
+- Increment `fetches_used` and `phase_fetches` after every discovery `WebFetch` in Phases B/C.
+- Increment `validation_fetches_used` and `phase_fetches` after every verification `WebFetch` in Phase D.
 - Maintain a run-level unique-event set keyed by `(event_name, city, start_date)`.
 - Increment `phase_new_events` only when a kept event adds a new key to that set.
 - Before any `WebSearch`, stop if `searches_used >= max_searches`.
-- Before any `WebFetch`, stop if `fetches_used >= max_fetches`.
+- Before any discovery `WebFetch`, stop if `fetches_used >= max_fetches`.
+- Before any verification `WebFetch`, stop if `validation_fetches_used >= validation_fetch_limit`.
 
 Before every `WebSearch` or `WebFetch`, show the user a short progress line with:
 
 - phase
 - action type
 - `searches_used/max_searches`
-- `fetches_used/max_fetches`
+- `fetches_used/max_fetches` for discovery fetches in Phases B/C
+- `validation_fetches_used/validation_fetch_limit` for verification fetches in Phase D
 - the exact query or URL about to be used
 
 Budget allocation guidance:
 
 ```text
 Phase A (broad): up to 5 searches
-Phase A+B combined: up to 6 fetches total
+Phase A+B combined: up to 6 discovery fetches total
 Phase C (per-city):
-  tier1: up to 2 searches + 1 fetch per uncovered tier1 city
-  tier2: up to 1 search per uncovered tier2 city when searches_used < max_searches * 0.6
-  tier3: up to 1 search per uncovered tier3 city when searches_used < max_searches * 0.8
-Phase D (verification): up to 5 fetches
+  tier1: up to 2 searches + 1 discovery fetch per uncovered tier1 city
+  tier2: after tier1, sweep every uncovered tier2 city in emitted order while main search budget remains
+  tier3: after tier2, sweep every uncovered tier3 city in emitted order while main search budget remains
+Phase D (verification): up to 5 validation fetches from the fixed reserve
 ```
 
 ## SEARCH STEP
@@ -124,10 +130,14 @@ Do not batch `log-search` calls at the end of a phase. The `log-search` must suc
 
 For every `WebFetch`, execute this sequence exactly:
 
-1. Gate on `fetches_used >= max_fetches`.
+1. Gate on the correct fetch budget:
+   - discovery fetch in Phases B/C: stop if `fetches_used >= max_fetches`
+   - verification fetch in Phase D: stop if `validation_fetches_used >= validation_fetch_limit`
 2. Show the progress line.
 3. Execute `WebFetch(url, prompt)`.
-4. Increment `fetches_used` and `phase_fetches`.
+4. Increment the correct counter and `phase_fetches`:
+   - discovery fetch in Phases B/C: increment `fetches_used`
+   - verification fetch in Phase D: increment `validation_fetches_used`
 5. Keep only relevant outdoor weekend events.
 6. Log immediately with `log-search`.
 7. Do **not** start another web action until the matching `log-search` succeeds.
@@ -167,7 +177,7 @@ confidence, category, free_entry, source_url, source_name,
 end_date, time_info, location_name, lat, lon, description, country
 ```
 
-## Phase lifecycle commands
+## Phase lifecycle and helper success
 
 Start any phase with:
 
@@ -182,6 +192,11 @@ End any completed phase with `phase-summary`, which computes the canonical detai
 python -m weekend_scout phase-summary --run-id "<run_id>" --phase <A|B|C|D> --target-weekend "<saturday>"
 ```
 
+Required Step 2 CLI calls must succeed before discovery continues. If any such call exits non-zero,
+returns a top-level `error`, or returns a required-success payload indicating failure, stop the run
+and report contract drift. Do **not** repair failed Step 2 state by retroactive logging or manual
+payload synthesis.
+
 ## Phase A: Broad sweep
 
 Use `workflow.phase_a.queries` in the emitted order.
@@ -195,15 +210,27 @@ python -m weekend_scout log-action --run-id "<run_id>" --action skip \
 
 Otherwise:
 
-1. Log Phase A start.
+1. Log Phase A start:
+
+```bash
+python -m weekend_scout log-action --run-id "<run_id>" --action phase_start \
+  --phase A --target-weekend "<saturday>"
+```
+
 2. Reset phase counters.
 3. For each broad query card:
    - skip cards already marked `query_already_done`
-   - execute `SEARCH STEP`
+   - execute `SEARCH STEP` with `phase_label = broad`
    - keep direct event hits immediately
    - queue aggregator URLs for Phase B
-4. End Phase A with `phase-summary`.
-5. After Phase A completes, continue only to Phase B.
+4. Show the short Phase A summary to the user.
+5. End Phase A with:
+
+```bash
+python -m weekend_scout phase-summary --run-id "<run_id>" --phase A --target-weekend "<saturday>"
+```
+
+6. After Phase A completes, continue only to Phase B.
 
 ## Phase B: Aggregator deep-dive
 
@@ -216,9 +243,15 @@ python -m weekend_scout log-action --run-id "<run_id>" --action skip \
 
 Otherwise:
 
-1. Log Phase B start.
+1. Log Phase B start:
+
+```bash
+python -m weekend_scout log-action --run-id "<run_id>" --action phase_start \
+  --phase B --target-weekend "<saturday>"
+```
+
 2. Reset phase counters.
-3. For each queued aggregator URL, execute `FETCH STEP` with this prompt:
+3. For each queued aggregator URL, execute `FETCH STEP` with `phase_label = aggregator` and this prompt:
 
 > "List ALL outdoor events, festivals, fairs, markets, city days, reenactments, food
 > festivals, and street events happening on [DATES] within the area covered by this page.
@@ -229,17 +262,23 @@ Otherwise:
 5. Out-of-scope hits may be mentioned as discarded evidence, but must not be saved as usable trip candidates.
 6. Phase B is URL-based extraction. Use only `FETCH STEP` for queued page work, not ad hoc substitute search-only flows.
 7. Broad or aggregator hits outside the radius do **not** justify ending targeted search if nearby-city coverage is still weak.
-8. End Phase B with `phase-summary`.
+8. Show the short Phase B summary to the user.
+9. End Phase B with:
+
+```bash
+python -m weekend_scout phase-summary --run-id "<run_id>" --phase B --target-weekend "<saturday>"
+```
 
 ## Phase C: Targeted city searches
 
-Use `workflow.phase_c.tier1` first. Request tier2 and tier3 on demand only after the earlier tier is finished and coverage is still thin.
+Use `workflow.phase_c.tier1` first. Request tier2 and tier3 on demand only after the earlier tier is finished.
 
 Rules:
 
 - Always search each uncovered city individually.
 - A city is covered if it has at least one event across `cached_covered_cities` plus Phase A/B/C results.
 - Follow the emitted tier order exactly.
+- Do **not** skip tier2 or tier3 because coverage looks good elsewhere. Sweep later tiers deterministically while main search budget remains.
 
 If all cities in all tiers are already covered, log `skip` for Phase C and jump to Phase D.
 
@@ -248,41 +287,72 @@ python -m weekend_scout log-action --run-id "<run_id>" --action skip \
   --phase C --target-weekend "<saturday>" --detail '{"reason": "all_cities_covered"}'
 ```
 
+Otherwise:
+
+1. Log Phase C start:
+
+```bash
+python -m weekend_scout log-action --run-id "<run_id>" --action phase_start \
+  --phase C --target-weekend "<saturday>"
+```
+
+2. Reset phase counters.
+3. Search cities in priority order: tier1 first, then tier2, then tier3. Stop only when the main search budget is exhausted or the current tier is fully exhausted.
+
 Tier 1:
 
 - Use each tier1 card base query first.
-- If the first search returns nothing useful, build one more specific second query variant and run one more `SEARCH STEP`.
-- If a promising URL appears, use at most one targeted `FETCH STEP` for that city.
+- For each tier1 card, execute `SEARCH STEP` with `phase_label = targeted`.
+- If the first search returns nothing useful, build one more specific second query variant and run one more `SEARCH STEP` with `phase_label = targeted`.
+- If a promising URL appears, use at most one targeted `FETCH STEP` with `phase_label = targeted` for that city.
 
 Tier 2:
 
-- Run only when `searches_used < max_searches * 0.6` and coverage is still thin.
+- After tier1, request tier2 batches while `searches_used < max_searches`.
 - Request the next batch explicitly:
 ```bash
 python -m weekend_scout phase-c-cities --run-id "<run_id>" --tier 2 \
   --offset <offset> --limit 6 \
-  --covered-cities '["<city>", "<city>"]' \
-  --searches-used <searches_used>
+  --covered-cities '["<city>", "<city>"]'
 ```
 - Use only the returned batch cards.
 - Finish and log the current batch before requesting the next one.
+- If a batch returns `has_more = true` and `searches_used < max_searches`, request the next tier2 batch.
+- If the batch returns `has_more = false`, tier2 is exhausted; continue to tier3 if main search budget remains.
+- Phase C stays open while tier2 batches run. Do **not** log another `phase_start` for a later-tier batch.
 - Do **not** call `phase-summary` between tier batches. Keep Phase C open while you request more cities.
 
 Tier 3:
 
-- Run only when `searches_used < max_searches * 0.8`, tier2 is already done, and coverage is still thin.
-- Request the next batch explicitly with the same `phase-c-cities` command pattern, but `--tier 3`.
+- After tier2 is exhausted, request tier3 batches while `searches_used < max_searches`.
+```bash
+python -m weekend_scout phase-c-cities --run-id "<run_id>" --tier 3 \
+  --offset <offset> --limit 6 \
+  --covered-cities '["<city>", "<city>"]'
+```
 - Use only the returned batch cards.
 - Finish and log the current batch before requesting the next one.
+- If a batch returns `has_more = true` and `searches_used < max_searches`, request the next tier3 batch.
+- If the batch returns `has_more = false`, tier3 is exhausted.
+- Phase C stays open while tier3 batches run. Do **not** log another `phase_start` for a later-tier batch.
 - Do **not** call `phase-summary` between tier batches. Keep Phase C open while you request more cities.
 
 After all tiers:
 
-- End Phase C with `phase-summary`.
+- Show the short Phase C summary to the user.
+- End Phase C with:
+
+```bash
+python -m weekend_scout phase-summary --run-id "<run_id>" --phase C --target-weekend "<saturday>"
+```
+
 - Track `uncovered_tier1` for Step 6.
 - Do not start Phase D until Phase C ends with `phase-summary` or `skip`.
 
 ## Phase D: Verification
+
+Use the fixed validation reserve from `workflow.phase_d.validation_fetch_limit`.
+Do **not** count Phase D fetches against `max_fetches`.
 
 Skip if all top candidates are already `confidence: "confirmed"`.
 
@@ -293,14 +363,26 @@ python -m weekend_scout log-action --run-id "<run_id>" --action skip \
 
 Otherwise:
 
-1. Log Phase D start.
+1. Log Phase D start:
+
+```bash
+python -m weekend_scout log-action --run-id "<run_id>" --action phase_start \
+  --phase D --target-weekend "<saturday>"
+```
+
 2. Reset phase counters.
 3. Select the top five most promising unconfirmed candidate events.
 4. For each candidate with a known source URL:
    - do not re-fetch a URL already fetched in this run
    - execute `FETCH STEP` with `phase_label = verification`
    - update `confidence` to `"confirmed"` only when the source matches the timing/details
-5. End Phase D with `phase-summary`.
+5. Show the short Phase D summary to the user.
+6. End Phase D with:
+
+```bash
+python -m weekend_scout phase-summary --run-id "<run_id>" --phase D --target-weekend "<saturday>"
+```
+
 
 After Phase D completes, discovery work is over. Do not return to targeted or broad searching.
 

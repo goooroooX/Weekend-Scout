@@ -1,5 +1,9 @@
 # Codex Transport Rules
 
+These examples are transport-only snippets. They show how to write fresh payload files and pass
+`--*-file` flags. They are **not** full scout-run command shapes; the authoritative run commands
+live in `onboarding.md`, `search-workflow.md`, `scoring-and-trips.md`, and `delivery-and-audit.md`.
+
 <json-file-rule>
 - For any `python -m weekend_scout ...` command that passes structured JSON, write the payload to a fresh UTF-8 file in `.weekend_scout/cache/`, then pass the matching `--*-file` flag.
 - Use `_tmp_*.tmp` filenames only for one-call transport payloads.

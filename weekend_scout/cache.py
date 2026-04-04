@@ -77,6 +77,7 @@ PHASE_DISCOVERY_LABELS: dict[str, tuple[str, ...]] = {
     "C": ("targeted",),
     "D": ("verification",),
 }
+VALIDATION_FETCH_LIMIT = 5
 RUN_COMPLETE_REQUIRED_FIELDS: tuple[str, ...] = (
     "events_sent",
     "new_events",
@@ -85,6 +86,8 @@ RUN_COMPLETE_REQUIRED_FIELDS: tuple[str, ...] = (
     "max_searches",
     "fetches_used",
     "max_fetches",
+    "validation_fetches_used",
+    "validation_fetch_limit",
     "sent",
     "send_reason",
     "served_marked",
@@ -453,6 +456,17 @@ def summarize_run_activity(
     return summary
 
 
+def summarize_run_budget_totals(
+    activity: dict[str, dict[str, int]],
+) -> dict[str, int]:
+    """Return split search/fetch totals for run-level budget reporting."""
+    return {
+        "searches_used": sum(phase["searches"] for phase in activity.values()),
+        "fetches_used": sum(activity[phase]["fetches"] for phase in ("A", "B", "C")),
+        "validation_fetches_used": activity["D"]["fetches"],
+    }
+
+
 def build_phase_summary_detail(
     config: dict[str, Any],
     run_id: str,
@@ -557,8 +571,7 @@ def build_run_complete_detail(
     """Compute the canonical run_complete detail payload for one run."""
     entries = read_action_log(config, run_id=run_id)
     activity = summarize_run_activity(entries)
-    searches_used = sum(phase["searches"] for phase in activity.values())
-    fetches_used = sum(phase["fetches"] for phase in activity.values())
+    budget_totals = summarize_run_budget_totals(activity)
 
     events_saved_entry = _existing_run_entry(entries, action="events_saved")
     if events_saved_entry is not None:
@@ -573,10 +586,12 @@ def build_run_complete_detail(
         "events_sent": events_sent,
         "new_events": new_events,
         "cached_events": cached_events,
-        "searches_used": searches_used,
+        "searches_used": budget_totals["searches_used"],
         "max_searches": int(config.get("max_searches", 30)),
-        "fetches_used": fetches_used,
+        "fetches_used": budget_totals["fetches_used"],
         "max_fetches": int(config.get("max_fetches", 30)),
+        "validation_fetches_used": budget_totals["validation_fetches_used"],
+        "validation_fetch_limit": VALIDATION_FETCH_LIMIT,
         "sent": sent,
         "send_reason": send_reason,
         "served_marked": served_marked,
@@ -665,7 +680,8 @@ def audit_run(config: dict[str, Any], run_id: str) -> dict[str, Any]:
     search_bypass_index: int | None = None
     d_complete_index: int | None = None
     total_searches = 0
-    total_fetches = 0
+    total_discovery_fetches = 0
+    total_validation_fetches = 0
     total_new_events = 0
 
     run_init_entry: dict[str, Any] | None = None
@@ -713,7 +729,10 @@ def audit_run(config: dict[str, Any], run_id: str) -> dict[str, Any]:
                 total_searches += 1
             else:
                 phase_activity[phase_name]["fetches"] += 1
-                total_fetches += 1
+                if phase_name == "D":
+                    total_validation_fetches += 1
+                else:
+                    total_discovery_fetches += 1
             events_discovered = detail.get("events_discovered", 0)
             if isinstance(events_discovered, int):
                 phase_activity[phase_name]["new_events"] += events_discovered
@@ -832,15 +851,24 @@ def audit_run(config: dict[str, Any], run_id: str) -> dict[str, Any]:
             )
         if detail.get("searches_used") != total_searches:
             errors.append("run_complete searches_used does not match logged search actions")
-        if detail.get("fetches_used") != total_fetches:
-            errors.append("run_complete fetches_used does not match logged fetch actions")
+        if detail.get("fetches_used") != total_discovery_fetches:
+            errors.append("run_complete fetches_used does not match logged discovery fetch actions")
+        if detail.get("validation_fetches_used") != total_validation_fetches:
+            errors.append("run_complete validation_fetches_used does not match logged validation fetch actions")
 
         max_searches = detail.get("max_searches")
         max_fetches = detail.get("max_fetches")
+        validation_fetch_limit = detail.get("validation_fetch_limit")
         if isinstance(max_searches, int) and max_searches < total_searches:
             errors.append("run_complete max_searches is below actual searches_used")
-        if isinstance(max_fetches, int) and max_fetches < total_fetches:
-            errors.append("run_complete max_fetches is below actual fetches_used")
+        if isinstance(max_fetches, int) and max_fetches < total_discovery_fetches:
+            errors.append("run_complete max_fetches is below actual discovery fetches_used")
+        if validation_fetch_limit != VALIDATION_FETCH_LIMIT:
+            errors.append(
+                f"run_complete validation_fetch_limit must equal {VALIDATION_FETCH_LIMIT}"
+            )
+        elif total_validation_fetches > VALIDATION_FETCH_LIMIT:
+            errors.append("run_complete validation_fetch_limit is below actual validation_fetches_used")
 
         sent = detail.get("sent")
         send_reason = detail.get("send_reason")
@@ -927,7 +955,8 @@ def audit_run(config: dict[str, Any], run_id: str) -> dict[str, Any]:
         "summary": {
             "entry_count": len(entries),
             "searches_used": total_searches,
-            "fetches_used": total_fetches,
+            "fetches_used": total_discovery_fetches,
+            "validation_fetches_used": total_validation_fetches,
             "new_events_logged": total_new_events,
             "completed_phases": completed_phases,
             "skipped_phases": skipped_phases,

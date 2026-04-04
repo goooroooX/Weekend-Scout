@@ -44,7 +44,8 @@ python -m weekend_scout find-city --name "<setup_city>" [--country "<setup_count
 
 Handle the result exactly:
 
-- No matches or a warning in output: use `WebSearch("<setup_city> city coordinates latitude longitude")`, then extract
+- No matches or a warning in output: this is a documented onboarding fallback, not contract drift.
+  Use `WebSearch("<setup_city> city coordinates latitude longitude")`, then extract
   `lat`, `lon`, and `country`.
 - Exactly one match: use it.
 - Multiple matches from different countries: show the choices to the user and ask which country to use.

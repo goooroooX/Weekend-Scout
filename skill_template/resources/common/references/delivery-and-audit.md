@@ -105,6 +105,9 @@ Expected response shape:
 
 ## Send handling
 
+`send` returning `{"sent": false}` is a documented delivery outcome, not contract drift, as long
+as the command itself succeeds.
+
 If `{"sent": true}`:
 
 - tell the user the digest was sent to Telegram
@@ -165,6 +168,11 @@ events_sent = len(city_events_selected) + len(trip_options)
 It does **not** become zero just because Telegram was unconfigured. Delivery state is represented by
 `sent`, `send_reason`, and `served_marked`.
 
+`run_complete` computes fetch accounting from the action log:
+
+- `fetches_used/max_fetches` = discovery fetches from Phases A-C
+- `validation_fetches_used/validation_fetch_limit` = verification fetches from Phase D
+
 #@IF !codex
 ```bash
 python -m weekend_scout run-complete --run-id "<run_id>" \
@@ -198,14 +206,16 @@ After `run_complete`, always run:
 python -m weekend_scout audit-run --run-id "<run_id>"
 ```
 
-`audit-run` is debug-only by default. It should not block the normal user summary.
+`audit-run` returning `ok: false` is debug information, not contract drift, as long as the command
+itself succeeds. `audit-run` is debug-only by default and should not block the normal user summary.
 
 ## Final user report
 
 Always report first:
 
 - how many events were found and how many were new vs cached
-- budget used: `searches_used/max_searches`, `fetches_used/max_fetches`
+- discovery budget used: `searches_used/max_searches`, `fetches_used/max_fetches`
+- validation budget used: `validation_fetches_used/validation_fetch_limit`
 - any cities with zero coverage, especially tier1 cities
 - the normal digest preview
 

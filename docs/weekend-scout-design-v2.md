@@ -128,6 +128,9 @@ max_searches: 30
 max_fetches: 30
 ```
 
+`max_fetches` is the discovery fetch budget for Phases A-C. Phase D uses a
+separate fixed validation reserve of 5 fetches.
+
 **`load_config`** merges stored YAML over defaults (stored values win).
 This means new config keys added in upgrades get their defaults automatically.
 
@@ -418,18 +421,19 @@ separate terminal needed.
 
 **Step 2: Search for Events (4 phases)**
 
-Budget: `max_searches` WebSearch calls + `max_fetches` WebFetch calls
-(configurable, default 30/30). Bash CLI calls are free.
+Budget: `max_searches` WebSearch calls + `max_fetches` discovery WebFetch
+calls for Phases A-C (configurable, default 30/30). Phase D gets a separate
+fixed validation reserve of 5 fetches. Bash CLI calls are free.
 
 Budget allocation guidance:
 
 ```
-Phase A  (broad)     : up to 5 searches + up to 6 fetches
+Phase A  (broad)     : up to 5 searches + up to 6 discovery fetches
 Phase B  (aggregators): counts against the 6 fetch slots above
-Phase C  (per-city)  : up to 2 searches + 1 fetch per uncovered tier1 city
-                       up to 1 search per tier2 city (if used < 60% budget)
-                       up to 1 search per tier3 city (if used < 80% budget)
-Phase D  (verification): up to 5 fetches
+Phase C  (per-city)  : up to 2 searches + 1 discovery fetch per uncovered tier1 city
+                       deterministic later-tier sweep: tier2 first, then tier3,
+                       until the main search budget is exhausted or the tier is exhausted
+Phase D  (verification): up to 5 validation fetches from a fixed reserve
 ```
 
 Phase A -- Broad sweep: fill broad_q templates with qvars, run WebSearch,
@@ -440,10 +444,13 @@ outdoor events from the page content.
 
 Phase C -- Targeted per-city: for each tier1/tier2/tier3 city that still has
 zero events after Phases A+B, run individual searches using the targeted
-template. Priority: tier1 first, then tier2, then tier3 (if budget allows).
+template. Priority is strict and deterministic: tier1 first, then tier2, then
+tier3, continuing later tiers until the main search budget is exhausted or
+there are no more later-tier city cards to request.
 
-Phase D -- Verification: for top 5 candidate events, fetch official source
-to confirm dates and details. Update confidence to `"confirmed"`.
+Phase D -- Verification: for top 5 candidate events, use the separate fixed
+validation reserve to fetch official sources and confirm dates/details.
+Update confidence to `"confirmed"`.
 
 Each search/fetch is logged via `log-search` with phase, query, result count,
 and events discovered.
@@ -504,7 +511,8 @@ configured, the skill shows setup commands. If `total_events < 3`, the
 
 If send succeeded, mark events as served and log run completion. Report to user:
 - Events found (new vs cached)
-- Budget used (searches/fetches out of max)
+- Discovery budget used (`searches_used/max_searches`, `fetches_used/max_fetches`)
+- Validation budget used (`validation_fetches_used/validation_fetch_limit`)
 - Any tier1 cities with zero coverage
 
 ### 5.3 Event Inclusion and Exclusion Criteria
@@ -711,7 +719,7 @@ Discovers 8 events across Warsaw and nearby cities.
 Radom and Lublin have zero events. Agent runs targeted searches.
 Finds 2 more events.
 
-**5. Phase D -- Verification (2 fetches):**
+**5. Phase D -- Verification (2 validation fetches):**
 
 Agent verifies top 5 events by fetching official sources.
 Updates 4 events to `confidence: "confirmed"`.
@@ -728,7 +736,7 @@ python -m weekend_scout save --run-id "2026-04-04_1830" --events '[...]'
 Agent scores events, selects top 3 for Warsaw and 4 road trips.
 Formats message, sends to Telegram, marks served.
 
-Budget used: 10/30 searches, 5/30 fetches.
+Budget used: 10/30 searches, 2/30 discovery fetches, 5/5 validation fetches.
 
 ---
 
@@ -762,8 +770,10 @@ cached. Over weeks of use, the cache pre-fills and reduces the search budget
 needed. `searches_this_week` dedup prevents repeating queries.
 
 **Configurable budgets.** `max_searches` and `max_fetches` are in the config
-file, not hardcoded in the skill. Users can increase them if results are thin,
-or decrease to save tokens.
+file for main discovery work, not hardcoded in the skill. Users can increase
+them if results are thin, or decrease to save tokens. Phase D verification uses
+a separate fixed 5-fetch reserve so validation does not consume the discovery
+fetch budget.
 
 **Multi-platform from one template.** The `#@IF` / `%%VAR%%` preprocessor
 generates platform-specific SKILL.md files from a single source. Adding a new

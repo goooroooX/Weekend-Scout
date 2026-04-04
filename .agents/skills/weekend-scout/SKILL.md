@@ -12,11 +12,18 @@ metadata:
 
 ## Weekend Scout
 
-> **Normal run rule:** During a normal scout run, do **not** inspect `weekend_scout` package
-> source files to infer schemas, payload shapes, or behavior. Follow this skill plus the bundled
-> references as the contract. If the documented contract seems insufficient or inconsistent, stop
-> the run and tell the user the skill needs maintenance. Do **not** call `--help` commands during
-> a normal run; the CLI shapes are documented here and in the bundled references.
+> **Normal run rule:** Treat this skill plus the bundled references as the authoritative run
+> contract. During a normal scout run, do **not** inspect `weekend_scout` package source files or
+> call `--help` to infer schemas, payload shapes, or behavior.
+>
+> Required `python -m weekend_scout ...` commands must succeed before the run continues. If an
+> authoritative CLI command exits non-zero, returns a top-level `error`, or returns a
+> required-success payload indicating failure, stop the run and tell the user the skill contract
+> drifted.
+>
+> Do **not** fabricate missing logs, synthesize helper outputs, or continue after such a failure.
+> If a bundled reference documents a negative-but-valid outcome, handle it exactly as written
+> instead of treating it as drift.
 >
 > Note: `weekend_scout` is a Python package. `python -m weekend_scout` works from any directory.
 > Do **not** prefix commands with `cd <path> &&`. Do not patch behavior ad hoc during execution.
@@ -66,11 +73,14 @@ workflow
 ### Step 2: Search
 
 - Before discovery work, read `references/search-workflow.md`.
+- The discovery reference is the sole authority for Step 2 phase lifecycle, helper command order, and authoritative command shapes.
 - Do **not** open scoring or delivery references during Step 2.
 - Read `references/platform-codex.md` only immediately before the first file-backed Step 2 call
   (`log-search`, `phase-summary`, `save`, or `phase-c-cities`).
 - If the user invoked `$weekend-scout --cached-only`, follow the cached-only path from that reference.
-- Otherwise follow the full Step 2 contract from that reference exactly.
+- Otherwise follow the full Step 2 contract from that reference exactly. The normal-run failure
+  rule applies to every required Step 2 CLI call, so do **not** repair failed Step 2 state
+  manually.
 
 ### Step 3: Score And Step 4: Build Trips
 

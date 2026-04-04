@@ -192,11 +192,13 @@ Cache files (database, city lists, logs, GeoNames data) live in:
 | `radius_km` | `150` | Search radius in km |
 | `search_language` | `"en"` | Language code for queries |
 | `max_searches` | `30` | Max WebSearch calls per run |
-| `max_fetches` | `30` | Max WebFetch calls per run |
+| `max_fetches` | `30` | Max discovery WebFetch calls per run (Phases A-C) |
 | `max_trip_options` | `10` | Max road trip options to include |
 | `exclude_served` | `false` | Skip events already sent to Telegram in previous runs |
 | `telegram_bot_token` | `""` | Telegram bot token |
 | `telegram_chat_id` | `""` | Telegram chat/group/channel ID |
+
+Phase D verification uses a separate fixed reserve of 5 WebFetch calls and does not consume `max_fetches`.
 
 ## Supported Countries
 

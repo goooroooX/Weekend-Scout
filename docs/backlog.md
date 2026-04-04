@@ -167,3 +167,5 @@
 | 12.11 | Add safe transport-artifact cleanup in cache dir | DONE (2026-04-03) | `init`/`init-skill` clean known transport files at startup, and `run-complete` cleans them again after success |
 | 12.12 | Log later-tier batch requests in action_log | DONE (2026-04-03) | `phase_c_batch_requested` now records tier, offset, limit, coverage, eligibility, and returned counts |
 | 12.13 | Trim remaining init workflow card noise | DONE (2026-04-03) | Removed unused `minimum_trip_cities` / per-card metadata, renamed `already_done` to `query_already_done`, and kept full later-tier cards only in `init.debug` |
+| 12.14 | Restore monolith-grade split skill guardrails | DONE (2026-04-04) | Re-expanded split Step 2 lifecycle commands from `main`, refactored command-failure handling into a global contract rule, and added authoritative example-command validation coverage |
+| 12.15 | Make later-tier targeting deterministic and split validation fetch reserve | DONE (2026-04-04) | Removed tier2/tier3 heuristic gates, made `phase-c-cities` a pure batch helper, and split Phase D validation fetch accounting from the main discovery fetch budget |
