@@ -34,6 +34,20 @@ python -m weekend_scout log-action --action skip --detail-file "$payload_path"
 ```
 </powershell-example>
 
+<setup-powershell-example>
+Use this exact pattern for onboarding setup payloads:
+
+```powershell
+$cache_dir = '.weekend_scout/cache'
+New-Item -ItemType Directory -Force -Path $cache_dir | Out-Null
+$setup_json_path = Join-Path $cache_dir '_tmp_setup.tmp'
+@'
+{"home_city":"<city>","home_country":"<country>","home_coordinates":{"lat":<lat>,"lon":<lon>},"radius_km":<radius>,"search_language":"<language>"}
+'@ | Set-Content -LiteralPath $setup_json_path -Encoding utf8
+python -m weekend_scout setup --json-file "$setup_json_path"
+```
+</setup-powershell-example>
+
 <posix-example>
 ```bash
 cache_dir=".weekend_scout/cache"

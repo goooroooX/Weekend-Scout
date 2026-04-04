@@ -44,8 +44,11 @@ python -m weekend_scout find-city --name "<setup_city>" [--country "<setup_count
 
 Handle the result exactly:
 
-- No matches or a warning in output: this is a documented onboarding fallback, not contract drift.
-  Use `WebSearch("<setup_city> city coordinates latitude longitude")`, then extract
+- If `find-city` does not yield a usable resolved city: this is a documented onboarding
+  fallback, not contract drift.
+  Use `WebSearch("<setup_city> city coordinates latitude longitude country")` first.
+  If the search snippets already provide `lat`, `lon`, and `country`, use them.
+  Otherwise use at most one `WebFetch` of the best result to finish resolving
   `lat`, `lon`, and `country`.
 - Exactly one match: use it.
 - Multiple matches from different countries: show the choices to the user and ask which country to use.
@@ -69,6 +72,10 @@ Persist with:
 ```bash
 python -m weekend_scout setup --json-file "$setup_json_path"
 ```
+
+`setup` must succeed before `init-skill` is rerun. If setup persistence does
+not succeed, stop onboarding and report that setup persistence failed instead of
+improvising alternate recovery or debug steps.
 
 Tell the user:
 

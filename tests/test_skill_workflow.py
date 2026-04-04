@@ -217,7 +217,28 @@ def test_onboarding_reference_uses_compact_two_question_prompt():
         content = _read_text(path)
         assert "Ask the user (and provide input example):" in content
         assert expected in content
-        assert "documented onboarding fallback, not contract drift" in content
+        assert "documented onboarding" in content
+        assert "fallback, not contract drift" in content
+        assert "`find-city` does not yield a usable resolved city" in content
+        assert 'Use `WebSearch("<setup_city> city coordinates latitude longitude country")` first.' in content
+        assert "If the search snippets already provide `lat`, `lon`, and `country`, use them." in content
+        assert "Otherwise use at most one `WebFetch` of the best result" in content
+        assert "`setup` must succeed before `init-skill` is rerun." in content
+        assert "stop onboarding and report that setup persistence failed" in content
+
+
+def test_codex_platform_reference_has_dedicated_setup_transport_example():
+    paths = [
+        Path("skill_template/resources/codex/references/platform-codex.md"),
+        Path(".agents/skills/weekend-scout/references/platform-codex.md"),
+        Path("weekend_scout/skill_data/codex/references/platform-codex.md"),
+    ]
+    for path in paths:
+        content = _read_text(path)
+        assert "Use this exact pattern for onboarding setup payloads:" in content
+        assert "$setup_json_path = Join-Path $cache_dir '_tmp_setup.tmp'" in content
+        assert 'Set-Content -LiteralPath $setup_json_path -Encoding utf8' in content
+        assert 'python -m weekend_scout setup --json-file "$setup_json_path"' in content
 
 
 def test_search_workflow_restores_monolith_guardrails():
@@ -362,6 +383,8 @@ def test_authoritative_reference_commands_match_cli_contract():
         label="init-skill rerun",
         parts=[],
     )
+    assert "setup persistence failed" in onboarding
+    assert "at most one `WebFetch`" in onboarding
 
     for phase in ("A", "B", "C", "D"):
         _assert_command_with_parts(
