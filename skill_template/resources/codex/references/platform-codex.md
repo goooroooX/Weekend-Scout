@@ -18,8 +18,6 @@ live in `onboarding.md`, `search-workflow.md`, `scoring-and-trips.md`, and `deli
 - `events_json_path` -> `_tmp_events.tmp`
 - `city_events_json_path` -> `_tmp_city_events.tmp`
 - `trips_json_path` -> `_tmp_trips.tmp`
-- `covered_cities_path` -> `_tmp_covered_cities.tmp`
-- `uncovered_tier1_path` -> `_tmp_uncovered_tier1.tmp`
 </recommended-paths>
 
 <powershell-example>

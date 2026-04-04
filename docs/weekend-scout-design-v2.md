@@ -57,12 +57,16 @@ User invokes /weekend-scout (or $weekend-scout on Codex)
 1. Agent calls `init` -- CLI returns config, city list, cached events,
    suggested search queries, and a run_id.
 2. Agent searches the web using suggested queries and its own judgment.
-3. Agent calls `save` with discovered events -- CLI deduplicates and stores.
-4. Agent calls `log-search` after each search -- CLI records in SQLite + JSONL.
-5. Agent scores events (in-prompt reasoning, no Python code).
-6. Agent calls `format-message` with top events and trips -- CLI writes HTML file.
-7. Agent calls `send` -- CLI delivers to Telegram.
-8. Agent calls `cache-mark-served` -- CLI marks events as sent.
+3. After each search/fetch, agent calls `log-search` with the kept event array --
+   CLI records the search and upserts canonical run-scoped candidates.
+4. Before verification, agent calls `session-query` to read the canonical
+   weekend candidate set for the run.
+5. Agent calls `save --from-session` -- CLI exports the canonical session
+   candidates and saves them into the permanent SQLite cache.
+6. Agent scores events (in-prompt reasoning, no Python code).
+7. Agent calls `format-message` with top events and trips -- CLI writes HTML file.
+8. Agent calls `send` -- CLI delivers to Telegram.
+9. Agent calls `cache-mark-served` -- CLI marks events as sent.
 
 ---
 
@@ -230,7 +234,7 @@ No routing API needed. Accurate enough for "about 1h45" estimates.
 **Next weekend dates:** `next_weekend_dates()` returns the ISO dates of the
 upcoming Saturday and Sunday. If today is Saturday, it skips to next week.
 
-### 4.4 Event Cache (`cache.py`)
+### 4.4 Event Cache (`cache.py`, `session_cache.py`)
 
 **Database:** SQLite at `<config_dir>/cache/cache.db`.
 
@@ -286,12 +290,30 @@ CREATE TABLE search_log (
 run_id, source, target_weekend, detail. Used for debugging agent behavior
 and analyzing search efficiency.
 
+**Run session store:** `session_cache.py` maintains run-scoped canonical
+candidate files under `<config_dir>/cache/runs/<run_id>.candidates.json`.
+Each file stores:
+
+- `run_id`
+- `target_weekend` (ISO Saturday)
+- `updated_at`
+- `candidates` (canonical event-schema rows for the run)
+
+This session store is the authoritative discovery-state handoff between
+search phases. It keeps future/off-weekend discoveries for later permanent
+cache save, while `session-query` filters to the run's target weekend.
+
 **Key operations:**
 
 - `save_events(config, events)` -- inserts events, returns (saved, skipped) counts
 - `query_events(config, saturday)` -- returns all non-canceled events for the
   weekend (Saturday and Sunday), using `start_date <= sunday AND end_date >= saturday`
-- `log_search(...)` -- records a search in SQLite and also writes to action log
+- `log_search(...)` -- records a search in SQLite, writes to action log, and
+  optionally upserts canonical candidates into the run session
+- `query_session_candidates(config, run_id)` -- returns canonical session
+  candidates overlapping the run's target weekend
+- `export_session_candidates(config, run_id)` -- returns all canonical session
+  candidates for final `save --from-session`
 - `get_searches_this_week(config, saturday)` -- returns query strings already
   run for this target weekend (used for dedup in the skill)
 - `mark_served(config, saturday)` -- sets `served=1` on all events for the weekend
@@ -448,15 +470,18 @@ template. Priority is strict and deterministic: tier1 first, then tier2, then
 tier3, continuing later tiers until the main search budget is exhausted or
 there are no more later-tier city cards to request.
 
-Phase D -- Verification: for top 5 candidate events, use the separate fixed
-validation reserve to fetch official sources and confirm dates/details.
-Update confidence to `"confirmed"`.
+Phase D -- Verification: call `session-query` to load the canonical weekend
+candidate set, then use the separate fixed validation reserve on the top 5
+candidate events to fetch official sources and confirm dates/details. Updates
+are merged back into the run session and can correct weekend date/time fields
+without creating duplicates.
 
 Each search/fetch is logged via `log-search` with phase, query, result count,
-and events discovered.
+and the action-local event array. The CLI computes authoritative
+`events_discovered` counts from session upserts.
 
 All discovered events (including future-weekend finds noticed along the way)
-are saved via a single `save` call at the end of Step 2.
+are saved via a single `save --from-session` call at the end of Step 2.
 
 **Step 3: Score and Rank**
 
@@ -548,11 +573,12 @@ Weekend-Scout/
 
     weekend_scout/                         Python package
         __init__.py
-        __main__.py                        CLI entry point (argparse, 14 subcommands)
+        __main__.py                        CLI entry point (argparse subcommands)
         config.py                          YAML config, setup wizard, country maps
         cities.py                          GeoNames parsing, city lists, query generation
         distance.py                        Haversine, drive time, next_weekend_dates
         cache.py                           SQLite events + search log + JSONL action log
+        session_cache.py                   Run-scoped candidate session files
         telegram.py                        HTML formatting, message splitting, Bot API
         regions.py                         City-to-region mapping (~200 entries)
         skill_data/                        Bundled skill files for install-skill command
@@ -575,7 +601,7 @@ Weekend-Scout/
         settings.local.json                Local overrides
         compaction-notes.md                Post-compaction context
 
-    .codex/                                Codex project-scoped skill
+    .agents/                               Codex project-scoped skill
         skills/weekend-scout/SKILL.md      Generated
         skills/weekend-scout/agents/openai.yaml
 
@@ -594,6 +620,7 @@ Weekend-Scout/
         test_telegram.py
         test_main.py
         test_regions.py
+        test_session_cache.py
 
     docs/                                  Documentation
         weekend-scout-design-v2.md         This document
@@ -614,12 +641,19 @@ All commands output JSON to stdout. Diagnostic messages go to stderr.
 | `setup` | Interactive setup wizard or JSON config apply | `--json '{...}'` |
 | `config` | Show/set config values | `[key] [value]` |
 | `init` | Load config + cities + cache + queries for a run | `--city`, `--radius`, `--cached-only` |
+| `init-skill` | Load compact agent-facing run context | `--city`, `--radius` |
 | `find-city` | Look up a city in GeoNames | `--name`, `--country` |
-| `save` | Save discovered events to cache | `--events '<json>'`, `--run-id` |
+| `save` | Save discovered events to cache | `--events '<json>'`, `--events-file`, `--from-session`, `--run-id` |
 | `send` | Send message to Telegram | `--file` or `--message` |
 | `cache-query` | Query cached events for a weekend | `--date` |
-| `log-search` | Record a web search in the log | `--query`, `--target-weekend`, `--phase`, `--run-id` |
+| `session-query` | Query canonical run-session candidates for the target weekend | `--run-id` |
+| `log-search` | Record a web search in the log and optionally persist kept candidates | `--query`, `--target-weekend`, `--phase`, `--run-id`, `--events-file` |
 | `log-action` | Append to action_log.jsonl | `--action`, `--phase`, `--detail`, `--run-id` |
+| `phase-c-cities` | Load the next later-tier targeted-search batch | `--run-id`, `--tier`, `--offset`, `--limit` |
+| `phase-summary` | Log one canonical discovery-phase summary | `--run-id`, `--phase`, `--target-weekend` |
+| `score-summary` | Log one canonical ranking summary | `--run-id`, `--target-weekend`, `--total-pool` |
+| `run-complete` | Log the canonical final run summary | `--run-id`, `--target-weekend`, `--events-sent` |
+| `audit-run` | Audit one logged scout run by `run_id` | `--run-id`, `--strict` |
 | `cache-mark-served` | Mark weekend events as sent | `--date` |
 | `format-message` | Format scout message to file | `--saturday`, `--sunday`, `--city-events`, `--trips`, `--low-results` |
 | `install-skill` | Copy skill to global skills dir | `--platform` |

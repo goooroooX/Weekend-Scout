@@ -4,7 +4,9 @@ Provides subcommands:
   setup             -- interactive first-run setup wizard
   config            -- show current configuration
   init              -- load config + cities + cache for a scout run (JSON)
+  init-skill        -- load compact skill startup context
   save              -- save discovered events to cache
+  session-query     -- inspect run-scoped session candidates for one run
   send              -- send formatted message to Telegram
   cache-query       -- query cached events for a weekend date
   log-search        -- log a completed search to the search log
@@ -282,19 +284,25 @@ def cmd_save(args: argparse.Namespace) -> None:
     """Save events (JSON array) to the cache."""
     from weekend_scout.config import load_config, get_cache_dir
     from weekend_scout.cache import save_events, log_action
+    from weekend_scout.session_cache import export_session_candidates
 
     config = load_config()
     cleanup_candidates = []
-    events = _load_json_argument(
-        inline_value=args.events,
-        file_path=args.events_file,
-        cache_dir=get_cache_dir(config),
-        cleanup_candidates=cleanup_candidates,
-        option_name="--events",
-        expected_type=list,
-        expected_label="JSON array",
-        required=True,
-    )
+    if args.from_session:
+        if not args.run_id:
+            _print_error_and_exit("--run-id is required with --from-session")
+        events = export_session_candidates(config, args.run_id)
+    else:
+        events = _load_json_argument(
+            inline_value=args.events,
+            file_path=args.events_file,
+            cache_dir=get_cache_dir(config),
+            cleanup_candidates=cleanup_candidates,
+            option_name="--events",
+            expected_type=list,
+            expected_label="JSON array",
+            required=True,
+        )
     saved, skipped = save_events(config, events)
     log_action(config, "events_saved", run_id=args.run_id,
                detail={"saved": saved, "skipped": skipped})
@@ -343,6 +351,7 @@ def cmd_log_search(args: argparse.Namespace) -> None:
     """Log a completed web search to the search log."""
     from weekend_scout.config import load_config, get_cache_dir
     from weekend_scout.cache import log_search
+    from weekend_scout.session_cache import get_session_candidate_count
 
     config = load_config()
     cleanup_candidates = []
@@ -356,18 +365,40 @@ def cmd_log_search(args: argparse.Namespace) -> None:
         expected_label="JSON array",
         default_json="[]",
     )
-    log_search(
-        config=config,
-        query=args.query,
-        target_weekend=args.target_weekend,
-        result_count=args.result_count,
-        cities_covered=cities,
-        phase=args.phase,
-        run_id=args.run_id,
-        events_discovered=args.events_discovered,
+    events = _load_json_argument(
+        inline_value=args.events,
+        file_path=args.events_file,
+        cache_dir=get_cache_dir(config),
+        cleanup_candidates=cleanup_candidates,
+        option_name="--events",
+        expected_type=list,
+        expected_label="JSON array",
     )
+    if events is not None and not args.run_id:
+        _print_error_and_exit("--run-id is required with --events or --events-file")
+    try:
+        result = log_search(
+            config=config,
+            query=args.query,
+            target_weekend=args.target_weekend,
+            result_count=args.result_count,
+            cities_covered=cities,
+            phase=args.phase,
+            run_id=args.run_id,
+            events_discovered=args.events_discovered,
+            events=events,
+        )
+    except ValueError as exc:
+        _print_error_and_exit(str(exc))
+    session_candidate_count = result["session_candidate_count"]
+    if events is None and args.run_id:
+        session_candidate_count = get_session_candidate_count(config, args.run_id)
     _cleanup_payload_files(cleanup_candidates)
-    print(json.dumps({"logged": True}))
+    print(json.dumps({
+        "logged": True,
+        "events_discovered": result["events_discovered"],
+        "session_candidate_count": session_candidate_count,
+    }, ensure_ascii=False))
 
 
 def cmd_log_action(args: argparse.Namespace) -> None:
@@ -409,6 +440,15 @@ def cmd_cache_mark_served(args: argparse.Namespace) -> None:
     count = mark_served(config, args.date)
     log_action(config, "events_served", target_weekend=args.date, detail={"count": count})
     print(json.dumps({"marked": count}))
+
+
+def cmd_session_query(args: argparse.Namespace) -> None:
+    """Return canonical session candidates for the run's target weekend."""
+    from weekend_scout.config import load_config
+    from weekend_scout.session_cache import query_session_candidates
+
+    config = load_config()
+    print(json.dumps(query_session_candidates(config, args.run_id), ensure_ascii=False))
 
 
 def cmd_download_data(args: argparse.Namespace) -> None:
@@ -554,8 +594,7 @@ def _build_workflow_cards(
                 "default_limit": 6,
                 "request_command": (
                     'python -m weekend_scout phase-c-cities --run-id '
-                    f'"{run_id}" --tier 2 --offset <offset> --limit 6 '
-                    '--covered-cities-file "$covered_cities_path"'
+                    f'"{run_id}" --tier 2 --offset <offset> --limit 6'
                 ),
             },
             "tier3_request": {
@@ -563,14 +602,17 @@ def _build_workflow_cards(
                 "default_limit": 6,
                 "request_command": (
                     'python -m weekend_scout phase-c-cities --run-id '
-                    f'"{run_id}" --tier 3 --offset <offset> --limit 6 '
-                    '--covered-cities-file "$covered_cities_path"'
+                    f'"{run_id}" --tier 3 --offset <offset> --limit 6'
                 ),
             },
         },
         "phase_d": {
             "max_candidates": 5,
             "validation_fetch_limit": VALIDATION_FETCH_LIMIT,
+            "session_query_command": (
+                'python -m weekend_scout session-query --run-id '
+                f'"{run_id}"'
+            ),
         },
     }
 
@@ -592,9 +634,11 @@ def _build_init_payload(
     )
     from weekend_scout.cache import query_events, query_events_summary, get_searches_this_week
     from weekend_scout.distance import next_weekend_dates
+    from weekend_scout.session_cache import cleanup_stale_sessions
 
     config = load_config()
     _cleanup_transport_artifacts(get_cache_dir(config))
+    cleanup_stale_sessions(config)
 
     if not config.get("home_city"):
         return {
@@ -736,7 +780,8 @@ def cmd_phase_c_cities(args: argparse.Namespace) -> None:
     """Return one filtered phase-C batch for tier2 or tier3."""
     from weekend_scout.config import load_config, get_cache_dir
     from weekend_scout.cities import get_city_list, generate_targeted_by_country
-    from weekend_scout.cache import get_searches_this_week, log_action
+    from weekend_scout.cache import get_searches_this_week, log_action, query_events_summary
+    from weekend_scout.session_cache import get_session_covered_cities
 
     if args.offset < 0:
         _print_error_and_exit("--offset must be >= 0")
@@ -750,7 +795,7 @@ def cmd_phase_c_cities(args: argparse.Namespace) -> None:
     tier_entries = cities.get(tier_key, [])
 
     cleanup_candidates = []
-    covered_cities = _load_json_argument(
+    _load_json_argument(
         inline_value=args.covered_cities,
         file_path=args.covered_cities_file,
         cache_dir=get_cache_dir(config),
@@ -758,7 +803,6 @@ def cmd_phase_c_cities(args: argparse.Namespace) -> None:
         option_name="--covered-cities",
         expected_type=list,
         expected_label="JSON array",
-        default_json="[]",
     )
 
     searches_this_week = get_searches_this_week(config, saturday)
@@ -769,7 +813,9 @@ def cmd_phase_c_cities(args: argparse.Namespace) -> None:
         searches_this_week=searches_this_week,
         targeted_by_country=targeted_by_country,
     )
-    covered = {str(city) for city in covered_cities}
+    cached_covered = query_events_summary(config, saturday).get("covered_cities", [])
+    session_covered = get_session_covered_cities(config, args.run_id)
+    covered = {str(city) for city in cached_covered} | {str(city) for city in session_covered}
     filtered_cards = [
         card for card in all_cards
         if card["city_name"] not in covered and not card["query_already_done"]
@@ -799,7 +845,7 @@ def cmd_phase_c_cities(args: argparse.Namespace) -> None:
             "tier": args.tier,
             "offset": args.offset,
             "limit": args.limit,
-            "covered_count": len(covered_cities),
+            "covered_count": len(covered),
             "returned_count": len(batch),
             "has_more": result["has_more"],
             "next_offset": result["next_offset"],
@@ -851,7 +897,7 @@ def cmd_run_complete(args: argparse.Namespace) -> None:
 
     config = load_config()
     cleanup_candidates = []
-    uncovered_tier1 = _load_json_argument(
+    _load_json_argument(
         inline_value=args.uncovered_tier1,
         file_path=args.uncovered_tier1_file,
         cache_dir=get_cache_dir(config),
@@ -869,7 +915,6 @@ def cmd_run_complete(args: argparse.Namespace) -> None:
         sent=_parse_bool_arg(args.sent, option_name="--sent"),
         send_reason=args.send_reason,
         served_marked=_parse_bool_arg(args.served_marked, option_name="--served-marked"),
-        uncovered_tier1=[str(city) for city in uncovered_tier1],
     )
     _cleanup_payload_files(cleanup_candidates)
     _cleanup_transport_artifacts(get_cache_dir(config))
@@ -1051,9 +1096,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_pcc.add_argument("--tier", required=True, type=int, choices=[2, 3], help="Later city tier to request")
     p_pcc.add_argument("--offset", type=int, default=0, help="Filtered-batch offset")
     p_pcc.add_argument("--limit", type=int, default=6, help="Maximum number of city cards to return")
-    p_pcc.add_argument("--covered-cities", default=None, help="JSON array of already-covered city names")
+    p_pcc.add_argument("--covered-cities", default=None, help="Deprecated no-op kept for one-release compatibility")
     p_pcc.add_argument("--covered-cities-file", default=None, dest="covered_cities_file",
-                       help="Path to UTF-8 JSON array of already-covered city names")
+                       help="Deprecated no-op kept for one-release compatibility")
     p_pcc.add_argument("--searches-used", default=None, type=int, dest="searches_used",
                        help="Deprecated no-op kept for one-release compatibility")
 
@@ -1085,9 +1130,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_rc.add_argument("--served-marked", required=True, dest="served_marked",
                       help="Whether cache-mark-served was executed (true/false)")
     p_rc.add_argument("--uncovered-tier1", default=None, dest="uncovered_tier1",
-                      help="JSON array of tier1 city names still uncovered")
+                      help="Deprecated no-op kept for one-release compatibility")
     p_rc.add_argument("--uncovered-tier1-file", default=None, dest="uncovered_tier1_file",
-                      help="Path to UTF-8 JSON array of tier1 city names still uncovered")
+                      help="Deprecated no-op kept for one-release compatibility")
 
     # audit-run
     p_audit = sub.add_parser("audit-run", help="Audit a logged scout run by run_id")
@@ -1101,6 +1146,8 @@ def build_parser() -> argparse.ArgumentParser:
     save_group.add_argument("--events", help="JSON array of event objects")
     save_group.add_argument("--events-file", dest="events_file",
                             help="Path to UTF-8 JSON array of event objects")
+    save_group.add_argument("--from-session", action="store_true",
+                            help="Load canonical event candidates from the run session file")
     p_save.add_argument("--run-id", default=None, dest="run_id", help="Run identifier from init")
 
     # send
@@ -1115,6 +1162,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_cq = sub.add_parser("cache-query", help="Query cached events for a weekend date")
     p_cq.add_argument("--date", required=True, help="ISO date (Saturday of target weekend)")
 
+    # session-query
+    p_sq = sub.add_parser("session-query", help="Query canonical session candidates for a run")
+    p_sq.add_argument("--run-id", required=True, dest="run_id", help="Run identifier from init-skill")
+
     # log-search
     p_ls = sub.add_parser("log-search", help="Log a completed search")
     p_ls.add_argument("--query", required=True, help="Search query string")
@@ -1123,10 +1174,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_ls.add_argument("--cities", help="JSON array of city names covered")
     p_ls.add_argument("--cities-file", dest="cities_file",
                       help="Path to UTF-8 JSON array of city names covered")
+    p_ls.add_argument("--events", default=None, help="Optional JSON array of canonical event objects")
+    p_ls.add_argument("--events-file", default=None, dest="events_file",
+                      help="Path to UTF-8 JSON array of canonical event objects")
     p_ls.add_argument("--phase", default="broad", choices=["broad", "aggregator", "targeted", "verification"])
     p_ls.add_argument("--run-id", default=None, dest="run_id", help="Run identifier from init")
     p_ls.add_argument("--events-discovered", type=int, default=0, dest="events_discovered",
-                      help="Number of events extracted from this search")
+                      help="Deprecated manual event count; ignored when --events/--events-file is supplied")
 
     # log-action
     p_la = sub.add_parser("log-action", help="Append a structured action log entry")
@@ -1198,6 +1252,7 @@ COMMANDS = {
     "audit-run": cmd_audit_run,
     "find-city": cmd_find_city,
     "save": cmd_save,
+    "session-query": cmd_session_query,
     "send": cmd_send,
     "cache-query": cmd_cache_query,
     "log-search": cmd_log_search,

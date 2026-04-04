@@ -256,6 +256,7 @@ def test_search_workflow_restores_monolith_guardrails():
     assert "Write a fresh payload file immediately before each `log-search` call." in content
     assert "Broad searches must log `cities = [home_city]`." in content
     assert "Targeted and verification searches/fetches must log `cities = [city_name]`" in content
+    assert "The CLI owns the canonical run-level candidate set." in content
     assert "query_already_done" in content
     assert "`already_done`" not in content
     assert "Required Step 2 CLI calls must succeed before discovery continues." in content
@@ -264,6 +265,8 @@ def test_search_workflow_restores_monolith_guardrails():
     assert "phase_start missing" not in content
     assert "If that helper returns `logged: false` or an `error`" not in content
     assert "coverage is still thin" not in content
+    assert "--events-discovered" not in content
+    assert "--covered-cities" not in content
     assert "max_searches * 0.6" not in content
     assert "max_searches * 0.8" not in content
     assert "--searches-used" not in content
@@ -285,6 +288,8 @@ def test_search_workflow_restores_monolith_guardrails():
     assert "`log-search --query` must exactly match the target shown in the immediately preceding status line" in content
     assert "do **not** repeat the status line after the tool call" in content
     assert "do **not** emit another status line or run another web action until that `log-search` succeeds" in content
+    assert "--events '<JSON array>'" in content
+    assert "--events-file \"$events_json_path\"" in content
     assert "2. Show the exact `SEARCH STATUS` line." in content
     assert "2. Show the exact status line for the current fetch type:" in content
     assert "SEARCH STEP` with `phase_label = broad`" in content
@@ -305,8 +310,10 @@ def test_search_workflow_restores_monolith_guardrails():
     assert "the `VALIDATION FETCH STATUS` line must include `validation_fetches_used/validation_fetch_limit`" in content
     assert "every Phase D web action must be `VALIDATION FETCH STATUS` -> `WebFetch(url, prompt)` -> `log-search --phase verification`" in content
     assert "do **not** run fresh `WebSearch` queries inside Phase D" in content
+    assert "python -m weekend_scout session-query --run-id" in content
     assert "python -m weekend_scout phase-summary" in content
     assert "python -m weekend_scout phase-c-cities --run-id" in content
+    assert "python -m weekend_scout save --run-id \"<run_id>\" --from-session" in content
     assert "Finish and log the current batch before requesting the next one." in content
     assert "--phase A --target-weekend \"<saturday>\"" in content
     assert "--phase B --target-weekend \"<saturday>\"" in content
@@ -333,7 +340,8 @@ def test_delivery_reference_uses_helper_commands_and_debug_audit():
     assert "--cached-events" not in content
     assert "validation budget used: `validation_fetches_used/validation_fetch_limit`" in content
     assert "_tmp_city_events.tmp" in content
-    assert "_tmp_uncovered_tier1.tmp" in content
+    assert "_tmp_uncovered_tier1.tmp" not in content
+    assert "`uncovered_tier1` = derived from `run_init.tier1` plus the saved weekend cache" in content
 
 
 def test_last_failed_run_fixture_documents_unlogged_small_city_searches():
@@ -418,12 +426,12 @@ def test_authoritative_reference_commands_match_cli_contract():
     _assert_command_with_parts(
         _commands_named(search, "log-search"),
         label="log-search inline",
-        parts=["--query \"<query_or_url>\"", "--target-weekend \"<saturday>\"", "--cities '[\"<city>\"]'", "--phase <broad|aggregator|targeted|verification>", "--result-count <N>", "--events-discovered <N>", "--run-id \"<run_id>\""],
+        parts=["--query \"<query_or_url>\"", "--target-weekend \"<saturday>\"", "--cities '[\"<city>\"]'", "--events '<JSON array>'", "--phase <broad|aggregator|targeted|verification>", "--result-count <N>", "--run-id \"<run_id>\""],
     )
     _assert_command_with_parts(
         _commands_named(search, "log-search"),
         label="log-search file",
-        parts=["--query \"<query_or_url>\"", "--target-weekend \"<saturday>\"", "--cities-file \"$cities_json_path\"", "--phase <broad|aggregator|targeted|verification>", "--result-count <N>", "--events-discovered <N>", "--run-id \"<run_id>\""],
+        parts=["--query \"<query_or_url>\"", "--target-weekend \"<saturday>\"", "--cities-file \"$cities_json_path\"", "--events-file \"$events_json_path\"", "--phase <broad|aggregator|targeted|verification>", "--result-count <N>", "--run-id \"<run_id>\""],
     )
     _assert_command_with_parts(
         _commands_named(search, "phase-c-cities"),
@@ -436,14 +444,14 @@ def test_authoritative_reference_commands_match_cli_contract():
         parts=["--run-id \"<run_id>\"", "--tier 3", "--offset <offset>", "--limit 6"],
     )
     _assert_command_with_parts(
-        _commands_named(search, "save"),
-        label="save inline",
-        parts=["--run-id \"<run_id>\"", "--events '<JSON array>'"],
+        _commands_named(search, "session-query"),
+        label="session-query",
+        parts=["--run-id \"<run_id>\""],
     )
     _assert_command_with_parts(
         _commands_named(search, "save"),
-        label="save file",
-        parts=["--run-id \"<run_id>\"", "--events-file \"$events_json_path\""],
+        label="save from-session",
+        parts=["--run-id \"<run_id>\"", "--from-session"],
     )
     _assert_command_with_parts(
         _commands_named(search, "cache-query"),
@@ -491,6 +499,7 @@ def test_authoritative_reference_commands_match_cli_contract():
     all_commands = "\n".join(search_commands + scoring_commands + delivery_commands + onboarding_commands)
     assert "--cached-events" not in all_commands
     assert "--searches-used" not in all_commands
+    assert "--events-discovered" not in all_commands
 
 
 def test_authoritative_references_use_placeholder_formats_consistently():
@@ -508,5 +517,5 @@ def test_authoritative_references_use_placeholder_formats_consistently():
     assert "\"$cities_json_path\"" in combined
     assert "\"$events_json_path\"" in combined
     assert "<N>" in combined
-    assert "'[\"<city>\", \"<city>\"]'" in combined
+    assert "'<JSON array>'" in combined
     assert not re.search(r"--events-sent \"<city_count \+ trip_count>\"", combined)

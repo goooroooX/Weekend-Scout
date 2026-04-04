@@ -85,8 +85,7 @@ Track usage explicitly:
 - Increment `searches_used` and `phase_searches` after every `WebSearch`.
 - Increment `fetches_used` and `phase_fetches` after every discovery `WebFetch` in Phases B/C.
 - Increment `validation_fetches_used` and `phase_fetches` after every verification `WebFetch` in Phase D.
-- Maintain a run-level unique-event set keyed by `(event_name, city, start_date)`.
-- Increment `phase_new_events` only when a kept event adds a new key to that set.
+- Keep only the current action's event payload in memory. The CLI owns the canonical run-level candidate set.
 - Before any `WebSearch`, stop if `searches_used >= max_searches`.
 - Before any discovery `WebFetch`, stop if `fetches_used >= max_fetches`.
 - Before any verification `WebFetch`, stop if `validation_fetches_used >= validation_fetch_limit`.
@@ -198,21 +197,23 @@ After every search or fetch, call `log-search`.
 
 - Broad searches must log `cities = [home_city]`.
 - Targeted and verification searches/fetches must log `cities = [city_name]` for the city being worked.
+- Every `log-search` in the normal run must also include the kept event array for that single action.
 
 ```bash
 python -m weekend_scout log-search \
   --query "<query_or_url>" --target-weekend "<saturday>" \
   --cities '["<city>"]' \
+  --events '<JSON array>' \
   --phase <broad|aggregator|targeted|verification> \
   --result-count <N> \
-  --events-discovered <N> \
   --run-id "<run_id>"
 ```
 
-`events-discovered` must be an integer count of newly kept unique events from that single search or fetch.
-Use `0` if the action produced no new unique events.
+Use `[]` when the action produced no kept events.
+When `--events` or `--events-file` is present, `log-search` returns the authoritative
+`events_discovered` count from the run session upsert plus the current `session_candidate_count`.
 
-`save` must receive one JSON array of event objects. Minimal required keys:
+Event payloads written to the run session use this schema. Minimal required keys:
 
 ```text
 event_name, city, start_date
@@ -367,8 +368,7 @@ Tier 2:
 - Request the next batch explicitly:
 ```bash
 python -m weekend_scout phase-c-cities --run-id "<run_id>" --tier 2 \
-  --offset <offset> --limit 6 \
-  --covered-cities '["<city>", "<city>"]'
+  --offset <offset> --limit 6
 ```
 - Use only the returned batch cards.
 - Tier2 targeted searches in Phase C use the exact `SEARCH STATUS` line with `phase=C`.
@@ -385,8 +385,7 @@ Tier 3:
 - After tier2 is exhausted, request tier3 batches while `searches_used < max_searches`.
 ```bash
 python -m weekend_scout phase-c-cities --run-id "<run_id>" --tier 3 \
-  --offset <offset> --limit 6 \
-  --covered-cities '["<city>", "<city>"]'
+  --offset <offset> --limit 6
 ```
 - Use only the returned batch cards.
 - Tier3 targeted searches in Phase C use the exact `SEARCH STATUS` line with `phase=C`.
@@ -407,7 +406,6 @@ After all tiers:
 python -m weekend_scout phase-summary --run-id "<run_id>" --phase C --target-weekend "<saturday>"
 ```
 
-- Track `uncovered_tier1` for Step 6.
 - Do not start Phase D until Phase C ends with `phase-summary` or `skip`.
 
 ## Phase D: Verification
@@ -432,8 +430,14 @@ python -m weekend_scout log-action --run-id "<run_id>" --action phase_start \
 ```
 
 2. Reset phase counters.
-3. Select the top five most promising unconfirmed candidate events.
-4. For each candidate with a known source URL:
+3. Load the canonical weekend candidate set:
+
+```bash
+python -m weekend_scout session-query --run-id "<run_id>"
+```
+
+4. Select the top five most promising unconfirmed candidate events from that CLI-managed session result.
+5. For each candidate with a known source URL:
    - verification fetches in Phase D use the exact `VALIDATION FETCH STATUS` line
    - the `VALIDATION FETCH STATUS` line must include `validation_fetches_used/validation_fetch_limit`
    - every Phase D web action must be `VALIDATION FETCH STATUS` -> `WebFetch(url, prompt)` -> `log-search --phase verification`
@@ -441,8 +445,8 @@ python -m weekend_scout log-action --run-id "<run_id>" --action phase_start \
    - do not re-fetch a URL already fetched in this run
    - execute `FETCH STEP` with `phase_label = verification`
    - update `confidence` to `"confirmed"` only when the source matches the timing/details
-5. Show the short Phase D summary to the user.
-6. End Phase D with:
+6. Show the short Phase D summary to the user.
+7. End Phase D with:
 
 ```bash
 python -m weekend_scout phase-summary --run-id "<run_id>" --phase D --target-weekend "<saturday>"
@@ -456,7 +460,7 @@ After Phase D completes, discovery work is over. Do not return to targeted or br
 Save all discovered events once, after discovery is complete.
 
 ```bash
-python -m weekend_scout save --run-id "<run_id>" --events '<JSON array>'
+python -m weekend_scout save --run-id "<run_id>" --from-session
 ```
 
 Then load cached rows once with:

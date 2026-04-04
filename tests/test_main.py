@@ -318,6 +318,8 @@ def test_cmd_init_returns_json(tmp_path, monkeypatch):
     assert "budget_gate" not in workflow["phase_c"]["tier3_request"]
     assert "--searches-used" not in workflow["phase_c"]["tier2_request"]["request_command"]
     assert "--searches-used" not in workflow["phase_c"]["tier3_request"]["request_command"]
+    assert "--covered-cities" not in workflow["phase_c"]["tier2_request"]["request_command"]
+    assert "--covered-cities" not in workflow["phase_c"]["tier3_request"]["request_command"]
     assert result["cities"]["tier1"] == ["Potsdam|DE"]
     assert result["config"]["max_city_options"] == 3
     assert result["config"]["max_trip_options"] == 10
@@ -362,9 +364,14 @@ def test_cmd_init_skill_returns_compact_cached_metadata(tmp_path, monkeypatch):
     assert workflow["phase_c"]["tier3_request"]["available_count"] == 1
     assert "--searches-used" not in workflow["phase_c"]["tier2_request"]["request_command"]
     assert "--searches-used" not in workflow["phase_c"]["tier3_request"]["request_command"]
+    assert "--covered-cities" not in workflow["phase_c"]["tier2_request"]["request_command"]
+    assert "--covered-cities" not in workflow["phase_c"]["tier3_request"]["request_command"]
     assert "budget_gate" not in workflow["phase_c"]["tier2_request"]
     assert "budget_gate" not in workflow["phase_c"]["tier3_request"]
     assert workflow["phase_d"]["validation_fetch_limit"] == 5
+    assert workflow["phase_d"]["session_query_command"] == (
+        f'python -m weekend_scout session-query --run-id "{result["run_id"]}"'
+    )
     assert "phase_order" not in workflow
     assert "log_checkpoints" not in workflow
     assert "compact_note" in workflow
@@ -631,7 +638,11 @@ def test_cmd_log_search_returns_logged(tmp_path, monkeypatch):
         tmp_path, monkeypatch,
     )
     result = json.loads(output)
-    assert result == {"logged": True}
+    assert result == {
+        "logged": True,
+        "events_discovered": 0,
+        "session_candidate_count": 0,
+    }
 
 
 def test_cmd_log_search_accepts_cities_file(tmp_path, monkeypatch):
@@ -643,7 +654,11 @@ def test_cmd_log_search_accepts_cities_file(tmp_path, monkeypatch):
         tmp_path, monkeypatch,
     )
     result = json.loads(output)
-    assert result == {"logged": True}
+    assert result == {
+        "logged": True,
+        "events_discovered": 0,
+        "session_candidate_count": 0,
+    }
     assert not payload_path.exists()
 
 
@@ -672,6 +687,80 @@ def test_cmd_log_action_detail_file_invalid_json_returns_error(tmp_path, monkeyp
     assert "Invalid JSON in --detail-file" in result["error"]
 
 
+def test_cmd_log_search_events_file_persists_session_candidates(tmp_path, monkeypatch):
+    events_path = _write_skill_tmp_payload(
+        tmp_path,
+        "events",
+        [{"event_name": "Spring Fest", "city": "Berlin", "start_date": "2026-04-04"}],
+    )
+    result = json.loads(
+        _run_cmd(
+            "log-search",
+            ["--query", "berlin search", "--target-weekend", "2026-04-04",
+             "--phase", "targeted", "--result-count", "2",
+             "--cities", '["Berlin"]', "--events-file", str(events_path),
+             "--run-id", "2026-04-04_1200"],
+            tmp_path, monkeypatch,
+        )
+    )
+    assert result == {
+        "logged": True,
+        "events_discovered": 1,
+        "session_candidate_count": 1,
+    }
+    assert not events_path.exists()
+    session_result = json.loads(
+        _run_cmd("session-query", ["--run-id", "2026-04-04_1200"], tmp_path, monkeypatch)
+    )
+    assert session_result == [
+        {"event_name": "Spring Fest", "city": "Berlin", "start_date": "2026-04-04"}
+    ]
+
+
+def test_cmd_save_from_session_uses_canonical_candidates(tmp_path, monkeypatch):
+    _run_cmd(
+        "log-search",
+        ["--query", "berlin search", "--target-weekend", "2026-04-04",
+         "--phase", "targeted", "--result-count", "2",
+         "--cities", '["Berlin"]',
+         "--events", '[{"event_name":"Spring Fest","city":"Berlin","start_date":"2026-04-04"}]',
+         "--run-id", "2026-04-04_1200"],
+        tmp_path, monkeypatch,
+    )
+    result = json.loads(
+        _run_cmd(
+            "save",
+            ["--run-id", "2026-04-04_1200", "--from-session"],
+            tmp_path, monkeypatch,
+        )
+    )
+    assert result == {"saved": 1, "skipped": 0}
+    cached = json.loads(_run_cmd("cache-query", ["--date", "2026-04-04"], tmp_path, monkeypatch))
+    assert len(cached) == 1
+    assert cached[0]["event_name"] == "Spring Fest"
+
+
+def test_many_logged_searches_can_save_from_session_without_final_events_array(tmp_path, monkeypatch):
+    run_id = "2026-04-04_1945"
+    for idx in range(18):
+        city = f"City{idx:02d}"
+        _run_cmd(
+            "log-search",
+            ["--query", f"query-{idx}", "--target-weekend", "2026-04-04",
+             "--phase", "targeted", "--result-count", "3",
+             "--cities", f'["{city}"]',
+             "--events", json.dumps([{"event_name": f"Fest {idx}", "city": city, "start_date": "2026-04-04"}]),
+             "--run-id", run_id],
+            tmp_path, monkeypatch,
+        )
+    save_result = json.loads(
+        _run_cmd("save", ["--run-id", run_id, "--from-session"], tmp_path, monkeypatch)
+    )
+    assert save_result == {"saved": 18, "skipped": 0}
+    cached = json.loads(_run_cmd("cache-query", ["--date", "2026-04-04"], tmp_path, monkeypatch))
+    assert len(cached) == 18
+
+
 def test_cmd_phase_c_cities_batches_and_filters(tmp_path, monkeypatch):
     _write_minimal_config(tmp_path)
     import weekend_scout.cities as cities_module
@@ -684,27 +773,23 @@ def test_cmd_phase_c_cities_batches_and_filters(tmp_path, monkeypatch):
             "tier3": [],
         },
     )
-    initial = json.loads(
-        _run_cmd(
-            "phase-c-cities",
-            ["--run-id", "2026-04-04_1200", "--tier", "2", "--offset", "0", "--limit", "4",
-             "--covered-cities", "[]"],
-            tmp_path, monkeypatch,
-        )
-    )
-    done_query = initial["cards"][1]["query"]
     _run_cmd(
-        "log-search",
-        ["--query", done_query, "--target-weekend", "2026-04-04",
-         "--phase", "targeted", "--cities", '["Brandenburg"]'],
+        "save",
+        ["--events", '[{"event_name":"A","city":"Berlin","start_date":"2026-04-04"}]'],
         tmp_path, monkeypatch,
     )
-    covered_path = _write_skill_tmp_payload(tmp_path, "covered", ["Berlin"])
+    _run_cmd(
+        "log-search",
+        ["--query", "Brandenburg query", "--target-weekend", "2026-04-04",
+         "--phase", "targeted", "--cities", '["Brandenburg"]',
+         "--events", '[{"event_name":"B","city":"Brandenburg","start_date":"2026-04-04"}]',
+         "--run-id", "2026-04-04_1200"],
+        tmp_path, monkeypatch,
+    )
     result = json.loads(
         _run_cmd(
             "phase-c-cities",
-            ["--run-id", "2026-04-04_1200", "--tier", "2", "--offset", "0", "--limit", "2",
-             "--covered-cities-file", str(covered_path)],
+            ["--run-id", "2026-04-04_1200", "--tier", "2", "--offset", "0", "--limit", "2"],
             tmp_path, monkeypatch,
         )
     )
@@ -714,13 +799,13 @@ def test_cmd_phase_c_cities_batches_and_filters(tmp_path, monkeypatch):
     assert "eligible" not in result
     assert "reason" not in result
     assert set(result["cards"][0]) == {"city_name", "query", "query_already_done"}
-    assert not covered_path.exists()
     log_entries = (tmp_path / "cache" / "action_log.jsonl").read_text(encoding="utf-8").splitlines()
     last_entry = json.loads(log_entries[-1])
     assert last_entry["action"] == "phase_c_batch_requested"
     assert last_entry["detail"]["returned_count"] == 2
     assert "eligible" not in last_entry["detail"]
     assert "searches_used" not in last_entry["detail"]
+    assert last_entry["detail"]["covered_count"] == 2
 
 
 def test_cmd_phase_c_cities_accepts_deprecated_searches_used_noop(tmp_path, monkeypatch):
@@ -863,6 +948,15 @@ def test_cmd_score_summary_logs_flat_payload(tmp_path, monkeypatch):
 
 def test_cmd_run_complete_computes_counts_from_log(tmp_path, monkeypatch):
     _write_minimal_config(tmp_path)
+    from weekend_scout.cache import save_events
+
+    save_events(
+        {"home_city": "Warsaw", "radius_km": 150, "_cache_dir": str(tmp_path / "cache")},
+        [
+            {"event_name": "City Event", "city": "Warsaw", "start_date": "2026-04-04"},
+            {"event_name": "Trip Event", "city": "Berlin", "start_date": "2026-04-04"},
+        ],
+    )
     _write_action_log_fixture(
         tmp_path,
         [
@@ -873,14 +967,12 @@ def test_cmd_run_complete_computes_counts_from_log(tmp_path, monkeypatch):
             {"ts": "2026-04-03T12:25:10", "run_id": "run-complete", "source": "python", "action": "events_saved", "phase": None, "target_weekend": None, "detail": {"saved": 3, "skipped": 0}},
         ],
     )
-    uncovered_path = _write_skill_tmp_payload(tmp_path, "uncovered", ["Radom"])
     result = json.loads(
         _run_cmd(
             "run-complete",
             ["--run-id", "run-complete", "--target-weekend", "2026-04-04",
              "--events-sent", "4", "--sent", "false",
-             "--send-reason", "telegram_not_configured", "--served-marked", "false",
-             "--uncovered-tier1-file", str(uncovered_path)],
+             "--send-reason", "telegram_not_configured", "--served-marked", "false"],
             tmp_path, monkeypatch,
         )
     )
@@ -892,7 +984,7 @@ def test_cmd_run_complete_computes_counts_from_log(tmp_path, monkeypatch):
     assert result["detail"]["validation_fetch_limit"] == 5
     assert result["detail"]["events_sent"] == 4
     assert result["detail"]["cached_events"] == 2
-    assert not uncovered_path.exists()
+    assert result["detail"]["uncovered_tier1"] == ["Radom"]
 
 
 def test_cmd_audit_run_flags_known_phase_drift(tmp_path, monkeypatch):

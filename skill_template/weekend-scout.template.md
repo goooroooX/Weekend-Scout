@@ -88,7 +88,7 @@ workflow
 - Do **not** open scoring or delivery references during Step 2.
 #@IF codex
 - Read `references/platform-codex.md` only immediately before the first file-backed Step 2 call
-  (`log-search`, `phase-summary`, `save`, or `phase-c-cities`).
+  documented in the discovery reference.
 #@ENDIF
 - If the user invoked `%%INVOKE_CMD%% --cached-only`, follow the cached-only path from that reference.
 - Otherwise follow the full Step 2 contract from that reference exactly. The normal-run failure
@@ -106,7 +106,7 @@ workflow
 - Before formatting or sending, read `references/delivery-and-audit.md`.
 #@IF codex
 - Read `references/platform-codex.md` only immediately before the first file-backed Step 5/6 call
-  (`format-message` or `run-complete`).
+  (`format-message`).
 #@ENDIF
 - Follow that reference exactly for `format-message`, `send`, `run_complete`, `audit-run`, and the final user report.
 - Use `workflow.audit_command` as the run-scoped audit command for this execution.

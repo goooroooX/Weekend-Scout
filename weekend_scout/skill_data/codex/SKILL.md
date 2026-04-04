@@ -76,7 +76,7 @@ workflow
 - The discovery reference is the sole authority for Step 2 phase lifecycle, helper command order, and authoritative command shapes.
 - Do **not** open scoring or delivery references during Step 2.
 - Read `references/platform-codex.md` only immediately before the first file-backed Step 2 call
-  (`log-search`, `phase-summary`, `save`, or `phase-c-cities`).
+  documented in the discovery reference.
 - If the user invoked `$weekend-scout --cached-only`, follow the cached-only path from that reference.
 - Otherwise follow the full Step 2 contract from that reference exactly. The normal-run failure
   rule applies to every required Step 2 CLI call, so do **not** repair failed Step 2 state
@@ -92,6 +92,6 @@ workflow
 
 - Before formatting or sending, read `references/delivery-and-audit.md`.
 - Read `references/platform-codex.md` only immediately before the first file-backed Step 5/6 call
-  (`format-message` or `run-complete`).
+  (`format-message`).
 - Follow that reference exactly for `format-message`, `send`, `run_complete`, `audit-run`, and the final user report.
 - Use `workflow.audit_command` as the run-scoped audit command for this execution.

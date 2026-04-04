@@ -158,8 +158,7 @@ It does **not** become zero just because Telegram was unconfigured. Delivery sta
 
 - `fetches_used/max_fetches` = discovery fetches from Phases A-C
 - `validation_fetches_used/validation_fetch_limit` = verification fetches from Phase D
-
-Before writing the uncovered-tier1 payload, read `references/platform-codex.md`, write the uncovered tier1 array to a fresh `_tmp_uncovered_tier1.tmp` file, then run:
+- `uncovered_tier1` = derived from `run_init.tier1` plus the saved weekend cache
 
 ```bash
 python -m weekend_scout run-complete --run-id "<run_id>" \
@@ -167,8 +166,7 @@ python -m weekend_scout run-complete --run-id "<run_id>" \
   --events-sent <city_count + trip_count> \
   --sent <true|false> \
   --send-reason <sent|telegram_not_configured|send_failed> \
-  --served-marked <true|false> \
-  --uncovered-tier1-file "$uncovered_tier1_path"
+  --served-marked <true|false>
 ```
 
 ## Audit gate

@@ -258,7 +258,10 @@ def query_events(
 
 
 def query_events_summary(
-    config: dict[str, Any], saturday: str
+    config: dict[str, Any],
+    saturday: str,
+    *,
+    exclude_served_override: bool | None = None,
 ) -> dict[str, Any]:
     """Return compact cached-event metadata for the target weekend.
 
@@ -277,7 +280,11 @@ def query_events_summary(
         datetime.date.fromisoformat(saturday) + datetime.timedelta(days=1)
     ).isoformat()
 
-    exclude_served = config.get("exclude_served", False)
+    exclude_served = (
+        config.get("exclude_served", False)
+        if exclude_served_override is None
+        else exclude_served_override
+    )
     served_clause = "AND served = 0" if exclude_served else ""
 
     with get_connection(config) as conn:
@@ -312,7 +319,8 @@ def log_search(
     phase: str,
     run_id: str | None = None,
     events_discovered: int = 0,
-) -> None:
+    events: list[dict[str, Any]] | None = None,
+) -> dict[str, int]:
     """Record a completed web search in the search log.
 
     Also appends a structured entry to action_log.jsonl.
@@ -326,7 +334,23 @@ def log_search(
         phase: Search phase label ('broad', 'aggregator', 'targeted', 'verification').
         run_id: Optional run identifier for grouping log entries.
         events_discovered: Number of events extracted from this search (0 if unknown).
+        events: Optional canonical event objects to persist into the run session.
     """
+    session_candidate_count = 0
+    if events is not None:
+        if run_id is None:
+            raise ValueError("run_id is required when events are provided to log_search")
+        from weekend_scout.session_cache import upsert_session_candidates
+
+        session_result = upsert_session_candidates(
+            config,
+            run_id,
+            target_weekend,
+            events,
+        )
+        events_discovered = session_result["events_discovered"]
+        session_candidate_count = session_result["candidate_count"]
+
     today = datetime.date.today().isoformat()
     with get_connection(config) as conn:
         conn.execute(
@@ -345,6 +369,10 @@ def log_search(
                detail={"query": query, "result_count": result_count,
                        "cities": cities_covered or [],
                        "events_discovered": events_discovered})
+    return {
+        "events_discovered": events_discovered,
+        "session_candidate_count": session_candidate_count,
+    }
 
 
 def log_action(
@@ -566,7 +594,6 @@ def build_run_complete_detail(
     sent: bool,
     send_reason: str,
     served_marked: bool,
-    uncovered_tier1: list[str],
 ) -> dict[str, Any]:
     """Compute the canonical run_complete detail payload for one run."""
     entries = read_action_log(config, run_id=run_id)
@@ -581,6 +608,7 @@ def build_run_complete_detail(
 
     run_init_entry = _existing_run_entry(entries, action="run_init")
     cached_events = int((run_init_entry.get("detail") or {}).get("cached_count", 0)) if run_init_entry else 0
+    uncovered_tier1 = _derive_uncovered_tier1(config, run_init_entry, run_id)
 
     return {
         "events_sent": events_sent,
@@ -608,7 +636,6 @@ def log_run_complete(
     sent: bool,
     send_reason: str,
     served_marked: bool,
-    uncovered_tier1: list[str],
 ) -> tuple[dict[str, Any], bool]:
     """Log one canonical run_complete entry, unless it already exists."""
     entries = read_action_log(config, run_id=run_id)
@@ -623,7 +650,6 @@ def log_run_complete(
         sent=sent,
         send_reason=send_reason,
         served_marked=served_marked,
-        uncovered_tier1=uncovered_tier1,
     )
     log_action(
         config,
@@ -634,6 +660,47 @@ def log_run_complete(
         target_weekend=target_weekend,
     )
     return detail, True
+
+
+def _derive_uncovered_tier1(
+    config: dict[str, Any],
+    run_init_entry: dict[str, Any] | None,
+    run_id: str,
+) -> list[str]:
+    """Derive uncovered tier1 cities from run_init data and saved weekend cache."""
+    if run_init_entry is None:
+        return []
+
+    detail = run_init_entry.get("detail") or {}
+    tier1_entries = detail.get("tier1", [])
+    if not isinstance(tier1_entries, list):
+        return []
+
+    target_weekend = run_init_entry.get("target_weekend")
+    if not isinstance(target_weekend, str) or not target_weekend:
+        target_weekend = _extract_target_weekend_from_run_id(run_id)
+    if target_weekend is None:
+        return []
+
+    cached_summary = query_events_summary(
+        config,
+        target_weekend,
+        exclude_served_override=False,
+    )
+    covered = set(cached_summary.get("covered_cities", []))
+    ordered_tier1 = [
+        entry.rsplit("|", 1)[0]
+        for entry in tier1_entries
+        if isinstance(entry, str)
+    ]
+    return [city for city in ordered_tier1 if city not in covered]
+
+
+def _extract_target_weekend_from_run_id(run_id: str) -> str | None:
+    match = re.fullmatch(r"(\d{4}-\d{2}-\d{2})_\d{4}", run_id)
+    if not match:
+        return None
+    return match.group(1)
 
 
 def audit_run(config: dict[str, Any], run_id: str) -> dict[str, Any]:
