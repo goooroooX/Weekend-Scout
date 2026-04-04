@@ -67,8 +67,8 @@
 | 5.2 | Test /weekend-scout with real web searches | IN PROGRESS | Clean-run test done 2026-03-27: Phase A completed (4 searches, 0 events), interrupted before Phase B; exposed bugs fixed in 5.6 |
 | 5.3 | Iterate on search queries based on result quality | DONE (2026-03-28) | Phase C rewritten: individual per-city searches, tier1→tier2→tier3 priority, budget allocation table; Phase D cap 3→5 fetches |
 | 5.4 | Iterate on scoring rubric | TODO | |
-| 5.5 | End-to-end test: init -> search -> save -> send | TODO | |
-| 5.6 | Budget config keys + low-results hint | DONE (2026-03-28) | max_searches(30)/max_fetches(30) in config.py + init JSON output; --low-results flag in format-message; console + Telegram hint when <3 results |
+| 5.5 | End-to-end test: init -> search -> save -> send | DONE (2026-04-04) | End-to-end scout flow validated in current skill runtime; Codex-specific validation is tracked separately in 12.17 |
+| 5.6 | Budget config keys + low-results hint | DONE (2026-03-28) | max_searches(15)/max_fetches(15) in config.py + init JSON output; --low-results flag in format-message; console + Telegram hint when <3 results |
 | 5.7 | Increase road trip options to 10 | DONE (2026-03-28) | max_trip_options=10 default, format_scout_message cap updated, Step 3/4 in skill template updated |
 
 ## Phase 6: Polish
@@ -78,7 +78,7 @@
 | 6.1 | Add region mappings beyond Mazowsze | DONE (2026-03-27) | data/regions.json expanded to ~80 EU cities (Berlin, Paris, Vienna, Budapest, Brussels, etc.) |
 | 6.2 | Handle "no events found" gracefully | DONE (2026-03-27) | format_scout_message returns "No events found" message when both city_events and trip_options are empty |
 | 6.3 | Add cron/scheduled execution instructions to README | TODO | |
-| 6.4 | Cross-platform testing (Windows native, WSL) | TODO | |
+| 6.4 | Cross-platform testing (Windows native, WSL) | TODO | Broader matrix still pending; Claude Code and Codex skill flows are already end-to-end tested |
 
 ## Phase 7: Post-Launch Tuning
 
@@ -170,3 +170,4 @@
 | 12.14 | Restore monolith-grade split skill guardrails | DONE (2026-04-04) | Re-expanded split Step 2 lifecycle commands from `main`, refactored command-failure handling into a global contract rule, and added authoritative example-command validation coverage |
 | 12.15 | Make later-tier targeting deterministic and split validation fetch reserve | DONE (2026-04-04) | Removed tier2/tier3 heuristic gates, made `phase-c-cities` a pure batch helper, and split Phase D validation fetch accounting from the main discovery fetch budget |
 | 12.16 | Persist run-scoped candidates during discovery and save from session | DONE (2026-04-04) | Added JSON run-session candidate store, `session-query`, `save --from-session`, `log-search --events(-file)`, and internal coverage/uncovered-tier1 derivation |
+| 12.17 | Validate Codex skill end-to-end | DONE (2026-04-04) | Codex full scout workflow is now end-to-end tested alongside Claude Code |

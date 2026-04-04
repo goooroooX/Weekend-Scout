@@ -6,8 +6,8 @@ and delivers them to Telegram.
 
 ## Supported Platforms
 
-- **Claude Code** — fully tested, primary development platform
-- **OpenAI Codex** — skill compatible, generated from shared template
+- **Claude Code** — end-to-end tested, primary development platform
+- **OpenAI Codex** — end-to-end tested, generated from shared template
 - **OpenClaw** — skill compatible, generated from shared template
 - Any agent supporting the Agent Skills standard (agentskills.io)
 
@@ -191,8 +191,8 @@ Cache files (database, city lists, logs, GeoNames data) live in:
 | `home_coordinates` | `{lat:0, lon:0}` | Lat/lon — auto-set from GeoNames |
 | `radius_km` | `150` | Search radius in km |
 | `search_language` | `"en"` | Language code for queries |
-| `max_searches` | `30` | Max WebSearch calls per run |
-| `max_fetches` | `30` | Max discovery WebFetch calls per run (Phases A-C) |
+| `max_searches` | `15` | Max WebSearch calls per run |
+| `max_fetches` | `15` | Max discovery WebFetch calls per run (Phases A-C) |
 | `max_trip_options` | `10` | Max road trip options to include |
 | `exclude_served` | `false` | Skip events already sent to Telegram in previous runs |
 | `telegram_bot_token` | `""` | Telegram bot token |

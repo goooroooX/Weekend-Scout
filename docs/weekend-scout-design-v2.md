@@ -128,8 +128,8 @@ telegram_chat_id: ""
 auto_run: false
 run_day: "friday"
 run_time: "18:00"
-max_searches: 30
-max_fetches: 30
+max_searches: 15
+max_fetches: 15
 ```
 
 `max_fetches` is the discovery fetch budget for Phases A-C. Phase D uses a
@@ -444,7 +444,7 @@ separate terminal needed.
 **Step 2: Search for Events (4 phases)**
 
 Budget: `max_searches` WebSearch calls + `max_fetches` discovery WebFetch
-calls for Phases A-C (configurable, default 30/30). Phase D gets a separate
+calls for Phases A-C (configurable, default 15/15). Phase D gets a separate
 fixed validation reserve of 5 fetches. Bash CLI calls are free.
 
 Budget allocation guidance:
@@ -695,9 +695,9 @@ After editing `skill_template/weekend-scout.template.md`:
 python skill_template/generate.py
 ```
 
-This regenerates all platform SKILL.md files (in `.claude/`, `.codex/`,
+This regenerates all platform SKILL.md files (in `.claude/`, `.agents/`,
 `.openclaw/`, and `weekend_scout/skill_data/`). Test with `/weekend-scout`
-in Claude Code, then commit all generated files.
+in Claude Code and `$weekend-scout` in Codex, then commit all generated files.
 
 ---
 
@@ -713,8 +713,8 @@ User types `/weekend-scout` in Claude Code on Thursday evening.
         "home_city": "Warsaw",
         "radius_km": 150,
         "search_language": "pl",
-        "max_searches": 30,
-        "max_fetches": 30,
+        "max_searches": 15,
+        "max_fetches": 15,
         "target_weekend": {"saturday": "2026-04-04", "sunday": "2026-04-05"}
     },
     "cities": {
@@ -761,7 +761,7 @@ Updates 4 events to `confidence: "confirmed"`.
 **6. Save all events:**
 
 ```bash
-python -m weekend_scout save --run-id "2026-04-04_1830" --events '[...]'
+python -m weekend_scout save --run-id "2026-04-04_1830" --from-session
 # -> {"saved": 10, "skipped": 0}
 ```
 
@@ -770,7 +770,7 @@ python -m weekend_scout save --run-id "2026-04-04_1830" --events '[...]'
 Agent scores events, selects top 3 for Warsaw and 4 road trips.
 Formats message, sends to Telegram, marks served.
 
-Budget used: 10/30 searches, 2/30 discovery fetches, 5/5 validation fetches.
+Budget used: 10/15 searches, 2/15 discovery fetches, 5/5 validation fetches.
 
 ---
 
@@ -828,5 +828,5 @@ special characters) to HTML (which requires escaping only 3). Eliminated
 - **Multi-city trips:** Build loop routes through 2-3 nearby cities.
 - **Cache analytics:** Dashboard showing search efficiency over time from
   the JSONL action log.
-- **Cross-platform testing:** Verify Codex and OpenClaw skill execution
-  end-to-end.
+- **Cross-platform testing:** Extend end-to-end validation to OpenClaw and
+  broader platform matrices. Claude Code and Codex are already covered.

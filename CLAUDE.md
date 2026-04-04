@@ -53,7 +53,7 @@ When implementation differs from docs/weekend-scout-design-v2.md:
 - Claude Code skill uses `disable-model-invocation: true` (user-triggered only via /weekend-scout)
 - The skill orchestrates: it calls Python CLI for data, runs WebSearch/WebFetch
   for event discovery, then calls Python CLI for output
-- Test the skill by running /weekend-scout in Claude Code after generating
+- Test the generated skills by running `/weekend-scout` in Claude Code and `$weekend-scout` in Codex after generating
 
 ### Testing approach
 - Each Python module should be testable independently

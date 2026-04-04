@@ -98,8 +98,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "auto_run": False,
     "run_day": "friday",
     "run_time": "18:00",
-    "max_searches": 30,
-    "max_fetches": 30,
+    "max_searches": 15,
+    "max_fetches": 15,
     "exclude_served": False,
 }
 

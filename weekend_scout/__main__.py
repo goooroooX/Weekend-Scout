@@ -489,8 +489,8 @@ def cmd_format_message(args: argparse.Namespace) -> None:
         default_json="[]",
     )
     low_results = args.low_results.lower() in ("true", "1", "yes") if args.low_results else False
-    hint_searches = max(50, config.get("max_searches", 30) + 20)
-    hint_fetches  = max(50, config.get("max_fetches",  30) + 20)
+    hint_searches = max(50, config.get("max_searches", 15) + 20)
+    hint_fetches  = max(50, config.get("max_fetches",  15) + 20)
     msg = format_scout_message(
         config.get("home_city", ""),
         args.saturday,
@@ -556,7 +556,7 @@ def _build_workflow_cards(
     run_id: str,
 ) -> dict[str, object]:
     """Build minimal dynamic workflow data for the runtime skill."""
-    max_searches = int(config.get("max_searches", 30))
+    max_searches = int(config.get("max_searches", 15))
     tier2_count = len(cities.get("tier2", []))
     tier3_count = len(cities.get("tier3", []))
     broad_queries = []
@@ -695,8 +695,8 @@ def _build_init_payload(
         "target_weekend": target_weekend,
         "max_city_options": config.get("max_city_options", 3),
         "max_trip_options": config.get("max_trip_options", 10),
-        "max_searches": config.get("max_searches", 30),
-        "max_fetches": config.get("max_fetches", 30),
+        "max_searches": config.get("max_searches", 15),
+        "max_fetches": config.get("max_fetches", 15),
         "exclude_served": config.get("exclude_served", False),
     }
     if city_geocoded is not None:
