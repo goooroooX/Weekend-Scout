@@ -270,9 +270,21 @@ def test_search_workflow_restores_monolith_guardrails():
     assert "Show the progress line." not in content
     assert "Do **not** skip tier2 or tier3 because coverage looks good elsewhere." in content
     assert "validation_fetches_used/validation_fetch_limit" in content
-    assert 'STATUS phase=<A|C> action=WebSearch searches=<searches_used>/<max_searches> fetches=<fetches_used>/<max_fetches> target="<query>"' in content
-    assert 'STATUS phase=<B|C> action=WebFetch searches=<searches_used>/<max_searches> fetches=<fetches_used>/<max_fetches> target="<url>"' in content
-    assert 'STATUS phase=D action=WebFetch searches=<searches_used>/<max_searches> fetches=<fetches_used>/<max_fetches> validation_fetches=<validation_fetches_used>/<validation_fetch_limit> target="<url>"' in content
+    assert 'STATUS phase=<A|C> action=WebSearch searches=<searches_used>/<max_searches> target="<query>"' in content
+    assert 'STATUS phase=<B|C> action=WebFetch fetches=<fetches_used>/<max_fetches> target="<url>"' in content
+    assert 'STATUS phase=D action=WebFetch validation_fetches=<validation_fetches_used>/<validation_fetch_limit> target="<url>"' in content
+    assert 'STATUS phase=<A|C> action=WebSearch searches=<searches_used>/<max_searches> fetches=<fetches_used>/<max_fetches> target="<query>"' not in content
+    assert 'STATUS phase=<B|C> action=WebFetch searches=<searches_used>/<max_searches> fetches=<fetches_used>/<max_fetches> target="<url>"' not in content
+    assert 'STATUS phase=D action=WebFetch searches=<searches_used>/<max_searches> fetches=<fetches_used>/<max_fetches> validation_fetches=<validation_fetches_used>/<validation_fetch_limit> target="<url>"' not in content
+    assert "The counter shown in a status line is always the current pre-action counter." in content
+    assert "Increment only after the matching web tool call completes." in content
+    assert "Action triplet rule for this step:" in content
+    assert "exactly one `SEARCH STATUS` line" in content
+    assert "then the matching `WebSearch(query)`" in content
+    assert "then the matching `log-search`" in content
+    assert "`log-search --query` must exactly match the target shown in the immediately preceding status line" in content
+    assert "do **not** repeat the status line after the tool call" in content
+    assert "do **not** emit another status line or run another web action until that `log-search` succeeds" in content
     assert "2. Show the exact `SEARCH STATUS` line." in content
     assert "2. Show the exact status line for the current fetch type:" in content
     assert "SEARCH STEP` with `phase_label = broad`" in content
@@ -280,14 +292,19 @@ def test_search_workflow_restores_monolith_guardrails():
     assert "SEARCH STEP` with `phase_label = targeted`" in content
     assert "FETCH STEP` with `phase_label = verification`" in content
     assert "Queued aggregator URL work in Phase B uses the exact `DISCOVERY FETCH STATUS` line." in content
+    assert "Every Phase B web action must be `DISCOVERY FETCH STATUS` -> `WebFetch(url, prompt)` -> `log-search --phase aggregator`." in content
+    assert "Do **not** run fresh `WebSearch` queries inside Phase B." in content
     assert "Targeted searches in Phase C use the exact `SEARCH STATUS` line with `phase=C`." in content
     assert "Any targeted fetch in Phase C uses the exact `DISCOVERY FETCH STATUS` line with `phase=C`." in content
     assert "Tier2 targeted searches in Phase C use the exact `SEARCH STATUS` line with `phase=C`." in content
     assert "Any targeted fetch in tier2 uses the exact `DISCOVERY FETCH STATUS` line with `phase=C`." in content
     assert "Tier3 targeted searches in Phase C use the exact `SEARCH STATUS` line with `phase=C`." in content
     assert "Any targeted fetch in tier3 uses the exact `DISCOVERY FETCH STATUS` line with `phase=C`." in content
+    assert "Do **not** log a search phrase as an aggregator or verification fetch." in content
     assert "verification fetches in Phase D use the exact `VALIDATION FETCH STATUS` line" in content
     assert "the `VALIDATION FETCH STATUS` line must include `validation_fetches_used/validation_fetch_limit`" in content
+    assert "every Phase D web action must be `VALIDATION FETCH STATUS` -> `WebFetch(url, prompt)` -> `log-search --phase verification`" in content
+    assert "do **not** run fresh `WebSearch` queries inside Phase D" in content
     assert "python -m weekend_scout phase-summary" in content
     assert "python -m weekend_scout phase-c-cities --run-id" in content
     assert "Finish and log the current batch before requesting the next one." in content

@@ -106,9 +106,7 @@ Before every `WebSearch` or `WebFetch`, show the user a short progress line with
 
 - phase
 - action type
-- `searches_used/max_searches`
-- `fetches_used/max_fetches` for discovery fetches in Phases B/C
-- `validation_fetches_used/validation_fetch_limit` for verification fetches in Phase D
+- only the budget counter relevant to the pending action
 - the exact query or URL about to be used
 
 ### Status line templates
@@ -116,22 +114,26 @@ Before every `WebSearch` or `WebFetch`, show the user a short progress line with
 Use these templates verbatim. Substitute the actual counters and query/URL values,
 and do **not** add extra prose on the same line.
 
+The counter shown in a status line is always the current pre-action counter.
+Increment only after the matching web tool call completes. The next status line
+must use the incremented value.
+
 - `SEARCH STATUS`
 
 ```text
-STATUS phase=<A|C> action=WebSearch searches=<searches_used>/<max_searches> fetches=<fetches_used>/<max_fetches> target="<query>"
+STATUS phase=<A|C> action=WebSearch searches=<searches_used>/<max_searches> target="<query>"
 ```
 
 - `DISCOVERY FETCH STATUS`
 
 ```text
-STATUS phase=<B|C> action=WebFetch searches=<searches_used>/<max_searches> fetches=<fetches_used>/<max_fetches> target="<url>"
+STATUS phase=<B|C> action=WebFetch fetches=<fetches_used>/<max_fetches> target="<url>"
 ```
 
 - `VALIDATION FETCH STATUS`
 
 ```text
-STATUS phase=D action=WebFetch searches=<searches_used>/<max_searches> fetches=<fetches_used>/<max_fetches> validation_fetches=<validation_fetches_used>/<validation_fetch_limit> target="<url>"
+STATUS phase=D action=WebFetch validation_fetches=<validation_fetches_used>/<validation_fetch_limit> target="<url>"
 ```
 
 Budget allocation guidance:
@@ -150,6 +152,16 @@ Phase D (verification): up to 5 validation fetches from the fixed reserve
 
 For every `WebSearch`, execute this sequence exactly:
 
+Action triplet rule for this step:
+
+- exactly one `SEARCH STATUS` line
+- then the matching `WebSearch(query)`
+- then the matching `log-search`
+- the status line must describe the immediate next web tool call
+- `log-search --query` must exactly match the target shown in the immediately preceding status line
+- do **not** repeat the status line after the tool call
+- do **not** emit another status line or run another web action until that `log-search` succeeds
+
 1. Gate on `searches_used >= max_searches`.
 2. Show the exact `SEARCH STATUS` line.
 3. Execute `WebSearch(query)`.
@@ -163,6 +175,17 @@ Do not batch `log-search` calls at the end of a phase. The `log-search` must suc
 ## FETCH STEP
 
 For every `WebFetch`, execute this sequence exactly:
+
+Action triplet rule for this step:
+
+- exactly one fetch status line
+- then the matching `WebFetch(url, prompt)`
+- then the matching `log-search`
+- the status line must describe the immediate next web tool call
+- `log-search --query` must exactly match the target shown in the immediately preceding status line
+- do **not** repeat the status line after the tool call
+- do **not** change the phase, action type, or target between status and log
+- do **not** emit another status line or run another web action until that `log-search` succeeds
 
 1. Gate on the correct fetch budget:
    - discovery fetch in Phases B/C: stop if `fetches_used >= max_fetches`
@@ -328,6 +351,8 @@ python -m weekend_scout log-action --run-id "<run_id>" --action phase_start \
 3. For each queued aggregator URL, execute `FETCH STEP` with `phase_label = aggregator` and this prompt:
 
 Queued aggregator URL work in Phase B uses the exact `DISCOVERY FETCH STATUS` line.
+Every Phase B web action must be `DISCOVERY FETCH STATUS` -> `WebFetch(url, prompt)` -> `log-search --phase aggregator`.
+Do **not** run fresh `WebSearch` queries inside Phase B. If a new search seems necessary, defer it to Phase C or Phase D.
 
 > "List ALL outdoor events, festivals, fairs, markets, city days, reenactments, food
 > festivals, and street events happening on [DATES] within the area covered by this page.
@@ -393,6 +418,7 @@ Tier 1:
 - If the first search returns nothing useful, build one more specific second query variant and run one more `SEARCH STEP` with `phase_label = targeted`.
 - If a promising URL appears, use at most one targeted `FETCH STEP` with `phase_label = targeted` for that city.
 - Any targeted fetch in Phase C uses the exact `DISCOVERY FETCH STATUS` line with `phase=C`.
+- Do **not** log a search phrase as an aggregator or verification fetch.
 
 Tier 2:
 
@@ -416,6 +442,7 @@ python -m weekend_scout phase-c-cities --run-id "<run_id>" --tier 2 \
 - Use only the returned batch cards.
 - Tier2 targeted searches in Phase C use the exact `SEARCH STATUS` line with `phase=C`.
 - Any targeted fetch in tier2 uses the exact `DISCOVERY FETCH STATUS` line with `phase=C`.
+- Do **not** log a search phrase as an aggregator or verification fetch.
 - Finish and log the current batch before requesting the next one.
 - If a batch returns `has_more = true` and `searches_used < max_searches`, request the next tier2 batch.
 - If the batch returns `has_more = false`, tier2 is exhausted; continue to tier3 if main search budget remains.
@@ -443,6 +470,7 @@ python -m weekend_scout phase-c-cities --run-id "<run_id>" --tier 3 \
 - Use only the returned batch cards.
 - Tier3 targeted searches in Phase C use the exact `SEARCH STATUS` line with `phase=C`.
 - Any targeted fetch in tier3 uses the exact `DISCOVERY FETCH STATUS` line with `phase=C`.
+- Do **not** log a search phrase as an aggregator or verification fetch.
 - Finish and log the current batch before requesting the next one.
 - If a batch returns `has_more = true` and `searches_used < max_searches`, request the next tier3 batch.
 - If the batch returns `has_more = false`, tier3 is exhausted.
@@ -497,6 +525,8 @@ python -m weekend_scout log-action --run-id "<run_id>" --action phase_start \
 4. For each candidate with a known source URL:
    - verification fetches in Phase D use the exact `VALIDATION FETCH STATUS` line
    - the `VALIDATION FETCH STATUS` line must include `validation_fetches_used/validation_fetch_limit`
+   - every Phase D web action must be `VALIDATION FETCH STATUS` -> `WebFetch(url, prompt)` -> `log-search --phase verification`
+   - do **not** run fresh `WebSearch` queries inside Phase D
    - do not re-fetch a URL already fetched in this run
    - execute `FETCH STEP` with `phase_label = verification`
    - update `confidence` to `"confirmed"` only when the source matches the timing/details
