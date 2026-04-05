@@ -447,14 +447,6 @@ def _overlaps_weekend(candidate: dict[str, Any], saturday: str) -> bool:
     return start_date <= sunday and end_date >= saturday
 
 
-def _same_source_match(existing: dict[str, Any], incoming: dict[str, Any]) -> bool:
-    existing_url = str(existing.get("source_url") or "")
-    incoming_url = str(incoming.get("source_url") or "")
-    if not existing_url or existing_url != incoming_url:
-        return False
-    return True
-
-
 def _find_match_index(
     candidates: list[dict[str, Any]],
     incoming: dict[str, Any],
@@ -482,8 +474,6 @@ def _find_match_index(
             continue
         existing_name = str(candidate.get("event_name", ""))
         if _normalize_text(existing_name) == incoming_name:
-            return idx
-        if _same_source_match(candidate, incoming):
             return idx
         if _name_alias_match(existing_name, incoming["event_name"]):
             return idx

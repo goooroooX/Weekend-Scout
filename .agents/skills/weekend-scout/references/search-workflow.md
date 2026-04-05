@@ -42,6 +42,9 @@ Exclude:
 
 If invoked with `--cached-only`:
 
+- This is a skill-invocation mode. Do **not** append `--cached-only` to
+  `python -m weekend_scout init` or `python -m weekend_scout init-skill`.
+
 ```bash
 python -m weekend_scout cache-query --date "<saturday>"
 ```

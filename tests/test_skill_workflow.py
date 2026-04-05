@@ -166,6 +166,7 @@ def test_core_runtime_skills_are_short_and_reference_driven():
         assert "Do **not** open later-stage references during" in content
         assert "Do **not** open `references/search-workflow.md` before setup is complete." in content
         assert "If either setup condition is true, do **not** open any other reference" in content
+        assert "`--cached-only` is a skill invocation argument." in content
         assert "python -m weekend_scout audit-run --run-id" not in content
         assert "workflow.audit_command" in content
         assert "workflow.phase_order" not in content
@@ -319,6 +320,8 @@ def test_search_workflow_restores_monolith_guardrails():
     assert "python -m weekend_scout save --run-id \"<run_id>\" --from-session" in content
     assert "`duplicates_merged`" in content
     assert "Store that helper result as `digest_input` and use only `digest_input` for Step 3." in content
+    assert "Do **not** append `--cached-only` to" in content
+    assert "`python -m weekend_scout init` or `python -m weekend_scout init-skill`." in content
     assert "Finish and log the current batch before requesting the next one." in content
     assert "--phase A --target-weekend \"<saturday>\"" in content
     assert "--phase B --target-weekend \"<saturday>\"" in content
@@ -521,6 +524,7 @@ def test_scoring_reference_uses_prepare_digest_output():
     assert "Objective dedupe and city grouping are already done by Python." in content
     assert "do **not** under-fill the digest when eligible helper-provided candidates exist" in content
     assert "all canonical events for that city, sorted best-first" in content
+    assert "Label trips `01` through `NN` in the final message only." in content
     assert "fewer than three credible trip cities" not in content
     assert "aiming for at least three credible trip options" not in content
     assert "up to 3 canonical events for that city" not in content

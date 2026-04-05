@@ -78,6 +78,7 @@ PHASE_DISCOVERY_LABELS: dict[str, tuple[str, ...]] = {
     "D": ("verification",),
 }
 VALIDATION_FETCH_LIMIT = 5
+WEEKEND_OVERLAP_SQL = "start_date <= ? AND (end_date IS NULL OR end_date >= ?)"
 RUN_COMPLETE_REQUIRED_FIELDS: tuple[str, ...] = (
     "events_sent",
     "new_events",
@@ -153,6 +154,13 @@ def dedup_key(event_name: str, city: str, start_date: str) -> str:
     name = re.sub(r"[^\w_]", "", re.sub(r"\s+", "_", event_name.lower()))
     city_clean = re.sub(r"[^\w_]", "", re.sub(r"\s+", "_", city.lower()))
     return f"{name}_{city_clean}_{start_date}"
+
+
+def _weekend_sunday(saturday: str) -> str:
+    """Return the ISO Sunday that belongs to the given Saturday."""
+    return (
+        datetime.date.fromisoformat(saturday) + datetime.timedelta(days=1)
+    ).isoformat()
 
 
 def save_events(
@@ -268,9 +276,7 @@ def query_events(
     Returns:
         List of event dicts.
     """
-    sunday = (
-        datetime.date.fromisoformat(saturday) + datetime.timedelta(days=1)
-    ).isoformat()
+    sunday = _weekend_sunday(saturday)
 
     exclude_served = config.get("exclude_served", False)
     served_clause = "AND served = 0" if exclude_served else ""
@@ -279,8 +285,7 @@ def query_events(
         rows = conn.execute(
             f"""
             SELECT * FROM events
-            WHERE start_date <= ?
-              AND (end_date IS NULL OR end_date >= ?)
+            WHERE {WEEKEND_OVERLAP_SQL}
               AND canceled = 0
               {served_clause}
             ORDER BY start_date, city
@@ -310,9 +315,7 @@ def query_events_summary(
     Returns:
         Dict with total event count, covered city names, and per-city counts.
     """
-    sunday = (
-        datetime.date.fromisoformat(saturday) + datetime.timedelta(days=1)
-    ).isoformat()
+    sunday = _weekend_sunday(saturday)
 
     exclude_served = (
         config.get("exclude_served", False)
@@ -326,8 +329,7 @@ def query_events_summary(
             f"""
             SELECT city, COUNT(*) AS event_count
             FROM events
-            WHERE start_date <= ?
-              AND (end_date IS NULL OR end_date >= ?)
+            WHERE {WEEKEND_OVERLAP_SQL}
               AND canceled = 0
               {served_clause}
             GROUP BY city
@@ -1100,18 +1102,17 @@ def mark_served(config: dict[str, Any], saturday: str) -> int:
     Returns:
         Number of rows updated.
     """
-    sunday = (
-        datetime.date.fromisoformat(saturday) + datetime.timedelta(days=1)
-    ).isoformat()
+    sunday = _weekend_sunday(saturday)
 
     with get_connection(config) as conn:
         cursor = conn.execute(
             """
             UPDATE events SET served = 1
-            WHERE (start_date IN (?, ?) OR end_date IN (?, ?))
+            WHERE start_date <= ?
+              AND (end_date IS NULL OR end_date >= ?)
               AND served = 0
             """,
-            (saturday, sunday, saturday, sunday),
+            (sunday, saturday),
         )
     return cursor.rowcount
 

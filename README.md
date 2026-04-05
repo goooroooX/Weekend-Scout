@@ -149,6 +149,9 @@ python -m weekend_scout config exclude_served true
 | `RADIUS` | Override search radius in km |
 | `--cached-only` | Skip web searching; format and send from cached events only |
 
+`--cached-only` is a skill-only invocation flag. Do not append it to
+`python -m weekend_scout init` or `python -m weekend_scout init-skill`.
+
 ### Via CLI
 
 ```bash
@@ -164,7 +167,8 @@ python -m weekend_scout --help
 | `find-city --name CITY` | Look up a city in GeoNames |
 | `config` | Show current configuration as JSON |
 | `config KEY VALUE` | Set a single configuration value |
-| `init [--city CITY] [--radius KM]` | Load config + city list + cache (JSON output) |
+| `init [--city CITY] [--radius KM]` | Load runtime run context plus expanded debug inspection data |
+| `init-skill [--city CITY] [--radius KM]` | Load compact agent-facing run context |
 | `save --events '<JSON>'` | Save discovered events to cache |
 | `format-message` | Format the scout digest and write to file |
 | `send --file <path>` | Send a formatted message file to Telegram |

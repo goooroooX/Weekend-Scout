@@ -301,6 +301,27 @@ def test_mark_served_only_target_weekend(cfg):
     assert next_served == 0
 
 
+def test_mark_served_marks_multi_day_events_that_overlap_weekend(cfg):
+    from weekend_scout.cache import get_connection, mark_served, query_events, save_events
+
+    save_events(
+        cfg,
+        [_event(event_name="Weekend Spanning Fest", start_date="2026-04-03", end_date="2026-04-05")],
+    )
+
+    weekend_events = query_events(cfg, "2026-04-04")
+    assert [event["event_name"] for event in weekend_events] == ["Weekend Spanning Fest"]
+
+    count = mark_served(cfg, "2026-04-04")
+    assert count == 1
+
+    with get_connection(cfg) as conn:
+        served = conn.execute(
+            "SELECT served FROM events WHERE event_name = 'Weekend Spanning Fest'"
+        ).fetchone()["served"]
+    assert served == 1
+
+
 # --- cleanup_old_events ---
 
 def test_cleanup_old_events_removes_stale(cfg):

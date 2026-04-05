@@ -54,8 +54,8 @@ User invokes /weekend-scout (or $weekend-scout on Codex)
 
 **Data flow per run:**
 
-1. Agent calls `init` -- CLI returns config, city list, cached events,
-   suggested search queries, and a run_id.
+1. Agent calls `init-skill` -- CLI returns compact run context:
+   config limits, city coverage, workflow task cards, and a run_id.
 2. Agent searches the web using suggested queries and its own judgment.
 3. After each search/fetch, agent calls `log-search` with the kept event array --
    CLI records the search and upserts canonical run-scoped candidates.
@@ -355,7 +355,7 @@ IN WARSAW:
 
 ROAD TRIPS:
 
-A. <b>Trip Name</b>
+01. <b>Trip Name</b>
    Warsaw -> City (130 km, ~1h45) -> Warsaw
    Event details [link]
    Leave by: 10:00 | Back by: ~20:00
@@ -364,8 +364,8 @@ A. <b>Trip Name</b>
 Scouted by Weekend Scout
 ```
 
-- Home city events: top 3 (configurable via `max_city_options`)
-- Road trips: up to 10 (configurable via `max_trip_options`)
+- Home city events: up to `max_city_options`
+- Road trips: up to `max_trip_options`
 - Low-results hint: appended when `total_events < 3`, suggesting the user
   increase `max_searches` and `max_fetches`
 
@@ -439,25 +439,32 @@ User must explicitly invoke it.
 **Step 1: Initialize**
 
 ```bash
-python -m weekend_scout init [--city <name>] [--radius <km>]
+python -m weekend_scout init-skill [--city <name>] [--radius <km>]
 ```
 
-The agent extracts from the JSON response:
-- `saturday`, `sunday` (target weekend dates)
-- `home_city` (departure label for trips)
-- `max_searches`, `max_fetches` (budget limits from config)
-- `tier1`, `tier2`, `tier3` (city lists by population)
-- `cached` (events already in cache, skip re-discovering)
-- `done_q` (queries already run this week, skip)
-- `run_id` (identifier for logging)
-- `qvars` (substitution variables for query templates)
-- `broad_q` (4 broad query templates)
-- `tgt_tmpl` (targeted per-city query template)
+The shipped skill extracts from the JSON response:
+- `config.target_weekend.saturday`, `config.target_weekend.sunday`
+- `config.home_city`
+- `config.max_city_options`, `config.max_trip_options`
+- `config.max_searches`, `config.max_fetches`
+- `cities.tier1`
+- `cities.tier2_count`, `cities.tier3_count`
+- `cached.count`, `cached.covered_cities`, `cached.city_counts`
+- `run_id`
+- `workflow` (`phase_a`, `phase_c`, `phase_d`, `audit_command`)
+
+`init` remains available for manual inspection/debugging. It mirrors the same
+top-level runtime shape but includes an expanded `debug` block with full cached
+rows, query templates, and later-tier city cards.
 
 **Onboarding guard:** If `needs_setup: true`, the skill runs an in-chat
 setup flow: asks for city and radius, calls `find-city` to geocode, handles
 multi-country disambiguation, then calls `setup --json` to persist. No
 separate terminal needed.
+
+If the skill is invoked with `--cached-only`, that flag belongs to the skill
+invocation itself. The Python startup commands remain `init-skill` / `init`
+without a `--cached-only` CLI flag.
 
 **Step 2: Search for Events (4 phases)**
 
@@ -476,20 +483,20 @@ Phase C  (per-city)  : up to 2 searches + 1 discovery fetch per uncovered tier1 
 Phase D  (verification): up to 5 validation fetches from a fixed reserve
 ```
 
-Phase A -- Broad sweep: fill broad_q templates with qvars, run WebSearch,
-extract events from titles, queue aggregator URLs for Phase B.
+Phase A -- Broad sweep: run the prefilled `workflow.phase_a` WebSearch queries,
+extract events from titles, and queue aggregator URLs for Phase B.
 
 Phase B -- Aggregator deep-dive: fetch queued aggregator URLs, extract all
 outdoor events from the page content.
 
-Phase C -- Targeted per-city: for each tier1/tier2/tier3 city that still has
-zero events after Phases A+B, run individual searches using the targeted
-template. Priority is strict and deterministic: tier1 first, then tier2, then
-tier3, continuing later tiers until the main search budget is exhausted or
-there are no more later-tier city cards to request. On same-week reruns, tier1
-cards now explicitly expose `still_uncovered`, `retry_on_rerun`, and
-`retry_query`, so a city like Potsdam remains actionable even when its original
-base query is already in the weekly done-query set.
+Phase C -- Targeted per-city: use `workflow.phase_c.tier1` cards first, then
+request later-tier batches on demand via `phase-c-cities`. Priority is strict
+and deterministic: tier1 first, then tier2, then tier3, continuing later tiers
+until the main search budget is exhausted or there are no more later-tier city
+cards to request. On same-week reruns, tier1 cards explicitly expose
+`still_uncovered`, `retry_on_rerun`, and `retry_query`, so a city like Potsdam
+remains actionable even when its original base query is already in the weekly
+done-query set.
 
 Phase D -- Verification: call `session-query` to load the canonical weekend
 candidate set, then use the separate fixed validation reserve on the top 5
@@ -524,13 +531,15 @@ via Python):
 Pool: `prepare-digest` output from the saved weekend cache.
 Step 3 uses that helper output as its working set; raw cached rows are not
 carried forward after the helper runs.
-Select: top 3 in home city + up to 10 road trip options (tier1 cities first).
+Select: up to `max_city_options` home-city events and up to
+`max_trip_options` road trip options (tier1 cities first).
 The helper owns objective dedupe and per-city grouping; the agent keeps the
 final ranking and wording.
 
 **Step 4: Build Trip Options**
 
-Up to 10 trips, one per city with confirmed events, labeled A through J.
+Build up to `max_trip_options` trips, one per city with confirmed events,
+with final labels rendered as `01..NN`.
 
 Each trip dict:
 ```json
@@ -668,7 +677,7 @@ All commands output JSON to stdout. Diagnostic messages go to stderr.
 |---------|---------|---------------|
 | `setup` | Interactive setup wizard or JSON config apply | `--json '{...}'` |
 | `config` | Show/set config values | `[key] [value]` |
-| `init` | Load config + cities + cache + queries for a run | `--city`, `--radius`, `--cached-only` |
+| `init` | Load runtime run context plus expanded debug inspection data | `--city`, `--radius` |
 | `init-skill` | Load compact agent-facing run context | `--city`, `--radius` |
 | `find-city` | Look up a city in GeoNames | `--name`, `--country` |
 | `save` | Save discovered events to cache | `--events '<json>'`, `--events-file`, `--from-session`, `--run-id` |
@@ -734,42 +743,46 @@ in Claude Code and `$weekend-scout` in Codex, then commit all generated files.
 
 User types `/weekend-scout` in Claude Code on Thursday evening.
 
-**1. Agent runs `init`:**
+**1. Agent runs `init-skill`:**
 
 ```json
 {
     "config": {
         "home_city": "Warsaw",
         "radius_km": 150,
-        "search_language": "pl",
+        "max_city_options": 3,
+        "max_trip_options": 10,
         "max_searches": 15,
         "max_fetches": 15,
         "target_weekend": {"saturday": "2026-04-04", "sunday": "2026-04-05"}
     },
     "cities": {
-        "tier1": ["Lodz", "Radom", "Lublin"],
-        "tier2": ["Plock", "Siedlce", "Kielce"],
-        "tier3": ["Skierniewice", "Garwolin"]
+        "tier1": ["Lodz|PL", "Radom|PL", "Lublin|PL"],
+        "tier2_count": 3,
+        "tier3_count": 2
     },
-    "cached_events": [],
-    "searches_this_week": [],
+    "cached": {"count": 0, "covered_cities": [], "city_counts": {}},
     "run_id": "2026-04-04_1830",
-    "suggested_queries": {
-        "vars": {"city": "Warsaw", "region": "Mazowsze", "date": "4 kwietnia 2026", ...},
-        "broad": [
-            "imprezy plenerowe weekend {date} {region}",
-            "festiwale jarmarki okolice {city} {month} {year}",
-            "festyny wydarzenia weekend {month} {year} {country}",
-            "outdoor events weekend {date} {country}"
-        ],
-        "targeted_template": "wydarzenia {city} {date}"
+    "workflow": {
+        "phase_a": {
+            "queries": [{"query": "imprezy plenerowe weekend 4 kwietnia 2026 Mazowsze", "query_already_done": false}]
+        },
+        "phase_c": {
+            "tier1": [{"city_name": "Lodz", "query": "Lodz wydarzenia 4 kwietnia 2026", "query_already_done": false, "still_uncovered": true, "retry_on_rerun": false, "retry_query": "Lodz wydarzenia 4 kwietnia 2026 festyn jarmark festiwal plener weekend"}],
+            "tier2_request": {"request_command": "python -m weekend_scout phase-c-cities --run-id \"2026-04-04_1830\" --tier 2 --offset 0 --limit 6"}
+        },
+        "phase_d": {
+            "session_query_command": "python -m weekend_scout session-query --run-id \"2026-04-04_1830\"",
+            "prepare_digest_command": "python -m weekend_scout prepare-digest --date \"2026-04-04\"",
+            "validation_fetch_limit": 5
+        }
     }
 }
 ```
 
 **2. Phase A -- Broad sweep (4 searches):**
 
-Agent fills templates with vars and runs WebSearch. Finds aggregator URLs
+Agent runs the prefilled Phase A queries. Finds aggregator URLs
 and direct event titles. Queues 3 aggregator URLs for Phase B.
 
 **3. Phase B -- Aggregator fetch (3 fetches):**
@@ -796,7 +809,8 @@ python -m weekend_scout save --run-id "2026-04-04_1830" --from-session
 
 **7. Score, rank, format, send:**
 
-Agent scores events, selects top 3 for Warsaw and 4 road trips.
+Agent scores events, selects up to `max_city_options` home-city picks and
+4 road trips.
 Formats message, sends to Telegram, marks served.
 
 Budget used: 10/15 searches, 2/15 discovery fetches, 5/5 validation fetches.

@@ -13,6 +13,59 @@ def cfg(tmp_path):
     }
 
 
+def test_session_keeps_distinct_events_that_share_listing_url(cfg):
+    from weekend_scout.session_cache import export_session_candidates, upsert_session_candidates
+
+    first = upsert_session_candidates(
+        cfg,
+        "2026-04-11_2151",
+        "2026-04-11",
+        [
+            {
+                "event_name": "Open Garden Walk",
+                "city": "Berlin",
+                "start_date": "2026-04-11",
+                "source_url": "https://example.com/weekend-listing",
+                "confidence": "likely",
+            }
+        ],
+    )
+    second = upsert_session_candidates(
+        cfg,
+        "2026-04-11_2151",
+        "2026-04-11",
+        [
+            {
+                "event_name": "Street Food Fair",
+                "city": "Berlin",
+                "start_date": "2026-04-11",
+                "source_url": "https://example.com/weekend-listing",
+                "confidence": "confirmed",
+            }
+        ],
+    )
+
+    assert first["events_discovered"] == 1
+    assert second["events_discovered"] == 1
+    assert second["duplicates_merged"] == 0
+    assert export_session_candidates(cfg, "2026-04-11_2151") == [
+        {
+            "event_name": "Open Garden Walk",
+            "city": "Berlin",
+            "start_date": "2026-04-11",
+            "source_url": "https://example.com/weekend-listing",
+            "confidence": "likely",
+        },
+        {
+            "event_name": "Street Food Fair",
+            "city": "Berlin",
+            "start_date": "2026-04-11",
+            "source_url": "https://example.com/weekend-listing",
+            "confidence": "confirmed",
+        },
+    ]
+
+
 def test_session_query_returns_current_weekend_and_preserves_future_candidates(cfg):
     from weekend_scout.session_cache import (
         export_session_candidates,
