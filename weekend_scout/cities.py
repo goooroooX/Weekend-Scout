@@ -822,7 +822,7 @@ def generate_broad_queries(
     country = tmpl["country"] or config.get("home_country", "")
 
     return {
-        "templates": list(tmpl["broad"]) + ["outdoor festivals events {date_en}"],
+        "templates": list(tmpl["broad"]) + ["outdoor events weekend {date_en} {country}"],
         "vars": {
             "city": city,
             "region": region,

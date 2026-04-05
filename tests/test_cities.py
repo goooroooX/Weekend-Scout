@@ -271,6 +271,7 @@ def test_generate_broad_queries_templates_fill_correctly():
     combined = " ".join(filled)
     assert "marca" in combined    # Polish month
     assert "March" in combined    # English fallback
+    assert "outdoor events weekend March 28, 2026 Polska" in combined
     assert "imprezy" in combined  # Polish keyword
 
 
@@ -327,6 +328,7 @@ def test_generate_broad_queries_unknown_lang_falls_back_to_english():
     filled = [t.format(**result["vars"]) for t in result["templates"]]
     combined = " ".join(filled)
     assert "outdoor events" in combined
+    assert "outdoor events weekend March 28, 2026 Xland" in combined
     assert "imprezy" not in combined
 
 

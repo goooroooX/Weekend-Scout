@@ -116,7 +116,7 @@ If `{"sent": false}` because Telegram sending failed:
 If send succeeds:
 
 ```bash
-python -m weekend_scout cache-mark-served --date "<saturday>"
+python -m weekend_scout cache-mark-served --date "<saturday>" --run-id "<run_id>"
 ```
 
 Here, `saturday` means the ISO Saturday date from `init-skill`

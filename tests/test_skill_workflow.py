@@ -496,7 +496,7 @@ def test_authoritative_reference_commands_match_cli_contract():
     _assert_command_with_parts(
         _commands_named(delivery, "cache-mark-served"),
         label="cache-mark-served",
-        parts=["--date \"<saturday>\""],
+        parts=["--date \"<saturday>\"", "--run-id \"<run_id>\""],
     )
     _assert_command_with_parts(
         _commands_named(delivery, "run-complete"),

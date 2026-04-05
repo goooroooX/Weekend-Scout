@@ -68,7 +68,7 @@ User invokes /weekend-scout (or $weekend-scout on Codex)
    then scores events in-prompt.
 7. Agent calls `format-message` with top events and trips -- CLI writes HTML file.
 8. Agent calls `send` -- CLI delivers to Telegram.
-9. Agent calls `cache-mark-served` -- CLI marks events as sent.
+9. Agent calls `cache-mark-served --date <saturday> --run-id <run_id>` -- CLI marks events as sent.
 
 ---
 
@@ -571,7 +571,13 @@ configured, the skill shows setup commands. If `total_events < 3`, the
 
 **Step 6: Mark Served and Report**
 
-If send succeeded, mark events as served and log run completion. Report to user:
+If send succeeded, mark events as served and log run completion:
+
+```bash
+python -m weekend_scout cache-mark-served --date "<saturday>" --run-id "<run_id>"
+```
+
+Report to user:
 - Events found (new vs cached)
 - Discovery budget used (`searches_used/max_searches`, `fetches_used/max_fetches`)
 - Validation budget used (`validation_fetches_used/validation_fetch_limit`)
@@ -692,7 +698,7 @@ All commands output JSON to stdout. Diagnostic messages go to stderr.
 | `score-summary` | Log one canonical ranking summary | `--run-id`, `--target-weekend`, `--total-pool` |
 | `run-complete` | Log the canonical final run summary | `--run-id`, `--target-weekend`, `--events-sent` |
 | `audit-run` | Audit one logged scout run by `run_id` | `--run-id`, `--strict` |
-| `cache-mark-served` | Mark weekend events as sent | `--date` |
+| `cache-mark-served` | Mark weekend events as sent | `--date`, `--run-id` |
 | `format-message` | Format scout message to file | `--saturday`, `--sunday`, `--city-events`, `--trips`, `--low-results` |
 | `install-skill` | Copy skill to global skills dir | `--platform` |
 | `download-data` | Download GeoNames cities15000.zip | `--force` |

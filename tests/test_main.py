@@ -1399,12 +1399,118 @@ def test_cmd_audit_run_accepts_valid_run(tmp_path, monkeypatch):
     assert result["summary"]["completed_phases"] == ["A", "B", "C", "D"]
 
 
+def test_successful_send_flow_audits_ok_with_run_scoped_events_served(tmp_path, monkeypatch):
+    import weekend_scout.telegram as telegram_module
+
+    _write_minimal_config(tmp_path)
+    run_id = "run-flow"
+    saturday = "2026-04-04"
+    sunday = "2026-04-05"
+    event = {
+        "event_name": "Spring Festival",
+        "city": "Warsaw",
+        "country": "Poland",
+        "start_date": saturday,
+        "location_name": "Main Square",
+        "source_url": "https://example.com/festival",
+        "confidence": "confirmed",
+    }
+
+    monkeypatch.setattr(telegram_module, "send_telegram", lambda config, message: True)
+
+    _run_cmd(
+        "log-action",
+        [
+            "--run-id", run_id,
+            "--action", "run_init",
+            "--target-weekend", saturday,
+            "--detail", '{"home_city":"Warsaw","radius_km":150,"cached_count":0,"tier1":["Radom|PL"]}',
+            "--source", "python",
+        ],
+        tmp_path, monkeypatch,
+    )
+    for phase, reason in (
+        ("A", "all_queries_in_done_q"),
+        ("B", "no_aggregator_urls"),
+        ("C", "all_cities_covered"),
+        ("D", "all_confirmed"),
+    ):
+        _run_cmd(
+            "log-action",
+            [
+                "--run-id", run_id,
+                "--action", "skip",
+                "--phase", phase,
+                "--target-weekend", saturday,
+                "--detail", json.dumps({"reason": reason}),
+            ],
+            tmp_path, monkeypatch,
+        )
+
+    _run_cmd(
+        "save",
+        ["--events", json.dumps([event]), "--run-id", run_id],
+        tmp_path, monkeypatch,
+    )
+    _run_cmd(
+        "score-summary",
+        [
+            "--run-id", run_id,
+            "--target-weekend", saturday,
+            "--total-pool", "1",
+            "--city-events-selected", "1",
+            "--trip-options", "0",
+        ],
+        tmp_path, monkeypatch,
+    )
+    message_path = tmp_path / "msg.txt"
+    _run_format_message(
+        [
+            "--saturday", saturday,
+            "--sunday", sunday,
+            "--city-events", json.dumps([event]),
+            "--output", str(message_path),
+            "--run-id", run_id,
+        ],
+        tmp_path, monkeypatch,
+    )
+    _run_cmd("send", ["--file", str(message_path), "--run-id", run_id], tmp_path, monkeypatch)
+    _run_cmd(
+        "cache-mark-served",
+        ["--date", saturday, "--run-id", run_id],
+        tmp_path, monkeypatch,
+    )
+    _run_cmd(
+        "run-complete",
+        [
+            "--run-id", run_id,
+            "--target-weekend", saturday,
+            "--events-sent", "1",
+            "--sent", "true",
+            "--send-reason", "sent",
+            "--served-marked", "true",
+        ],
+        tmp_path, monkeypatch,
+    )
+
+    result = json.loads(_run_cmd("audit-run", ["--run-id", run_id], tmp_path, monkeypatch))
+    assert result["ok"] is True
+
+
 # --- cmd_cache_mark_served ---
 
 def test_cmd_cache_mark_served_returns_count(tmp_path, monkeypatch):
-    output = _run_cmd("cache-mark-served", ["--date", "2026-03-28"], tmp_path, monkeypatch)
+    output = _run_cmd(
+        "cache-mark-served",
+        ["--date", "2026-03-28", "--run-id", "run-xyz"],
+        tmp_path, monkeypatch,
+    )
     result = json.loads(output)
     assert "marked" in result
+    log_file = tmp_path / "cache" / "action_log.jsonl"
+    entry = json.loads(log_file.read_text(encoding="utf-8").strip())
+    assert entry["action"] == "events_served"
+    assert entry["run_id"] == "run-xyz"
 
 
 def test_format_message_logs_run_id(tmp_path, monkeypatch):

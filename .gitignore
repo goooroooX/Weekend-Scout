@@ -27,8 +27,11 @@ share/python-wheels/
 MANIFEST
 
 # project-specific
+.kilo/
 pytest-of-nikodim/
 prompts/
+/ws_audit_*/
+/tmp*/
 *.db
 .weekend_scout/
 # Generated skill files are committed (they are build artifacts, not ignored)

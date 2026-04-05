@@ -173,3 +173,5 @@
 | 12.17 | Validate Codex skill end-to-end | DONE (2026-04-04) | Codex full scout workflow is now end-to-end tested alongside Claude Code |
 | 12.18 | Stabilize candidate canonicalization, rerun tier1 retries, and digest prep | DONE (2026-04-05) | Added country enrichment, conservative alias merge, exact-key DB field upgrades, rerun-aware tier1 cards, and `prepare-digest` for grouped scoring input |
 | 12.19 | Tighten session dedup identity and align served/docs contract | DONE (2026-04-05) | Removed URL-only session merges, made `cache-mark-served` use weekend-overlap semantics, and aligned runtime docs/skill wording with the shipped `init-skill` contract |
+| 12.20 | Make served logging run-scoped and restore broad fallback country | DONE (2026-04-05) | `cache-mark-served` now requires `--run-id` so successful sends satisfy `audit-run`; the English fallback broad query again appends `{country}` |
+| 12.21 | Ignore accidental repo-root temp folders and remove leftovers | DONE (2026-04-05) | Added root ignore rules for `ws_audit_*` and `tmp*` scratch dirs, and removed the current leftovers from the repo root |

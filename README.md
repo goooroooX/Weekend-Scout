@@ -176,7 +176,7 @@ python -m weekend_scout --help
 | `cache-query --date YYYY-MM-DD` | Query cached events for a weekend |
 | `log-search` | Log a completed web search |
 | `log-action` | Append a structured action log entry |
-| `cache-mark-served --date YYYY-MM-DD` | Mark events as sent |
+| `cache-mark-served --date YYYY-MM-DD --run-id RUN_ID` | Mark events as sent |
 | `install-skill [--platform P]` | Copy bundled SKILL.md to global skills directory |
 | `download-data` | Download GeoNames cities15000 to `.weekend_scout/cache/` |
 

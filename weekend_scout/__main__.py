@@ -465,7 +465,13 @@ def cmd_cache_mark_served(args: argparse.Namespace) -> None:
 
     config = load_config()
     count = mark_served(config, args.date)
-    log_action(config, "events_served", target_weekend=args.date, detail={"count": count})
+    log_action(
+        config,
+        "events_served",
+        run_id=args.run_id,
+        target_weekend=args.date,
+        detail={"count": count},
+    )
     print(json.dumps({"marked": count}))
 
 
@@ -1378,6 +1384,7 @@ def build_parser() -> argparse.ArgumentParser:
     # cache-mark-served
     p_cms = sub.add_parser("cache-mark-served", help="Mark weekend events as served")
     p_cms.add_argument("--date", required=True, help="ISO date (Saturday of target weekend)")
+    p_cms.add_argument("--run-id", required=True, dest="run_id", help="Run identifier from init-skill")
 
     # format-message
     p_fm = sub.add_parser("format-message", help="Format scout message and write to file")
