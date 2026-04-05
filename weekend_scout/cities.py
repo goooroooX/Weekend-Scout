@@ -872,6 +872,7 @@ def generate_targeted_by_country(
         targeted[country_code] = {
             "template": template,
             "date": format_date_local(saturday, lang),
+            "language": lang,
         }
 
     return targeted

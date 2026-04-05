@@ -61,9 +61,11 @@ User invokes /weekend-scout (or $weekend-scout on Codex)
    CLI records the search and upserts canonical run-scoped candidates.
 4. Before verification, agent calls `session-query` to read the canonical
    weekend candidate set for the run.
-5. Agent calls `save --from-session` -- CLI exports the canonical session
-   candidates and saves them into the permanent SQLite cache.
-6. Agent scores events (in-prompt reasoning, no Python code).
+5. Agent calls `save --from-session` -- CLI finalizes/deduplicates the
+   session file, exports the canonical session candidates, and saves them
+   into the permanent SQLite cache.
+6. Agent calls `prepare-digest` to get deterministic grouped scoring input,
+   then scores events in-prompt.
 7. Agent calls `format-message` with top events and trips -- CLI writes HTML file.
 8. Agent calls `send` -- CLI delivers to Telegram.
 9. Agent calls `cache-mark-served` -- CLI marks events as sent.
@@ -266,8 +268,14 @@ CREATE TABLE events (
 ```
 
 **Deduplication:** `dedup_key = normalize(event_name) + "_" + normalize(city) + "_" + start_date`.
-Normalization strips non-word characters and lowercases. `INSERT OR IGNORE`
-on the UNIQUE constraint handles duplicates silently.
+Normalization strips non-word characters and lowercases.
+
+- In the permanent DB, exact `dedup_key` collisions are merged in place:
+  missing `country`, `time_info`, `location_name`, `source_url`,
+  `source_name`, and `description` are backfilled, and `confidence`
+  is upgraded when the incoming row is stronger.
+- Fuzzy/alias deduplication does **not** happen in SQLite. It happens in the
+  run session layer before save.
 
 **Search log table:**
 
@@ -302,6 +310,13 @@ Each file stores:
 This session store is the authoritative discovery-state handoff between
 search phases. It keeps future/off-weekend discoveries for later permanent
 cache save, while `session-query` filters to the run's target weekend.
+Candidates are canonicalized on write and on read:
+
+- missing `country` is filled from `home_city -> home_country`, nearby-city
+  metadata, or a safe single GeoNames match
+- same-city same-weekend aliases are conservatively auto-merged by exact
+  name/date, shared source URL, or strong normalized-name containment
+- stronger/confirmed rows override weaker date/time/location/source fields
 
 **Key operations:**
 
@@ -314,6 +329,9 @@ cache save, while `session-query` filters to the run's target weekend.
   candidates overlapping the run's target weekend
 - `export_session_candidates(config, run_id)` -- returns all canonical session
   candidates for final `save --from-session`
+- `prepare-digest --date X` -- reads saved weekend cache rows and returns
+  deterministic `home_city_candidates`, grouped `trip_city_groups` (with all
+  canonical city events sorted best-first), and pool summary counts for Step 3
 - `get_searches_this_week(config, saturday)` -- returns query strings already
   run for this target weekend (used for dedup in the skill)
 - `mark_served(config, saturday)` -- sets `served=1` on all events for the weekend
@@ -468,7 +486,10 @@ Phase C -- Targeted per-city: for each tier1/tier2/tier3 city that still has
 zero events after Phases A+B, run individual searches using the targeted
 template. Priority is strict and deterministic: tier1 first, then tier2, then
 tier3, continuing later tiers until the main search budget is exhausted or
-there are no more later-tier city cards to request.
+there are no more later-tier city cards to request. On same-week reruns, tier1
+cards now explicitly expose `still_uncovered`, `retry_on_rerun`, and
+`retry_query`, so a city like Potsdam remains actionable even when its original
+base query is already in the weekly done-query set.
 
 Phase D -- Verification: call `session-query` to load the canonical weekend
 candidate set, then use the separate fixed validation reserve on the top 5
@@ -478,10 +499,13 @@ without creating duplicates.
 
 Each search/fetch is logged via `log-search` with phase, query, result count,
 and the action-local event array. The CLI computes authoritative
-`events_discovered` counts from session upserts.
+`events_discovered` counts from session upserts and returns
+`duplicates_merged` when the kept payload matched an existing candidate.
 
 All discovered events (including future-weekend finds noticed along the way)
-are saved via a single `save --from-session` call at the end of Step 2.
+are saved via a single `save --from-session` call at the end of Step 2. That
+save finalizes the session file so `<run_id>.candidates.json` ends the run in a
+deduplicated canonical form.
 
 **Step 3: Score and Rank**
 
@@ -497,8 +521,12 @@ via Python):
 | Free entry                          | 0-1    |
 | Source quality (official=1)         | 0-1    |
 
-Pool: cached events + newly saved events.
+Pool: `prepare-digest` output from the saved weekend cache.
+Step 3 uses that helper output as its working set; raw cached rows are not
+carried forward after the helper runs.
 Select: top 3 in home city + up to 10 road trip options (tier1 cities first).
+The helper owns objective dedupe and per-city grouping; the agent keeps the
+final ranking and wording.
 
 **Step 4: Build Trip Options**
 
@@ -647,6 +675,7 @@ All commands output JSON to stdout. Diagnostic messages go to stderr.
 | `send` | Send message to Telegram | `--file` or `--message` |
 | `cache-query` | Query cached events for a weekend | `--date` |
 | `session-query` | Query canonical run-session candidates for the target weekend | `--run-id` |
+| `prepare-digest` | Build deterministic grouped scoring input from saved weekend cache rows | `--date` |
 | `log-search` | Record a web search in the log and optionally persist kept candidates | `--query`, `--target-weekend`, `--phase`, `--run-id`, `--events-file` |
 | `log-action` | Append to action_log.jsonl | `--action`, `--phase`, `--detail`, `--run-id` |
 | `phase-c-cities` | Load the next later-tier targeted-search batch | `--run-id`, `--tier`, `--offset`, `--limit` |

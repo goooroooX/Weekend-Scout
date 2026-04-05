@@ -158,7 +158,7 @@ def dedup_key(event_name: str, city: str, start_date: str) -> str:
 def save_events(
     config: dict[str, Any], events: list[dict[str, Any]]
 ) -> tuple[int, int]:
-    """Save a list of events to the cache, skipping duplicates.
+    """Save a list of events to the cache, merging exact-key duplicates.
 
     Args:
         config: Loaded configuration dictionary.
@@ -171,51 +171,85 @@ def save_events(
     skipped = 0
     today = datetime.date.today().isoformat()
 
+    from weekend_scout.session_cache import merge_candidate_data
+
     with get_connection(config) as conn:
         for event in events:
+            incoming = {
+                "event_name": event["event_name"],
+                "city": event["city"],
+                "country": event.get("country", ""),
+                "start_date": event["start_date"],
+                "end_date": event.get("end_date"),
+                "time_info": event.get("time_info"),
+                "location_name": event.get("location_name"),
+                "lat": event.get("lat"),
+                "lon": event.get("lon"),
+                "category": event.get("category"),
+                "description": event.get("description"),
+                "free_entry": event.get("free_entry"),
+                "source_url": event.get("source_url"),
+                "source_name": event.get("source_name"),
+                "discovered_date": today,
+                "confidence": event.get("confidence", "likely"),
+                "served": 0,
+                "canceled": 0,
+            }
             key = dedup_key(
-                event["event_name"], event["city"], event["start_date"]
+                incoming["event_name"], incoming["city"], incoming["start_date"]
             )
-            cursor = conn.execute(
-                """
-                INSERT OR IGNORE INTO events (
-                    event_name, city, country, start_date, end_date, time_info,
-                    location_name, lat, lon, category, description, free_entry,
-                    source_url, source_name, discovered_date, confidence,
-                    served, canceled, dedup_key
-                ) VALUES (
-                    :event_name, :city, :country, :start_date, :end_date, :time_info,
-                    :location_name, :lat, :lon, :category, :description, :free_entry,
-                    :source_url, :source_name, :discovered_date, :confidence,
-                    :served, :canceled, :dedup_key
+            existing = conn.execute(
+                "SELECT * FROM events WHERE dedup_key = ?",
+                (key,),
+            ).fetchone()
+
+            if existing is None:
+                conn.execute(
+                    """
+                    INSERT INTO events (
+                        event_name, city, country, start_date, end_date, time_info,
+                        location_name, lat, lon, category, description, free_entry,
+                        source_url, source_name, discovered_date, confidence,
+                        served, canceled, dedup_key
+                    ) VALUES (
+                        :event_name, :city, :country, :start_date, :end_date, :time_info,
+                        :location_name, :lat, :lon, :category, :description, :free_entry,
+                        :source_url, :source_name, :discovered_date, :confidence,
+                        :served, :canceled, :dedup_key
+                    )
+                    """,
+                    {**incoming, "dedup_key": key},
                 )
-                """,
-                {
-                    "event_name": event["event_name"],
-                    "city": event["city"],
-                    "country": event.get("country", ""),
-                    "start_date": event["start_date"],
-                    "end_date": event.get("end_date"),
-                    "time_info": event.get("time_info"),
-                    "location_name": event.get("location_name"),
-                    "lat": event.get("lat"),
-                    "lon": event.get("lon"),
-                    "category": event.get("category"),
-                    "description": event.get("description"),
-                    "free_entry": event.get("free_entry"),
-                    "source_url": event.get("source_url"),
-                    "source_name": event.get("source_name"),
-                    "discovered_date": today,
-                    "confidence": event.get("confidence", "likely"),
-                    "served": 0,
-                    "canceled": 0,
-                    "dedup_key": key,
-                },
-            )
-            if cursor.rowcount > 0:
                 saved += 1
-            else:
-                skipped += 1
+                continue
+
+            merged = merge_candidate_data(dict(existing), incoming)
+            update_fields = {}
+            for field in (
+                "event_name",
+                "country",
+                "start_date",
+                "end_date",
+                "time_info",
+                "location_name",
+                "lat",
+                "lon",
+                "category",
+                "description",
+                "free_entry",
+                "source_url",
+                "source_name",
+                "confidence",
+            ):
+                if merged.get(field) != existing[field]:
+                    update_fields[field] = merged.get(field)
+            if update_fields:
+                assignments = ", ".join(f"{field} = :{field}" for field in update_fields)
+                conn.execute(
+                    f"UPDATE events SET {assignments} WHERE id = :id",
+                    {**update_fields, "id": existing["id"]},
+                )
+            skipped += 1
 
     return saved, skipped
 
@@ -337,6 +371,7 @@ def log_search(
         events: Optional canonical event objects to persist into the run session.
     """
     session_candidate_count = 0
+    duplicates_merged = 0
     if events is not None:
         if run_id is None:
             raise ValueError("run_id is required when events are provided to log_search")
@@ -350,6 +385,7 @@ def log_search(
         )
         events_discovered = session_result["events_discovered"]
         session_candidate_count = session_result["candidate_count"]
+        duplicates_merged = session_result["duplicates_merged"]
 
     today = datetime.date.today().isoformat()
     with get_connection(config) as conn:
@@ -368,10 +404,12 @@ def log_search(
                target_weekend=target_weekend,
                detail={"query": query, "result_count": result_count,
                        "cities": cities_covered or [],
-                       "events_discovered": events_discovered})
+                       "events_discovered": events_discovered,
+                       "duplicates_merged": duplicates_merged})
     return {
         "events_discovered": events_discovered,
         "session_candidate_count": session_candidate_count,
+        "duplicates_merged": duplicates_merged,
     }
 
 

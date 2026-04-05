@@ -12,7 +12,7 @@ Do **not** inspect package source or call `--help` during a normal run.
 - Do not silently abandon tier loops while budget remains; if you stop early, state the reason.
 - Do **not** stop early just because some events were found.
 - If uncovered tier1 cities remain, continue searching while budget remains.
-- If home-city picks are still below `max_city_options` or there are fewer than three credible trip cities, continue into the next eligible city/tier while thresholds allow.
+- If home-city picks are still below `max_city_options` or there are still eligible uncovered cities that could improve trip options, continue into the next eligible city/tier while thresholds allow.
 - Tier2 and tier3 are requested on demand. Do **not** preload or infer later-tier city queues from earlier context.
 
 ## Event filter
@@ -49,7 +49,13 @@ python -m weekend_scout cache-query --date "<saturday>"
 Here, `saturday` means `output.config.target_weekend.saturday` in ISO format (`YYYY-MM-DD`),
 for example `2026-04-04`.
 
-Store that result as `cached_full`, then proceed directly to Step 3 using only `cached_full`.
+Then build the Step 3 scoring input:
+
+```bash
+python -m weekend_scout prepare-digest --date "<saturday>"
+```
+
+Store that helper result as `digest_input` and use only `digest_input` for Step 3.
 
 ## Offline pre-check
 
@@ -211,7 +217,8 @@ python -m weekend_scout log-search \
 
 Use `[]` when the action produced no kept events.
 When `--events` or `--events-file` is present, `log-search` returns the authoritative
-`events_discovered` count from the run session upsert plus the current `session_candidate_count`.
+`events_discovered` count from the run session upsert plus the current
+`session_candidate_count` and `duplicates_merged`.
 
 Event payloads written to the run session use this schema. Minimal required keys:
 
@@ -354,13 +361,25 @@ python -m weekend_scout log-action --run-id "<run_id>" --action phase_start \
 
 Tier 1:
 
-- Use each tier1 card base query first.
+- Each tier1 card includes:
+  - `query`
+  - `retry_query`
+  - `query_already_done`
+  - `still_uncovered`
+  - `retry_on_rerun`
+- If `retry_on_rerun = true`, do **not** repeat the already-done base query.
+  Use `retry_query` as the first search for that city on this rerun.
+- Otherwise use the base `query` first.
 - For each tier1 card, execute `SEARCH STEP` with `phase_label = targeted`.
 - Targeted searches in Phase C use the exact `SEARCH STATUS` line with `phase=C`.
-- If the first search returns nothing useful, build one more specific second query variant and run one more `SEARCH STEP` with `phase_label = targeted`.
+- If the first targeted search for that city returns nothing useful and `retry_query`
+  has not been used yet, run one more `SEARCH STEP` with `retry_query` as the
+  deterministic more-specific second variant.
 - If a promising URL appears, use at most one targeted `FETCH STEP` with `phase_label = targeted` for that city.
 - Any targeted fetch in Phase C uses the exact `DISCOVERY FETCH STATUS` line with `phase=C`.
 - Do **not** log a search phrase as an aggregator or verification fetch.
+- Do **not** request tier2 until every emitted tier1 card is finished, including
+  any required rerun retry where `retry_on_rerun = true`.
 
 Tier 2:
 
@@ -469,4 +488,12 @@ Then load cached rows once with:
 python -m weekend_scout cache-query --date "<saturday>"
 ```
 
-Store that result as `cached_full` and proceed to scoring.
+Then build deterministic scoring input:
+
+```bash
+python -m weekend_scout prepare-digest --date "<saturday>"
+```
+
+Store that helper result as `digest_input`. Use only `digest_input` for Step 3
+scoring and trip building. Do **not** carry raw cache rows forward as scoring
+context after `prepare-digest`.

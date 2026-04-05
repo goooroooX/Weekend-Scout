@@ -1,7 +1,8 @@
 # Scoring And Trips
 
 Use this reference for Step 3 and Step 4. It defines the ranking, selection,
-and trip-building contract.
+and trip-building contract after Python has already deduplicated and grouped
+the saved weekend cache.
 
 ## Score each event 1-10
 
@@ -14,26 +15,38 @@ and trip-building contract.
 
 ## Build the ranked pools
 
-Before Step 3, `cached_full` must already contain the full cached rows for the target weekend.
+Before Step 3, `digest_input` must already contain the output of:
 
-Build:
+```bash
+python -m weekend_scout prepare-digest --date "<saturday>"
+```
 
-- `home_city_pool`: events in `home_city`
-- `trip_city_pool`: events outside `home_city` but still within the configured travel scope
+Use:
 
-For `trip_city_pool`, exclude:
+- `home_city_pool = digest_input.home_city_candidates`
+- `trip_city_pool = digest_input.trip_city_groups`
 
-- out-of-radius cities
-- indoor events
-- weakly relevant events
-- events too uncertain to justify a trip
+`trip_city_pool` is already grouped to one city bundle per city with:
 
-Select from those shortlists:
+- `city`
+- `country`
+- `tier`
+- `event_count`
+- `confirmed_count`
+- `events` (all canonical events for that city, sorted best-first)
 
-- top `max_city_options` in home city
-- up to `max_trip_options` road trip options from nearby cities, preferring tier1 first, then tier2, then tier3
+Objective dedupe and city grouping are already done by Python. Do **not** rebuild
+duplicate collapse heuristics in-prompt unless the helper output is clearly wrong.
 
-`score_summary.total_pool` must describe the actual ranked pool before final selection, not just the displayed result count.
+From those helper-provided pools:
+
+- select up to `max_city_options` home-city events
+- select up to `max_trip_options` trip-city bundles, preferring `tier1`, then `tier2`, then `tier3`
+- do **not** under-fill the digest when eligible helper-provided candidates exist
+- only discard a helper-provided trip city when there is explicit evidence that it is indoor, off-scope, off-date, or too weak to justify a trip option
+
+`score_summary.total_pool` must use `digest_input.summary.total_pool`, not an ad hoc
+prompt-rebuilt count.
 
 After selecting, compute:
 
@@ -64,16 +77,16 @@ python -m weekend_scout score-summary --run-id "<run_id>" \
 
 Build trip options procedurally:
 
-1. Group candidate weekend events by city using `trip_city_pool`.
+1. Use the pre-grouped `trip_city_pool` bundles directly.
 2. Exclude `home_city` from trip building.
 3. Keep only cities that have at least one confirmed or otherwise strong outdoor weekend event.
 4. Build at most one trip option per city.
 5. Rank candidate cities by tier order first, then event quality.
-6. Build up to `max_trip_options`, aiming for at least three credible trip options when the discovered pool supports it.
+6. Build up to `max_trip_options`. If fewer credible trip cities exist, return the best smaller set without padding.
 7. If one event clearly dominates for a city, use one event in the trip summary.
-8. If multiple events materially improve the same city trip, combine at most `2-3` concise items.
+8. If multiple events materially improve the same city trip, combine at most `2-3` concise items from that city's `events` bundle.
 9. Do **not** invent trip bundles from unrelated weak findings.
-10. If fewer than three credible trip cities exist, say so explicitly and build the best available smaller set without padding.
+10. If the credible trip-city pool is smaller than `max_trip_options`, say so explicitly and build the best available smaller set without padding.
 
 For road trips, use tier as a distance proxy:
 

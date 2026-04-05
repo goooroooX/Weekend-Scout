@@ -258,6 +258,8 @@ def test_search_workflow_restores_monolith_guardrails():
     assert "Targeted and verification searches/fetches must log `cities = [city_name]`" in content
     assert "The CLI owns the canonical run-level candidate set." in content
     assert "query_already_done" in content
+    assert "retry_on_rerun" in content
+    assert "retry_query" in content
     assert "`already_done`" not in content
     assert "Required Step 2 CLI calls must succeed before discovery continues." in content
     assert "Do **not** repair failed Step 2 state by retroactive logging or manual" in content
@@ -311,9 +313,12 @@ def test_search_workflow_restores_monolith_guardrails():
     assert "every Phase D web action must be `VALIDATION FETCH STATUS` -> `WebFetch(url, prompt)` -> `log-search --phase verification`" in content
     assert "do **not** run fresh `WebSearch` queries inside Phase D" in content
     assert "python -m weekend_scout session-query --run-id" in content
+    assert "python -m weekend_scout prepare-digest --date" in content
     assert "python -m weekend_scout phase-summary" in content
     assert "python -m weekend_scout phase-c-cities --run-id" in content
     assert "python -m weekend_scout save --run-id \"<run_id>\" --from-session" in content
+    assert "`duplicates_merged`" in content
+    assert "Store that helper result as `digest_input` and use only `digest_input` for Step 3." in content
     assert "Finish and log the current batch before requesting the next one." in content
     assert "--phase A --target-weekend \"<saturday>\"" in content
     assert "--phase B --target-weekend \"<saturday>\"" in content
@@ -458,6 +463,11 @@ def test_authoritative_reference_commands_match_cli_contract():
         label="cache-query",
         parts=["--date \"<saturday>\""],
     )
+    _assert_command_with_parts(
+        _commands_named(search + "\n" + scoring, "prepare-digest"),
+        label="prepare-digest",
+        parts=["--date \"<saturday>\""],
+    )
 
     _assert_command_with_parts(
         _commands_named(scoring, "score-summary"),
@@ -500,6 +510,30 @@ def test_authoritative_reference_commands_match_cli_contract():
     assert "--cached-events" not in all_commands
     assert "--searches-used" not in all_commands
     assert "--events-discovered" not in all_commands
+
+
+def test_scoring_reference_uses_prepare_digest_output():
+    content = _read_text(Path("skill_template/resources/common/references/scoring-and-trips.md"))
+
+    assert "prepare-digest --date" in content
+    assert "`digest_input`" in content
+    assert "trip_city_groups" in content
+    assert "Objective dedupe and city grouping are already done by Python." in content
+    assert "do **not** under-fill the digest when eligible helper-provided candidates exist" in content
+    assert "all canonical events for that city, sorted best-first" in content
+    assert "fewer than three credible trip cities" not in content
+    assert "aiming for at least three credible trip options" not in content
+    assert "up to 3 canonical events for that city" not in content
+    assert "cached_full" not in content
+
+
+def test_search_reference_no_longer_carries_cached_full_into_step_3():
+    content = _read_text(Path("skill_template/resources/common/references/search-workflow.md"))
+
+    assert "Store that result as `cached_full`" not in content
+    assert "supporting raw cache context" not in content
+    assert "use only `digest_input` for Step 3" in content
+    assert "fewer than three credible trip cities" not in content
 
 
 def test_authoritative_references_use_placeholder_formats_consistently():

@@ -7,6 +7,7 @@ Provides subcommands:
   init-skill        -- load compact skill startup context
   save              -- save discovered events to cache
   session-query     -- inspect run-scoped session candidates for one run
+  prepare-digest    -- build deterministic scoring input from saved cache
   send              -- send formatted message to Telegram
   cache-query       -- query cached events for a weekend date
   log-search        -- log a completed search to the search log
@@ -31,6 +32,30 @@ import re
 import sys
 
 from weekend_scout.cache import VALIDATION_FETCH_LIMIT
+
+_TARGETED_RETRY_HINTS: dict[str, str] = {
+    "de": "Stadtfest Markt Frühlingsfest Wochenende",
+    "pl": "festyn jarmark festiwal plener weekend",
+    "en": "festival market fair outdoor weekend",
+}
+_DIGEST_EVENT_FIELDS: tuple[str, ...] = (
+    "event_name",
+    "city",
+    "country",
+    "start_date",
+    "end_date",
+    "time_info",
+    "location_name",
+    "lat",
+    "lon",
+    "category",
+    "description",
+    "free_entry",
+    "source_url",
+    "source_name",
+    "confidence",
+)
+_TIER_SORT_ORDER: dict[str, int] = {"tier1": 1, "tier2": 2, "tier3": 3, "unknown": 9}
 
 
 def _print_error_and_exit(message: str) -> "NoReturn":
@@ -284,14 +309,15 @@ def cmd_save(args: argparse.Namespace) -> None:
     """Save events (JSON array) to the cache."""
     from weekend_scout.config import load_config, get_cache_dir
     from weekend_scout.cache import save_events, log_action
-    from weekend_scout.session_cache import export_session_candidates
+    from weekend_scout.session_cache import finalize_session_candidates
 
     config = load_config()
     cleanup_candidates = []
     if args.from_session:
         if not args.run_id:
             _print_error_and_exit("--run-id is required with --from-session")
-        events = export_session_candidates(config, args.run_id)
+        finalized = finalize_session_candidates(config, args.run_id)
+        events = finalized["candidates"]
     else:
         events = _load_json_argument(
             inline_value=args.events,
@@ -398,6 +424,7 @@ def cmd_log_search(args: argparse.Namespace) -> None:
         "logged": True,
         "events_discovered": result["events_discovered"],
         "session_candidate_count": session_candidate_count,
+        "duplicates_merged": result["duplicates_merged"],
     }, ensure_ascii=False))
 
 
@@ -449,6 +476,147 @@ def cmd_session_query(args: argparse.Namespace) -> None:
 
     config = load_config()
     print(json.dumps(query_session_candidates(config, args.run_id), ensure_ascii=False))
+
+
+def _build_city_lookup(cities: dict[str, list[str]]) -> tuple[dict[str, str], dict[str, str]]:
+    tier_by_city: dict[str, str] = {}
+    country_by_city: dict[str, str] = {}
+    from weekend_scout.config import COUNTRY_CODE_MAP
+
+    for tier_name in ("tier1", "tier2", "tier3"):
+        for entry in cities.get(tier_name, []):
+            if "|" not in entry:
+                continue
+            city_name, country_code = entry.rsplit("|", 1)
+            tier_by_city.setdefault(city_name, tier_name)
+            country_by_city.setdefault(city_name, COUNTRY_CODE_MAP.get(country_code, ""))
+    return tier_by_city, country_by_city
+
+
+def _build_retry_query(query: str, target: dict[str, str]) -> str:
+    language = str(target.get("language") or "en")
+    suffix = _TARGETED_RETRY_HINTS.get(language, _TARGETED_RETRY_HINTS["en"])
+    return f"{query} {suffix}".strip()
+
+
+def _digest_confidence_rank(value: object) -> int:
+    if not isinstance(value, str):
+        return 0
+    lowered = value.strip().lower()
+    if lowered == "confirmed":
+        return 2
+    if lowered == "likely":
+        return 1
+    return 0
+
+
+def _digest_source_rank(candidate: dict[str, object]) -> int:
+    source_name = str(candidate.get("source_name") or "").lower()
+    source_url = str(candidate.get("source_url") or "").lower()
+    official_markers = ("official", ".gov", ".de/", ".pl/", ".org/")
+    aggregator_markers = ("visit", "event", "ticket", "facebook", "berlin.de/events")
+    if any(marker in source_name or marker in source_url for marker in official_markers):
+        return 2
+    if any(marker in source_name or marker in source_url for marker in aggregator_markers):
+        return 1
+    return 0
+
+
+def _digest_sort_key(candidate: dict[str, object]) -> tuple[object, ...]:
+    return (
+        -_digest_confidence_rank(candidate.get("confidence")),
+        -int(bool(candidate.get("free_entry"))),
+        -_digest_source_rank(candidate),
+        str(candidate.get("start_date", "")),
+        str(candidate.get("event_name", "")).lower(),
+    )
+
+
+def _trim_digest_event(candidate: dict[str, object]) -> dict[str, object]:
+    return {
+        field: candidate[field]
+        for field in _DIGEST_EVENT_FIELDS
+        if field in candidate and candidate[field] not in ("", None)
+    }
+
+
+def cmd_prepare_digest(args: argparse.Namespace) -> None:
+    """Build deterministic Step 3 scoring input from saved cache rows."""
+    from weekend_scout.config import load_config
+    from weekend_scout.cache import query_events
+    from weekend_scout.cities import get_city_list
+    from weekend_scout.session_cache import canonicalize_candidates
+
+    config = load_config()
+    cached_events = query_events(config, args.date)
+    canonical = canonicalize_candidates(config, args.date, cached_events)
+    candidates = canonical["candidates"]
+
+    try:
+        cities = get_city_list(config)
+    except Exception:
+        cities = {"tier1": [], "tier2": [], "tier3": []}
+    tier_by_city, country_code_by_city = _build_city_lookup(cities)
+
+    home_city = str(config.get("home_city") or "")
+    home_city_candidates = [
+        _trim_digest_event(candidate)
+        for candidate in sorted(
+            (candidate for candidate in candidates if str(candidate.get("city") or "") == home_city),
+            key=_digest_sort_key,
+        )
+    ]
+
+    grouped_trip_candidates: dict[str, list[dict[str, object]]] = {}
+    for candidate in candidates:
+        city_name = str(candidate.get("city") or "")
+        if not city_name or city_name == home_city:
+            continue
+        grouped_trip_candidates.setdefault(city_name, []).append(candidate)
+
+    trip_city_groups: list[dict[str, object]] = []
+    for city_name, city_candidates in grouped_trip_candidates.items():
+        sorted_events = sorted(city_candidates, key=_digest_sort_key)
+        city_events = [_trim_digest_event(event) for event in sorted_events]
+        trip_city_groups.append(
+            {
+                "city": city_name,
+                "country": str(
+                    sorted_events[0].get("country")
+                    or country_code_by_city.get(city_name, "")
+                ),
+                "tier": tier_by_city.get(city_name, "unknown"),
+                "event_count": len(sorted_events),
+                "confirmed_count": sum(
+                    1 for event in sorted_events if _digest_confidence_rank(event.get("confidence")) >= 2
+                ),
+                "events": city_events,
+            }
+        )
+
+    trip_city_groups.sort(
+        key=lambda group: (
+            _TIER_SORT_ORDER.get(str(group["tier"]), 9),
+            str(group["city"]).lower(),
+        )
+    )
+
+    summary = {
+        "duplicates_collapsed": canonical["duplicates_collapsed"],
+        "home_city_count": len(home_city_candidates),
+        "trip_city_count": len(trip_city_groups),
+        "total_pool": len(home_city_candidates) + len(trip_city_groups),
+    }
+    print(
+        json.dumps(
+            {
+                "summary": summary,
+                "home_city_candidates": home_city_candidates,
+                "trip_city_groups": trip_city_groups,
+            },
+            ensure_ascii=False,
+        )
+    )
 
 
 def cmd_download_data(args: argparse.Namespace) -> None:
@@ -526,8 +694,10 @@ def _build_targeted_city_cards(
     *,
     searches_this_week: list[str],
     targeted_by_country: dict[str, dict[str, str]],
+    covered_cities: list[str] | None = None,
 ) -> list[dict[str, object]]:
     """Build compact targeted-search cards."""
+    covered = {str(city) for city in covered_cities or []}
     cards: list[dict[str, object]] = []
     for entry in entries:
         if "|" not in entry:
@@ -537,10 +707,14 @@ def _build_targeted_city_cards(
         if not target:
             continue
         query = target["template"].format(city=city_name, date=target["date"])
+        still_uncovered = city_name not in covered
         cards.append({
             "city_name": city_name,
             "query": query,
             "query_already_done": query in searches_this_week,
+            "still_uncovered": still_uncovered,
+            "retry_on_rerun": query in searches_this_week and still_uncovered,
+            "retry_query": _build_retry_query(query, target),
         })
     return cards
 
@@ -588,6 +762,7 @@ def _build_workflow_cards(
                 cities.get("tier1", []),
                 searches_this_week=searches_this_week,
                 targeted_by_country=targeted_by_country,
+                covered_cities=list(cached_summary.get("covered_cities", [])),
             ),
             "tier2_request": {
                 "available_count": tier2_count,
@@ -612,6 +787,9 @@ def _build_workflow_cards(
             "session_query_command": (
                 'python -m weekend_scout session-query --run-id '
                 f'"{run_id}"'
+            ),
+            "prepare_digest_command": (
+                f'python -m weekend_scout prepare-digest --date "{_extract_saturday_from_run_id(run_id)}"'
             ),
         },
     }
@@ -1166,6 +1344,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_sq = sub.add_parser("session-query", help="Query canonical session candidates for a run")
     p_sq.add_argument("--run-id", required=True, dest="run_id", help="Run identifier from init-skill")
 
+    # prepare-digest
+    p_pd = sub.add_parser("prepare-digest", help="Build deterministic scoring input from saved weekend cache rows")
+    p_pd.add_argument("--date", required=True, help="ISO date (Saturday of target weekend)")
+
     # log-search
     p_ls = sub.add_parser("log-search", help="Log a completed search")
     p_ls.add_argument("--query", required=True, help="Search query string")
@@ -1253,6 +1435,7 @@ COMMANDS = {
     "find-city": cmd_find_city,
     "save": cmd_save,
     "session-query": cmd_session_query,
+    "prepare-digest": cmd_prepare_digest,
     "send": cmd_send,
     "cache-query": cmd_cache_query,
     "log-search": cmd_log_search,

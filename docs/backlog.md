@@ -171,3 +171,4 @@
 | 12.15 | Make later-tier targeting deterministic and split validation fetch reserve | DONE (2026-04-04) | Removed tier2/tier3 heuristic gates, made `phase-c-cities` a pure batch helper, and split Phase D validation fetch accounting from the main discovery fetch budget |
 | 12.16 | Persist run-scoped candidates during discovery and save from session | DONE (2026-04-04) | Added JSON run-session candidate store, `session-query`, `save --from-session`, `log-search --events(-file)`, and internal coverage/uncovered-tier1 derivation |
 | 12.17 | Validate Codex skill end-to-end | DONE (2026-04-04) | Codex full scout workflow is now end-to-end tested alongside Claude Code |
+| 12.18 | Stabilize candidate canonicalization, rerun tier1 retries, and digest prep | DONE (2026-04-05) | Added country enrichment, conservative alias merge, exact-key DB field upgrades, rerun-aware tier1 cards, and `prepare-digest` for grouped scoring input |

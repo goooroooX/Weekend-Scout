@@ -96,6 +96,39 @@ def test_save_events_deduplicates(cfg):
     assert skipped == 1
 
 
+def test_save_events_exact_key_collision_upgrades_missing_fields(cfg):
+    from weekend_scout.cache import get_connection, save_events
+
+    save_events(
+        cfg,
+        [_event(country="", confidence="likely", source_name=None, source_url=None, location_name=None)],
+    )
+    saved, skipped = save_events(
+        cfg,
+        [
+            _event(
+                country="Poland",
+                confidence="confirmed",
+                source_name="Official",
+                source_url="https://example.com/fest",
+                location_name="Main Square",
+                description="Confirmed details",
+            )
+        ],
+    )
+
+    assert saved == 0
+    assert skipped == 1
+    with get_connection(cfg) as conn:
+        row = conn.execute("SELECT * FROM events WHERE event_name = 'Test Fest'").fetchone()
+    assert row["country"] == "Poland"
+    assert row["confidence"] == "confirmed"
+    assert row["source_name"] == "Official"
+    assert row["source_url"] == "https://example.com/fest"
+    assert row["location_name"] == "Main Square"
+    assert row["description"] == "Confirmed details"
+
+
 def test_save_events_stores_optional_fields(cfg):
     from weekend_scout.cache import save_events, get_connection
     event = _event(
@@ -355,3 +388,57 @@ def test_log_search_stores_run_id_and_events_discovered(cfg):
         ).fetchone()
     assert row["run_id"] == "run-123"
     assert row["events_discovered"] == 7
+
+
+def test_log_search_returns_duplicate_merge_counts(cfg):
+    from weekend_scout.cache import log_search
+
+    first = log_search(
+        cfg,
+        "berlin one",
+        "2026-04-11",
+        3,
+        ["Berlin"],
+        "targeted",
+        run_id="2026-04-11_2151",
+        events=[
+            {
+                "event_name": "Berliner Staudenmarkt",
+                "city": "Berlin",
+                "start_date": "2026-04-11",
+                "end_date": "2026-04-12",
+                "source_url": "https://visitberlin.example/markets",
+                "confidence": "likely",
+            }
+        ],
+    )
+    second = log_search(
+        cfg,
+        "berlin two",
+        "2026-04-11",
+        3,
+        ["Berlin"],
+        "verification",
+        run_id="2026-04-11_2151",
+        events=[
+            {
+                "event_name": "Berliner Staudenmarkt auf der Domäne Dahlem",
+                "city": "Berlin",
+                "start_date": "2026-04-11",
+                "end_date": "2026-04-12",
+                "source_url": "https://visitberlin.example/markets",
+                "confidence": "confirmed",
+            }
+        ],
+    )
+
+    assert first == {
+        "events_discovered": 1,
+        "session_candidate_count": 1,
+        "duplicates_merged": 0,
+    }
+    assert second == {
+        "events_discovered": 0,
+        "session_candidate_count": 1,
+        "duplicates_merged": 1,
+    }

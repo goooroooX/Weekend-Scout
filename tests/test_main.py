@@ -309,9 +309,22 @@ def test_cmd_init_returns_json(tmp_path, monkeypatch):
     assert workflow["phase_a"]["queries"]
     assert set(workflow["phase_a"]["queries"][0]) == {"query", "query_already_done"}
     assert workflow["phase_c"]["tier1"][0]["query"]
-    assert set(workflow["phase_c"]["tier1"][0]) == {"city_name", "query", "query_already_done"}
+    assert set(workflow["phase_c"]["tier1"][0]) == {
+        "city_name",
+        "query",
+        "query_already_done",
+        "still_uncovered",
+        "retry_on_rerun",
+        "retry_query",
+    }
+    assert workflow["phase_c"]["tier1"][0]["still_uncovered"] is True
+    assert workflow["phase_c"]["tier1"][0]["retry_on_rerun"] is False
+    assert workflow["phase_c"]["tier1"][0]["retry_query"] != workflow["phase_c"]["tier1"][0]["query"]
     assert workflow["phase_d"]["max_candidates"] == 5
     assert workflow["phase_d"]["validation_fetch_limit"] == 5
+    assert workflow["phase_d"]["prepare_digest_command"].startswith(
+        'python -m weekend_scout prepare-digest --date "'
+    )
     assert "max_fetches" not in workflow["phase_d"]
     assert "reserve_fetches_before_targeted" not in workflow["phase_d"]
     assert "budget_gate" not in workflow["phase_c"]["tier2_request"]
@@ -331,7 +344,14 @@ def test_cmd_init_returns_json(tmp_path, monkeypatch):
     assert result["debug"]["cities_full"]["tier3"] == ["Szczecin|PL"]
     assert "minimum_trip_cities" not in workflow["coverage"]
     assert "tier1" not in result["debug"]["phase_c_full"]
-    assert set(result["debug"]["phase_c_full"]["tier3"][0]) == {"city_name", "query", "query_already_done"}
+    assert set(result["debug"]["phase_c_full"]["tier3"][0]) == {
+        "city_name",
+        "query",
+        "query_already_done",
+        "still_uncovered",
+        "retry_on_rerun",
+        "retry_query",
+    }
 
 
 def test_cmd_init_skill_returns_compact_cached_metadata(tmp_path, monkeypatch):
@@ -359,7 +379,15 @@ def test_cmd_init_skill_returns_compact_cached_metadata(tmp_path, monkeypatch):
     assert workflow["phase_a"]["search_limit"] == 5
     assert set(workflow["phase_a"]["queries"][0]) == {"query", "query_already_done"}
     assert workflow["phase_c"]["tier1"][0]["city_name"] == "Potsdam"
-    assert set(workflow["phase_c"]["tier1"][0]) == {"city_name", "query", "query_already_done"}
+    assert set(workflow["phase_c"]["tier1"][0]) == {
+        "city_name",
+        "query",
+        "query_already_done",
+        "still_uncovered",
+        "retry_on_rerun",
+        "retry_query",
+    }
+    assert workflow["phase_c"]["tier1"][0]["still_uncovered"] is True
     assert workflow["phase_c"]["tier2_request"]["available_count"] == 0
     assert workflow["phase_c"]["tier3_request"]["available_count"] == 1
     assert "--searches-used" not in workflow["phase_c"]["tier2_request"]["request_command"]
@@ -371,6 +399,9 @@ def test_cmd_init_skill_returns_compact_cached_metadata(tmp_path, monkeypatch):
     assert workflow["phase_d"]["validation_fetch_limit"] == 5
     assert workflow["phase_d"]["session_query_command"] == (
         f'python -m weekend_scout session-query --run-id "{result["run_id"]}"'
+    )
+    assert workflow["phase_d"]["prepare_digest_command"].startswith(
+        'python -m weekend_scout prepare-digest --date "'
     )
     assert "phase_order" not in workflow
     assert "log_checkpoints" not in workflow
@@ -400,6 +431,9 @@ def test_cmd_init_skill_marks_done_queries_in_task_cards(tmp_path, monkeypatch):
     tier1_card = result["workflow"]["phase_c"]["tier1"][0]
     assert tier1_card["query"] == query
     assert tier1_card["query_already_done"] is True
+    assert tier1_card["still_uncovered"] is True
+    assert tier1_card["retry_on_rerun"] is True
+    assert tier1_card["retry_query"] != query
 
 
 def test_cmd_init_skill_compact_payload_omits_full_later_tiers(tmp_path, monkeypatch):
@@ -642,6 +676,7 @@ def test_cmd_log_search_returns_logged(tmp_path, monkeypatch):
         "logged": True,
         "events_discovered": 0,
         "session_candidate_count": 0,
+        "duplicates_merged": 0,
     }
 
 
@@ -658,6 +693,7 @@ def test_cmd_log_search_accepts_cities_file(tmp_path, monkeypatch):
         "logged": True,
         "events_discovered": 0,
         "session_candidate_count": 0,
+        "duplicates_merged": 0,
     }
     assert not payload_path.exists()
 
@@ -707,6 +743,7 @@ def test_cmd_log_search_events_file_persists_session_candidates(tmp_path, monkey
         "logged": True,
         "events_discovered": 1,
         "session_candidate_count": 1,
+        "duplicates_merged": 0,
     }
     assert not events_path.exists()
     session_result = json.loads(
@@ -740,6 +777,45 @@ def test_cmd_save_from_session_uses_canonical_candidates(tmp_path, monkeypatch):
     assert cached[0]["event_name"] == "Spring Fest"
 
 
+def test_cmd_save_from_session_deduplicates_aliases_and_backfills_country(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    import weekend_scout.cities as cities_module
+
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {"tier1": ["Berlin|DE"], "tier2": [], "tier3": []},
+    )
+    _run_cmd(
+        "log-search",
+        ["--query", "berlin one", "--target-weekend", "2026-04-11",
+         "--phase", "targeted", "--result-count", "2",
+         "--cities", '["Berlin"]',
+         "--events", '[{"event_name":"Berliner Staudenmarkt","city":"Berlin","start_date":"2026-04-11","end_date":"2026-04-12","source_url":"https://visitberlin.example/markets","confidence":"likely"}]',
+         "--run-id", "2026-04-11_2151"],
+        tmp_path, monkeypatch,
+    )
+    _run_cmd(
+        "log-search",
+        ["--query", "berlin two", "--target-weekend", "2026-04-11",
+         "--phase", "verification", "--result-count", "1",
+         "--cities", '["Berlin"]',
+         "--events", '[{"event_name":"Berliner Staudenmarkt auf der Domäne Dahlem","city":"Berlin","start_date":"2026-04-11","end_date":"2026-04-12","source_url":"https://visitberlin.example/markets","confidence":"confirmed"}]',
+         "--run-id", "2026-04-11_2151"],
+        tmp_path, monkeypatch,
+    )
+
+    result = json.loads(
+        _run_cmd("save", ["--run-id", "2026-04-11_2151", "--from-session"], tmp_path, monkeypatch)
+    )
+    assert result == {"saved": 1, "skipped": 0}
+
+    cached = json.loads(_run_cmd("cache-query", ["--date", "2026-04-11"], tmp_path, monkeypatch))
+    assert len(cached) == 1
+    assert cached[0]["event_name"] == "Berliner Staudenmarkt auf der Domäne Dahlem"
+    assert cached[0]["country"] == "Germany"
+
+
 def test_many_logged_searches_can_save_from_session_without_final_events_array(tmp_path, monkeypatch):
     run_id = "2026-04-04_1945"
     for idx in range(18):
@@ -759,6 +835,124 @@ def test_many_logged_searches_can_save_from_session_without_final_events_array(t
     assert save_result == {"saved": 18, "skipped": 0}
     cached = json.loads(_run_cmd("cache-query", ["--date", "2026-04-04"], tmp_path, monkeypatch))
     assert len(cached) == 18
+
+
+def test_cmd_prepare_digest_groups_trip_cities_and_collapses_duplicates(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    import weekend_scout.cities as cities_module
+
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {
+            "tier1": ["Berlin|DE", "Potsdam|DE"],
+            "tier2": [],
+            "tier3": [],
+        },
+    )
+    _run_cmd(
+        "save",
+        ["--events", json.dumps([
+            {"event_name": "Warsaw Spring Fest", "city": "Warsaw", "start_date": "2026-04-11", "confidence": "confirmed"},
+            {"event_name": "Kirschblütenfest in den Gärten der Welt", "city": "Berlin", "start_date": "2026-04-11", "end_date": "2026-04-12", "confidence": "likely"},
+            {"event_name": "Sakura – Kirschblütenfest in den Gärten der Welt", "city": "Berlin", "start_date": "2026-04-11", "end_date": "2026-04-12", "confidence": "confirmed"},
+            {"event_name": "Potsdam Market", "city": "Potsdam", "start_date": "2026-04-11", "confidence": "confirmed"},
+            {"event_name": "Potsdam Food Fest", "city": "Potsdam", "start_date": "2026-04-12", "confidence": "likely"},
+        ])],
+        tmp_path,
+        monkeypatch,
+    )
+
+    result = json.loads(_run_cmd("prepare-digest", ["--date", "2026-04-11"], tmp_path, monkeypatch))
+    assert result["summary"] == {
+        "duplicates_collapsed": 1,
+        "home_city_count": 1,
+        "trip_city_count": 2,
+        "total_pool": 3,
+    }
+    assert [event["event_name"] for event in result["home_city_candidates"]] == ["Warsaw Spring Fest"]
+    assert [group["city"] for group in result["trip_city_groups"]] == ["Berlin", "Potsdam"]
+    assert result["trip_city_groups"][0]["events"][0]["event_name"] == "Sakura – Kirschblütenfest in den Gärten der Welt"
+    assert result["trip_city_groups"][0]["event_count"] == 1
+    assert result["trip_city_groups"][0]["country"] == "Germany"
+    assert result["trip_city_groups"][1]["event_count"] == 2
+
+
+def test_prepare_digest_returns_all_sorted_city_events(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    import weekend_scout.cities as cities_module
+
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {
+            "tier1": ["Berlin|DE", "Potsdam|DE"],
+            "tier2": [],
+            "tier3": [],
+        },
+    )
+    _run_cmd(
+        "save",
+        ["--events", json.dumps([
+            {"event_name": "Potsdam Confirmed", "city": "Potsdam", "start_date": "2026-04-11", "confidence": "confirmed"},
+            {"event_name": "Potsdam Free", "city": "Potsdam", "start_date": "2026-04-11", "free_entry": True, "confidence": "likely"},
+            {"event_name": "Potsdam Early", "city": "Potsdam", "start_date": "2026-04-11", "confidence": "likely"},
+            {"event_name": "Potsdam Sunday", "city": "Potsdam", "start_date": "2026-04-12", "confidence": "likely"},
+        ])],
+        tmp_path,
+        monkeypatch,
+    )
+
+    result = json.loads(_run_cmd("prepare-digest", ["--date", "2026-04-11"], tmp_path, monkeypatch))
+    potsdam_group = next(group for group in result["trip_city_groups"] if group["city"] == "Potsdam")
+    assert potsdam_group["event_count"] == 4
+    assert [event["event_name"] for event in potsdam_group["events"]] == [
+        "Potsdam Confirmed",
+        "Potsdam Free",
+        "Potsdam Early",
+        "Potsdam Sunday",
+    ]
+
+
+def test_prepare_digest_pool_changes_by_one_for_one_new_trip_city(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    import weekend_scout.cities as cities_module
+
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {
+            "tier1": ["Berlin|DE", "Potsdam|DE"],
+            "tier2": ["Leipzig|DE"],
+            "tier3": [],
+        },
+    )
+    _run_cmd(
+        "save",
+        ["--events", json.dumps([
+            {"event_name": "Warsaw Spring Fest", "city": "Warsaw", "start_date": "2026-04-11"},
+            {"event_name": "Berlin Bloom", "city": "Berlin", "start_date": "2026-04-11", "confidence": "confirmed"},
+            {"event_name": "Potsdam Fair", "city": "Potsdam", "start_date": "2026-04-11", "confidence": "confirmed"},
+        ])],
+        tmp_path,
+        monkeypatch,
+    )
+    first = json.loads(_run_cmd("prepare-digest", ["--date", "2026-04-11"], tmp_path, monkeypatch))
+
+    _run_cmd(
+        "save",
+        ["--events", json.dumps([
+            {"event_name": "Leipzig Spring Walk", "city": "Leipzig", "start_date": "2026-04-11", "confidence": "confirmed"},
+        ])],
+        tmp_path,
+        monkeypatch,
+    )
+    second = json.loads(_run_cmd("prepare-digest", ["--date", "2026-04-11"], tmp_path, monkeypatch))
+
+    assert first["summary"]["total_pool"] == 3
+    assert second["summary"]["total_pool"] == 4
+    assert first["summary"]["trip_city_count"] == 2
+    assert second["summary"]["trip_city_count"] == 3
 
 
 def test_cmd_phase_c_cities_batches_and_filters(tmp_path, monkeypatch):
@@ -798,7 +992,16 @@ def test_cmd_phase_c_cities_batches_and_filters(tmp_path, monkeypatch):
     assert result["has_more"] is False
     assert "eligible" not in result
     assert "reason" not in result
-    assert set(result["cards"][0]) == {"city_name", "query", "query_already_done"}
+    assert set(result["cards"][0]) == {
+        "city_name",
+        "query",
+        "query_already_done",
+        "still_uncovered",
+        "retry_on_rerun",
+        "retry_query",
+    }
+    assert result["cards"][0]["still_uncovered"] is True
+    assert result["cards"][0]["retry_on_rerun"] is False
     log_entries = (tmp_path / "cache" / "action_log.jsonl").read_text(encoding="utf-8").splitlines()
     last_entry = json.loads(log_entries[-1])
     assert last_entry["action"] == "phase_c_batch_requested"
@@ -825,6 +1028,7 @@ def test_cmd_phase_c_cities_accepts_deprecated_searches_used_noop(tmp_path, monk
         )
     )
     assert [card["city_name"] for card in result["cards"]] == ["Berlin", "Leipzig"]
+    assert all(card["still_uncovered"] is True for card in result["cards"])
     assert "eligible" not in result
     assert "reason" not in result
 
