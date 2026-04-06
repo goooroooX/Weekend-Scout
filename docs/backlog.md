@@ -94,6 +94,7 @@
 | 7.8 | Expand language/country support to 27 countries | DONE (2026-03-27) | Added IT/ES/PT/NL/SE/NO/DK/FI/RO/HR/BG/RS/GR/TR/RU with month names and query templates |
 | 7.9 | Fix first-run onboarding: needs_setup guard in init + SKILL.md gate | DONE (2026-03-27) | init returns needs_setup:true when home_city blank; SKILL.md shows setup msg and stops |
 | 7.10 | Fix --events-discovered CLI type error (int vs list) | DONE (2026-03-27) | SKILL.md log pattern clarified: integer count, not a list |
+| 7.11 | Refresh Telegram digest visual styling + preview parity | DONE (2026-04-06) | Follow-up styling pass completed: `🗓` header, `🏙` home-city icon, no summary line, compact trip route summaries, and robust `free_entry` handling for bool/string values |
 
 ## Phase 8: Onboarding & UX
 

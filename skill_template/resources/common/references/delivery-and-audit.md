@@ -46,7 +46,7 @@ optional: url
 [
   {
     "name": "Lodz Day Trip",
-    "route": "Warsaw -> Lodz (130 km, ~1h45) -> Warsaw",
+    "route": "Lodz (130 km, ~1h45)",
     "events": "Spring Fair | Main Square | Sat-Sun all day",
     "timing": "Leave by: 10:00 | Back by: ~20:00",
     "url": "https://example.com/event"
@@ -99,7 +99,7 @@ Expected response shape:
 ```json
 {
   "written": "D:\\Work\\Weekend-Scout\\.weekend_scout\\cache\\scout_message.txt",
-  "preview": "Weekend Scout | April 4-5, 2026\n..."
+  "preview": "🗓 Weekend Scout | April 4-5, 2026\n..."
 }
 ```
 

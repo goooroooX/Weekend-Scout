@@ -344,24 +344,25 @@ Candidates are canonicalized on write and on read:
 **Message structure:**
 
 ```
-Weekend Scout | March 28-29, 2026
+🗓 Weekend Scout | March 28-29, 2026
 
-IN WARSAW:
+🏙 In Warsaw
 
 1. <b>Event Name</b>
-   location | Sat 10:00-18:00
-   Description text [link]
-   free/paid
+   📍 Location name
+   🗓 Sat 10:00-18:00 • ✅ Free entrance
+   Description text
+   🔗 Details
 
-ROAD TRIPS:
+🚗 Road Trips
 
 01. <b>Trip Name</b>
-   Warsaw -> City (130 km, ~1h45) -> Warsaw
-   Event details [link]
-   Leave by: 10:00 | Back by: ~20:00
+   📍 City (130 km, ~1h45)
+   🎉 Event details
+   🕒 Leave by: 10:00 | Back by: ~20:00
+   🔗 Details
 
----
-Scouted by Weekend Scout
+✨ Scouted by Weekend Scout
 ```
 
 - Home city events: up to `max_city_options`
@@ -374,8 +375,9 @@ characters (Telegram's limit) at paragraph boundaries (`\n\n`), falling back
 to line breaks (`\n`), then hard-splitting as a last resort.
 
 **Sending:** `send_telegram()` uses `requests.post` to the Bot API with
-`disable_web_page_preview: True` and a 30-second timeout. Returns True/False,
-never raises.
+`disable_web_page_preview: True` and a 30-second timeout. It returns a
+structured result dict (`sent`, `reason`, `error_code`, `status_code`,
+`error`, `parts_sent`) and never raises.
 
 ### 4.6 Search Query Generation (`cities.py`)
 
@@ -545,7 +547,7 @@ Each trip dict:
 ```json
 {
     "name":   "City Day Trip",
-    "route":  "Home -> City (X km, ~Yh) -> Home",
+    "route":  "City (X km, ~Yh)",
     "events": "Event Name | Venue | Day Time",
     "timing": "Leave by: HH:MM | Back by: ~HH:MM",
     "url":    "https://..."

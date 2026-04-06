@@ -92,6 +92,36 @@ def test_split_multiple_parts_all_within_limit():
     assert all(len(p) <= 4096 for p in result)
 
 
+def test_split_message_handles_emoji_rich_digest():
+    from weekend_scout.telegram import format_scout_message, split_message
+
+    events = [
+        _event(
+            event_name=f"Festival {i}",
+            description="A" * 110,
+            source_url=f"https://example.com/event-{i}",
+        )
+        for i in range(12)
+    ]
+    trips = [
+        _trip(
+            name=f"Trip {i}",
+            route=f"Warsaw -> City {i} (130 km, ~1h45) -> Warsaw",
+            events=("Big weekend highlight | central square | Sat-Sun all day " * 4).strip(),
+            timing="Leave by: 10:00 | Back by: ~20:00",
+            url=f"https://example.com/trip-{i}",
+        )
+        for i in range(12)
+    ]
+
+    message = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", events, trips)
+    parts = split_message(message, max_length=4096)
+
+    assert len(parts) >= 2
+    assert all(len(part) <= 4096 for part in parts)
+    assert parts[0].startswith("🗓 ")
+
+
 # --- send_telegram ---
 
 def test_send_telegram_success(monkeypatch):
@@ -215,13 +245,11 @@ def test_format_event_block_all_fields():
     from weekend_scout.telegram import format_event_block
     result = format_event_block(_event())
     assert "Test Festival" in result
-    assert "Old Town Square" in result
-    assert "10:00-18:00" in result
+    assert "📍 Old Town Square" in result
+    assert "🗓 Sat-Sun 10:00-18:00 • ✅ Free entrance" in result
     assert "A fun outdoor festival" in result
-    assert "Free" in result
-    # Link is inline on description line
-    assert "[" in result
-    assert "link" in result
+    assert "🔗" in result
+    assert "Details" in result
     assert "https://example.com/event" in result
 
 
@@ -235,23 +263,30 @@ def test_format_event_block_minimal_fields():
 def test_format_event_block_link_on_venue_when_no_description():
     from weekend_scout.telegram import format_event_block
     result = format_event_block(_event(description=None))
-    # When there's no description, link should appear on the venue/time line
-    assert "link" in result
+    assert "📍 Old Town Square" in result
+    assert "🔗" in result
+    assert "Details" in result
     assert "https://example.com/event" in result
 
 
 def test_format_event_block_paid():
     from weekend_scout.telegram import format_event_block
     result = format_event_block(_event(free_entry=False))
-    assert "Paid" in result
-    assert "Free entry" not in result
+    assert "💰 Paid entrance" in result
+    assert "✅ Free entrance" not in result
+
+
+def test_format_event_block_paid_string_value():
+    from weekend_scout.telegram import format_event_block
+    result = format_event_block(_event(free_entry="paid"))
+    assert "💰 Paid entrance" in result
 
 
 def test_format_event_block_no_cost_when_none():
     from weekend_scout.telegram import format_event_block
     result = format_event_block(_event(free_entry=None))
-    assert "Free entry" not in result
-    assert "Paid" not in result
+    assert "✅" not in result
+    assert "💰" not in result
 
 
 def test_format_event_block_long_description_truncated():
@@ -287,23 +322,31 @@ def test_format_event_block_time_info_html_escaped():
 def test_format_scout_message_header():
     from weekend_scout.telegram import format_scout_message
     msg = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", [_event()], [])
-    assert "Weekend Scout | April 4-5, 2026" in msg
+    assert "🗓 <b>Weekend Scout | April 4-5, 2026</b>" in msg
+    assert "local pick" not in msg
 
 
 def test_format_scout_message_city_events():
     from weekend_scout.telegram import format_scout_message
     events = [_event(event_name="Fest A"), _event(event_name="Fest B")]
     msg = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", events, [])
-    assert "IN WARSAW:" in msg
+    assert "<b>🏙 In Warsaw</b>" in msg
     assert "1. <b>Fest A</b>" in msg
     assert "2. <b>Fest B</b>" in msg
+    assert "📍 Old Town Square" in msg
+    assert "🗓 Sat-Sun 10:00-18:00 • ✅ Free entrance" in msg
 
 
 def test_format_scout_message_road_trips():
     from weekend_scout.telegram import format_scout_message
-    msg = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", [], [_trip()])
-    assert "ROAD TRIPS:" in msg
+    trip = _trip(route="Berlin -> Dessau (about 140 km, ~1h50) -> Berlin")
+    msg = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", [], [trip])
+    assert "<b>🚗 Road Trips</b>" in msg
     assert "01. <b>Lodz Day Trip</b>" in msg
+    assert "📍 Dessau (about 140 km, ~1h50)" in msg
+    assert "Berlin → Dessau" not in msg
+    assert "🎉 Festiwal Czterech Kultur" in msg
+    assert "🕒 Leave by: 9:00 | Back by: ~20:00" in msg
 
 
 def test_format_scout_message_strips_prefixed_trip_name():
@@ -341,21 +384,21 @@ def test_format_scout_message_renders_all_city_events():
 def test_format_scout_message_no_trips_omits_section():
     from weekend_scout.telegram import format_scout_message
     msg = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", [_event()], [])
-    assert "ROAD TRIPS:" not in msg
+    assert "🚗 Road Trips" not in msg
 
 
 def test_format_scout_message_footer():
     from weekend_scout.telegram import format_scout_message
     msg = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", [_event()], [])
-    assert "Scouted by Weekend Scout" in msg
+    assert "✨ <i>Scouted by Weekend Scout</i>" in msg
 
 
 def test_format_scout_message_trip_with_url():
     from weekend_scout.telegram import format_scout_message
     trip = _trip(url="https://example.com/trip")
     msg = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", [], [trip])
-    assert "[" in msg
-    assert "link" in msg
+    assert "🔗 <a href=" in msg
+    assert "Details" in msg
     assert "https://example.com/trip" in msg
 
 
@@ -363,8 +406,8 @@ def test_format_scout_message_empty_returns_no_events():
     from weekend_scout.telegram import format_scout_message
     msg = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", [], [])
     assert "No events found" in msg
-    assert "Weekend Scout |" in msg
-    assert "Scouted by Weekend Scout" in msg
+    assert "🗓 <b>Weekend Scout |" in msg
+    assert "✨ <i>Scouted by Weekend Scout</i>" in msg
 
 
 def test_format_scout_message_low_results_hint_normal_path():
@@ -374,7 +417,7 @@ def test_format_scout_message_low_results_hint_normal_path():
                                hint_max_searches=60, hint_max_fetches=60)
     assert "Only 1 event(s) found" in msg
     assert "max_searches 60" in msg
-    assert msg.index("Only 1 event") < msg.index("Scouted by Weekend Scout")
+    assert msg.index("Only 1 event") < msg.index("✨ <i>Scouted by Weekend Scout</i>")
 
 
 def test_format_scout_message_low_results_hint_empty_path():
@@ -390,18 +433,22 @@ def test_format_scout_message_month_boundary():
     from weekend_scout.telegram import format_scout_message
     # March 30 - April 1 (hypothetical, just test formatting doesn't crash)
     msg = format_scout_message("Paris", "2026-03-28", "2026-03-29", [], [])
-    assert "March 28-29, 2026" in msg
+    assert "🗓 <b>Weekend Scout | March 28-29, 2026</b>" in msg
 
 
 def test_format_scout_preview_is_plain_text():
     from weekend_scout.telegram import format_scout_preview
     preview = format_scout_preview("Warsaw", "2026-04-04", "2026-04-05", [_event()], [_trip(url="https://example.com/trip")])
-    assert "Weekend Scout | April 4-5, 2026" in preview
+    assert "🗓 Weekend Scout | April 4-5, 2026" in preview
     assert "<b>" not in preview
     assert "<i>" not in preview
     assert "[<a href=" not in preview
+    assert "local pick" not in preview
+    assert "🏙 In Warsaw" in preview
+    assert "🚗 Road Trips" in preview
     assert "01. Lodz Day Trip" in preview
-    assert "https://example.com/trip" in preview
+    assert "📍 Lodz (131 km, ~1h40)" in preview
+    assert "🔗 https://example.com/trip" in preview
 
 
 def test_format_scout_preview_renders_all_trip_options():
@@ -413,3 +460,25 @@ def test_format_scout_preview_renders_all_trip_options():
     assert "10. Trip 9" in preview
     assert "11. Trip 10" in preview
     assert "12. Trip 11" in preview
+
+
+def test_format_scout_preview_matches_message_structure():
+    from weekend_scout.telegram import format_scout_message, format_scout_preview
+
+    event = _event()
+    trip = _trip(url="https://example.com/trip")
+    msg = format_scout_message("Warsaw", "2026-04-04", "2026-04-05", [event], [trip])
+    preview = format_scout_preview("Warsaw", "2026-04-04", "2026-04-05", [event], [trip])
+
+    for marker in (
+        "Weekend Scout | April 4-5, 2026",
+        "🏙 In Warsaw",
+        "🚗 Road Trips",
+        "📍 Lodz (131 km, ~1h40)",
+        "Scouted by Weekend Scout",
+    ):
+        assert marker in preview
+        assert marker in msg
+
+    assert "01. Lodz Day Trip" in preview
+    assert "01. <b>Lodz Day Trip</b>" in msg
