@@ -44,6 +44,7 @@ From those helper-provided pools:
 - select up to `max_trip_options` trip-city bundles, preferring `tier1`, then `tier2`, then `tier3`
 - do **not** under-fill the digest when eligible helper-provided candidates exist
 - only discard a helper-provided trip city when there is explicit evidence that it is indoor, off-scope, off-date, or too weak to justify a trip option
+- preserve each selected event's `source_url` when building the `city-events` payload for `format-message`
 
 `score_summary.total_pool` must use `digest_input.summary.total_pool`, not an ad hoc
 prompt-rebuilt count.
@@ -97,6 +98,7 @@ Trip payload contract:
 ```
 
 Use `home_city` as the route start/end label.
+When a selected trip clearly centers on one kept event, copy that event's `source_url` into trip `url` when available.
 
 "Leave by" timing means the latest departure that still arrives when the event is in full swing:
 

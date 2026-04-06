@@ -281,6 +281,8 @@ def test_search_workflow_restores_monolith_guardrails():
     assert "Write a fresh payload file immediately before each `log-search` call." in content
     assert "Broad searches must log `cities = [home_city]`." in content
     assert "Targeted and verification searches/fetches must log `cities = [city_name]`" in content
+    assert "If a kept event has a known event/source URL, include it as `source_url` in that event object." in content
+    assert "Do **not** leave them only in scratch notes or a final sources list." in content
     assert "The CLI owns the canonical run-level candidate set." in content
     assert "query_already_done" in content
     assert "retry_on_rerun" in content
@@ -568,6 +570,8 @@ def test_scoring_reference_uses_prepare_digest_output():
     assert "trip_city_groups" in content
     assert "Objective dedupe and city grouping are already done by Python." in content
     assert "do **not** under-fill the digest when eligible helper-provided candidates exist" in content
+    assert "preserve each selected event's `source_url` when building the `city-events` payload" in content
+    assert "copy that event's `source_url` into trip `url` when available" in content
     assert "all canonical events for that city, sorted best-first" in content
     assert "Label trips `01` through `NN` in the final message only." in content
     assert "fewer than three credible trip cities" not in content

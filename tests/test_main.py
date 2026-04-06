@@ -773,6 +773,78 @@ def test_cmd_log_search_events_file_persists_session_candidates(tmp_path, monkey
     ]
 
 
+def test_cmd_log_search_backfills_source_url_from_fetch_query(tmp_path, monkeypatch):
+    result = json.loads(
+        _run_cmd(
+            "log-search",
+            ["--query", "https://events.example/spring-fest", "--target-weekend", "2026-04-04",
+             "--phase", "verification", "--result-count", "1",
+             "--cities", '["Berlin"]',
+             "--events", '[{"event_name":"Spring Fest","city":"Berlin","start_date":"2026-04-04"}]',
+             "--run-id", "2026-04-04_1200"],
+            tmp_path, monkeypatch,
+        )
+    )
+    assert result == {
+        "logged": True,
+        "events_discovered": 1,
+        "session_candidate_count": 1,
+        "duplicates_merged": 0,
+    }
+    session_result = json.loads(
+        _run_cmd("session-query", ["--run-id", "2026-04-04_1200"], tmp_path, monkeypatch)
+    )
+    assert session_result == [
+        {
+            "event_name": "Spring Fest",
+            "city": "Berlin",
+            "start_date": "2026-04-04",
+            "source_url": "https://events.example/spring-fest",
+        }
+    ]
+
+
+def test_cmd_log_search_preserves_explicit_source_url_over_fetch_query(tmp_path, monkeypatch):
+    _run_cmd(
+        "log-search",
+        ["--query", "https://events.example/spring-fest", "--target-weekend", "2026-04-04",
+         "--phase", "verification", "--result-count", "1",
+         "--cities", '["Berlin"]',
+         "--events", '[{"event_name":"Spring Fest","city":"Berlin","start_date":"2026-04-04","source_url":"https://official.example/spring-fest"}]',
+         "--run-id", "2026-04-04_1200"],
+        tmp_path, monkeypatch,
+    )
+    session_result = json.loads(
+        _run_cmd("session-query", ["--run-id", "2026-04-04_1200"], tmp_path, monkeypatch)
+    )
+    assert session_result == [
+        {
+            "event_name": "Spring Fest",
+            "city": "Berlin",
+            "start_date": "2026-04-04",
+            "source_url": "https://official.example/spring-fest",
+        }
+    ]
+
+
+def test_cmd_log_search_does_not_backfill_source_url_from_non_url_query(tmp_path, monkeypatch):
+    _run_cmd(
+        "log-search",
+        ["--query", "berlin spring fest", "--target-weekend", "2026-04-04",
+         "--phase", "targeted", "--result-count", "1",
+         "--cities", '["Berlin"]',
+         "--events", '[{"event_name":"Spring Fest","city":"Berlin","start_date":"2026-04-04"}]',
+         "--run-id", "2026-04-04_1200"],
+        tmp_path, monkeypatch,
+    )
+    session_result = json.loads(
+        _run_cmd("session-query", ["--run-id", "2026-04-04_1200"], tmp_path, monkeypatch)
+    )
+    assert session_result == [
+        {"event_name": "Spring Fest", "city": "Berlin", "start_date": "2026-04-04"}
+    ]
+
+
 def test_cmd_save_from_session_uses_canonical_candidates(tmp_path, monkeypatch):
     _run_cmd(
         "log-search",
@@ -833,6 +905,26 @@ def test_cmd_save_from_session_deduplicates_aliases_and_backfills_country(tmp_pa
     assert len(cached) == 1
     assert cached[0]["event_name"] == "Berliner Staudenmarkt auf der Domäne Dahlem"
     assert cached[0]["country"] == "Germany"
+
+
+def test_cmd_save_from_session_preserves_backfilled_source_url(tmp_path, monkeypatch):
+    _run_cmd(
+        "log-search",
+        ["--query", "https://events.example/spring-fest", "--target-weekend", "2026-04-04",
+         "--phase", "verification", "--result-count", "1",
+         "--cities", '["Berlin"]',
+         "--events", '[{"event_name":"Spring Fest","city":"Berlin","start_date":"2026-04-04"}]',
+         "--run-id", "2026-04-04_1200"],
+        tmp_path, monkeypatch,
+    )
+    result = json.loads(
+        _run_cmd("save", ["--run-id", "2026-04-04_1200", "--from-session"], tmp_path, monkeypatch)
+    )
+    assert result == {"saved": 1, "skipped": 0}
+    cached = json.loads(_run_cmd("cache-query", ["--date", "2026-04-04"], tmp_path, monkeypatch))
+    assert len(cached) == 1
+    assert cached[0]["event_name"] == "Spring Fest"
+    assert cached[0]["source_url"] == "https://events.example/spring-fest"
 
 
 def test_many_logged_searches_can_save_from_session_without_final_events_array(tmp_path, monkeypatch):

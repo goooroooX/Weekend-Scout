@@ -163,6 +163,32 @@ def _weekend_sunday(saturday: str) -> str:
     ).isoformat()
 
 
+def _query_url_fallback(query: str) -> str | None:
+    text = str(query or "").strip()
+    if text.startswith("http://") or text.startswith("https://"):
+        return text
+    return None
+
+
+def _backfill_event_source_urls(
+    events: list[dict[str, Any]],
+    *,
+    query: str,
+) -> list[dict[str, Any]]:
+    fallback_url = _query_url_fallback(query)
+    if fallback_url is None:
+        return [dict(event) for event in events]
+
+    normalized: list[dict[str, Any]] = []
+    for event in events:
+        candidate = dict(event)
+        source_url = str(candidate.get("source_url") or "").strip()
+        if not source_url:
+            candidate["source_url"] = fallback_url
+        normalized.append(candidate)
+    return normalized
+
+
 def save_events(
     config: dict[str, Any], events: list[dict[str, Any]]
 ) -> tuple[int, int]:
@@ -379,11 +405,12 @@ def log_search(
             raise ValueError("run_id is required when events are provided to log_search")
         from weekend_scout.session_cache import upsert_session_candidates
 
+        normalized_events = _backfill_event_source_urls(events, query=query)
         session_result = upsert_session_candidates(
             config,
             run_id,
             target_weekend,
-            events,
+            normalized_events,
         )
         events_discovered = session_result["events_discovered"]
         session_candidate_count = session_result["candidate_count"]

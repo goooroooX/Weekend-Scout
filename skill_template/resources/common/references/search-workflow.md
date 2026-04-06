@@ -235,6 +235,8 @@ After every search or fetch, call `log-search`.
 - Broad searches must log `cities = [home_city]`.
 - Targeted and verification searches/fetches must log `cities = [city_name]` for the city being worked.
 - Every `log-search` in the normal run must also include the kept event array for that single action.
+- If a kept event has a known event/source URL, include it as `source_url` in that event object.
+- Keep event URLs inside the `log-search --events` payload itself. Do **not** leave them only in scratch notes or a final sources list.
 
 #@IF !codex
 ```bash
@@ -281,6 +283,8 @@ Useful optional keys:
 confidence, category, free_entry, source_url, source_name,
 end_date, time_info, location_name, lat, lon, description, country
 ```
+
+In practice, `source_url` is expected whenever the current action gives you a URL for a kept event.
 
 ## Phase lifecycle and helper success
 
