@@ -108,7 +108,14 @@ def test_send_telegram_success(monkeypatch):
     monkeypatch.setattr("weekend_scout.telegram.requests.post", fake_post)
     cfg = {"telegram_bot_token": "123:ABC", "telegram_chat_id": "-100999"}
     result = send_telegram(cfg, "Hello")
-    assert result is True
+    assert result == {
+        "sent": True,
+        "reason": "sent",
+        "error_code": None,
+        "status_code": None,
+        "error": None,
+        "parts_sent": 1,
+    }
     assert len(calls) == 1
     assert "/bot123:ABC/sendMessage" in calls[0][0]
     assert calls[0][1]["chat_id"] == "-100999"
@@ -122,10 +129,15 @@ def test_send_telegram_failure(monkeypatch):
 
     class FakeResp:
         status_code = 403
+        text = '{"ok":false,"description":"Forbidden"}'
 
     monkeypatch.setattr("weekend_scout.telegram.requests.post", lambda *a, **kw: FakeResp())
     cfg = {"telegram_bot_token": "tok", "telegram_chat_id": "123"}
-    assert send_telegram(cfg, "Hello") is False
+    result = send_telegram(cfg, "Hello")
+    assert result["sent"] is False
+    assert result["reason"] == "send_failed"
+    assert result["error_code"] == "telegram_http_error"
+    assert result["status_code"] == 403
 
 
 def test_send_telegram_splits_long_message(monkeypatch):
@@ -143,7 +155,8 @@ def test_send_telegram_splits_long_message(monkeypatch):
     cfg = {"telegram_bot_token": "tok", "telegram_chat_id": "123"}
     long_msg = "Part one\n\n" + "A" * 4000 + "\n\nPart two\n\n" + "B" * 4000
     result = send_telegram(cfg, long_msg)
-    assert result is True
+    assert result["sent"] is True
+    assert result["parts_sent"] == len(calls)
     assert len(calls) >= 2
     assert all(len(p) <= 4096 for p in calls)
 
@@ -151,13 +164,19 @@ def test_send_telegram_splits_long_message(monkeypatch):
 def test_send_telegram_missing_token():
     from weekend_scout.telegram import send_telegram
     cfg = {"telegram_bot_token": "", "telegram_chat_id": "123"}
-    assert send_telegram(cfg, "Hello") is False
+    result = send_telegram(cfg, "Hello")
+    assert result["sent"] is False
+    assert result["reason"] == "telegram_not_configured"
+    assert result["error_code"] == "telegram_not_configured"
 
 
 def test_send_telegram_missing_chat_id():
     from weekend_scout.telegram import send_telegram
     cfg = {"telegram_bot_token": "tok", "telegram_chat_id": ""}
-    assert send_telegram(cfg, "Hello") is False
+    result = send_telegram(cfg, "Hello")
+    assert result["sent"] is False
+    assert result["reason"] == "telegram_not_configured"
+    assert result["error_code"] == "telegram_not_configured"
 
 
 def test_send_telegram_network_error(monkeypatch):
@@ -169,7 +188,25 @@ def test_send_telegram_network_error(monkeypatch):
 
     monkeypatch.setattr("weekend_scout.telegram.requests.post", fake_post)
     cfg = {"telegram_bot_token": "tok", "telegram_chat_id": "123"}
-    assert send_telegram(cfg, "Hello") is False
+    result = send_telegram(cfg, "Hello")
+    assert result["sent"] is False
+    assert result["reason"] == "send_failed"
+    assert result["error_code"] == "telegram_network_error"
+    assert result["status_code"] is None
+
+
+def test_send_telegram_network_blocked(monkeypatch):
+    import requests as req_lib
+    from weekend_scout.telegram import send_telegram
+
+    def fake_post(url, json, timeout):
+        raise req_lib.ConnectionError("[WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions")
+
+    monkeypatch.setattr("weekend_scout.telegram.requests.post", fake_post)
+    cfg = {"telegram_bot_token": "tok", "telegram_chat_id": "123"}
+    result = send_telegram(cfg, "Hello")
+    assert result["sent"] is False
+    assert result["error_code"] == "telegram_network_blocked"
 
 
 # --- format_event_block ---

@@ -267,8 +267,12 @@ def test_search_workflow_restores_monolith_guardrails():
     assert "retry_query" in content
     assert "`already_done`" not in content
     assert "Required Step 2 CLI calls must succeed before discovery continues." in content
+    assert "show the human-readable `error` plus the `failure_id`" in content
+    assert "without inventing a" in content
+    assert "diagnosis." in content
     assert "Do **not** repair failed Step 2 state by retroactive logging or manual" in content
-    assert "payload synthesis." in content
+    assert "payload" in content
+    assert "synthesis." in content
     assert "phase_start missing" not in content
     assert "If that helper returns `logged: false` or an `error`" not in content
     assert "coverage is still thin" not in content
@@ -352,7 +356,10 @@ def test_delivery_reference_uses_helper_commands_and_debug_audit():
 
     assert "python -m weekend_scout run-complete --run-id" in content
     assert "`audit-run` is debug-only by default" in content
-    assert '`send` returning `{"sent": false}` is a documented delivery outcome, not contract drift' in content
+    assert "If a required delivery command returns a top-level `error`" in content
+    assert "`failure_id`" in content
+    assert '`send` returning `{"sent": false, "reason": "telegram_not_configured", ...}`' in content
+    assert '`send` returning `{"sent": false, "reason": "send_failed", ...}`' in content
     assert "`audit-run` returning `ok: false` is debug information, not contract drift" in content
     assert "Always report first:" in content
     assert "DEBUG INFORMATION" in content
@@ -363,6 +370,7 @@ def test_delivery_reference_uses_helper_commands_and_debug_audit():
     assert "_tmp_city_events.tmp" in content
     assert "_tmp_uncovered_tier1.tmp" not in content
     assert "`uncovered_tier1` = derived from `run_init.tier1` plus the saved weekend cache" in content
+    assert "`run_complete.send_reason` must copy `send.reason`" in content
 
 
 def test_last_failed_run_fixture_documents_unlogged_small_city_searches():

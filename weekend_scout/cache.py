@@ -837,6 +837,7 @@ def audit_run(config: dict[str, Any], run_id: str) -> dict[str, Any]:
     telegram_send_entry: dict[str, Any] | None = None
     events_served_entry: dict[str, Any] | None = None
     run_complete_entry: dict[str, Any] | None = None
+    command_failed_entries: list[tuple[int, dict[str, Any]]] = []
 
     current_phase_idx = 0
 
@@ -859,6 +860,8 @@ def audit_run(config: dict[str, Any], run_id: str) -> dict[str, Any]:
             events_served_entry = entry
         elif action == "run_complete":
             run_complete_entry = entry
+        elif action == "command_failed":
+            command_failed_entries.append((entry_index, entry))
 
         if action == "skip" and phase == "search" and search_bypass_index is None:
             search_bypass_index = entry_index
@@ -1075,10 +1078,25 @@ def audit_run(config: dict[str, Any], run_id: str) -> dict[str, Any]:
             errors.append("run_complete events_sent does not match message_formatted totals")
 
     if telegram_send_entry is not None and run_complete_entry is not None:
-        sent = (run_complete_entry.get("detail") or {}).get("sent")
-        logged_send = (telegram_send_entry.get("detail") or {}).get("success")
+        run_complete_detail = run_complete_entry.get("detail") or {}
+        telegram_send_detail = telegram_send_entry.get("detail") or {}
+        sent = run_complete_detail.get("sent")
+        logged_send = telegram_send_detail.get("success")
         if sent != logged_send:
             errors.append("run_complete sent does not match telegram_send.success")
+        logged_reason = telegram_send_detail.get("reason")
+        if logged_reason is not None and run_complete_detail.get("send_reason") != logged_reason:
+            errors.append("run_complete send_reason does not match telegram_send.reason")
+
+    if command_failed_entries:
+        warnings.append("Run contains command_failed entries; review python_failures.jsonl for details")
+        if run_complete_entry is not None:
+            run_complete_index = next(
+                index for index, entry in enumerate(entries)
+                if entry is run_complete_entry
+            )
+            if any(index < run_complete_index for index, _entry in command_failed_entries):
+                warnings.append("command_failed entries were logged before run_complete")
 
     if (run_complete_entry is not None and
             (run_complete_entry.get("detail") or {}).get("sent") is True and

@@ -23,14 +23,14 @@ def _run_config(args: list[str], tmp_path, monkeypatch) -> dict:
     monkeypatch.setattr(cfg_module, "get_config_path", lambda: config_file)
     monkeypatch.setattr(cfg_module, "get_config_dir", lambda: tmp_path)
 
-    from weekend_scout.__main__ import build_parser, COMMANDS
+    from weekend_scout.__main__ import build_parser, dispatch_command
     parser = build_parser()
     parsed = parser.parse_args(["config"] + args)
 
     captured = []
     monkeypatch.setattr("builtins.print", lambda *a, **kw: captured.append(a[0]))
     try:
-        COMMANDS["config"](parsed)
+        dispatch_command(parsed, parser)
     except SystemExit:
         pass
     return json.loads(captured[-1])
@@ -97,13 +97,16 @@ def _run_format_message(args: list[str], tmp_path, monkeypatch) -> dict:
     monkeypatch.setattr(cfg_module, "get_config_path", lambda: config_file)
     monkeypatch.setattr(cfg_module, "get_config_dir", lambda: tmp_path)
 
-    from weekend_scout.__main__ import build_parser, COMMANDS
+    from weekend_scout.__main__ import build_parser, dispatch_command
     parser = build_parser()
     parsed = parser.parse_args(["format-message"] + args)
 
     captured = []
     monkeypatch.setattr("builtins.print", lambda *a, **kw: captured.append(a[0]))
-    COMMANDS["format-message"](parsed)
+    try:
+        dispatch_command(parsed, parser)
+    except SystemExit:
+        pass
     return json.loads(captured[-1])
 
 
@@ -203,14 +206,14 @@ def _run_cmd(name: str, args: list[str], tmp_path, monkeypatch) -> str:
     monkeypatch.setattr(cfg_module, "get_config_path", lambda: config_file)
     monkeypatch.setattr(cfg_module, "get_config_dir", lambda: tmp_path)
 
-    from weekend_scout.__main__ import build_parser, COMMANDS
+    from weekend_scout.__main__ import build_parser, dispatch_command
     parser = build_parser()
     parsed = parser.parse_args([name] + args)
 
     captured = []
     monkeypatch.setattr("builtins.print", lambda *a, **kw: captured.append(str(a[0])))
     try:
-        COMMANDS[name](parsed)
+        dispatch_command(parsed, parser)
     except SystemExit:
         pass
     return captured[-1] if captured else ""
@@ -259,7 +262,7 @@ def _invoke_command_no_catch(name: str, args: list[str], tmp_path, monkeypatch):
     monkeypatch.setattr(cfg_module, "get_config_path", lambda: config_file)
     monkeypatch.setattr(cfg_module, "get_config_dir", lambda: tmp_path)
 
-    from weekend_scout.__main__ import build_parser, COMMANDS
+    from weekend_scout.__main__ import build_parser, dispatch_command
     parser = build_parser()
     parsed = parser.parse_args([name] + args)
 
@@ -267,10 +270,21 @@ def _invoke_command_no_catch(name: str, args: list[str], tmp_path, monkeypatch):
     monkeypatch.setattr("builtins.print", lambda *a, **kw: captured.append(str(a[0])))
     raised = None
     try:
-        COMMANDS[name](parsed)
+        dispatch_command(parsed, parser)
     except SystemExit as exc:
         raised = exc
     return captured[-1] if captured else "", raised
+
+
+def _read_python_failures(tmp_path: Path) -> list[dict]:
+    path = tmp_path / "cache" / "python_failures.jsonl"
+    if not path.exists():
+        return []
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
 
 
 def test_cmd_init_radius_invalid_returns_error(tmp_path, monkeypatch):
@@ -278,6 +292,11 @@ def test_cmd_init_radius_invalid_returns_error(tmp_path, monkeypatch):
     output = _run_cmd("init", ["--radius", "abc"], tmp_path, monkeypatch)
     result = json.loads(output)
     assert "error" in result
+    assert result["error_code"] == "invalid_radius"
+    failures = _read_python_failures(tmp_path)
+    assert failures[-1]["command"] == "init"
+    assert failures[-1]["error_code"] == "invalid_radius"
+    assert failures[-1]["failure_id"] == result["failure_id"]
 
 
 def test_cmd_init_returns_json(tmp_path, monkeypatch):
@@ -1536,7 +1555,18 @@ def test_successful_send_flow_audits_ok_with_run_scoped_events_served(tmp_path, 
         "confidence": "confirmed",
     }
 
-    monkeypatch.setattr(telegram_module, "send_telegram", lambda config, message: True)
+    monkeypatch.setattr(
+        telegram_module,
+        "send_telegram",
+        lambda config, message: {
+            "sent": True,
+            "reason": "sent",
+            "error_code": None,
+            "status_code": None,
+            "error": None,
+            "parts_sent": 1,
+        },
+    )
 
     _run_cmd(
         "log-action",
@@ -1615,6 +1645,141 @@ def test_successful_send_flow_audits_ok_with_run_scoped_events_served(tmp_path, 
 
     result = json.loads(_run_cmd("audit-run", ["--run-id", run_id], tmp_path, monkeypatch))
     assert result["ok"] is True
+
+
+def test_audit_run_flags_send_reason_mismatch(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    run_id = "run-send-mismatch"
+    saturday = "2026-04-04"
+    _write_action_log_fixture(
+        tmp_path,
+        [
+            {
+                "ts": "2026-04-03T12:24:45",
+                "run_id": run_id,
+                "source": "python",
+                "action": "run_init",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"home_city": "Warsaw", "radius_km": 150, "cached_count": 0, "tier1": ["Radom|PL"]},
+            },
+            {
+                "ts": "2026-04-03T12:24:50",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "A",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:51",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "A",
+                "target_weekend": saturday,
+                "detail": {"reason": "all_queries_in_done_q"},
+            },
+            {
+                "ts": "2026-04-03T12:24:52",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "B",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:53",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "B",
+                "target_weekend": saturday,
+                "detail": {"reason": "no_aggregator_urls"},
+            },
+            {
+                "ts": "2026-04-03T12:24:54",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "C",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:55",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "C",
+                "target_weekend": saturday,
+                "detail": {"reason": "all_cities_covered"},
+            },
+            {
+                "ts": "2026-04-03T12:24:56",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "D",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:57",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "D",
+                "target_weekend": saturday,
+                "detail": {"reason": "all_confirmed"},
+            },
+            {
+                "ts": "2026-04-03T12:25:00",
+                "run_id": run_id,
+                "source": "python",
+                "action": "telegram_send",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {
+                    "success": False,
+                    "reason": "send_failed",
+                    "error_code": "telegram_http_error",
+                    "status_code": 403,
+                    "error": "Forbidden",
+                    "parts_sent": 0,
+                    "char_count": 250,
+                },
+            },
+            {
+                "ts": "2026-04-03T12:25:05",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "run_complete",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {
+                    "events_sent": 0,
+                    "new_events": 0,
+                    "cached_events": 0,
+                    "searches_used": 0,
+                    "max_searches": 15,
+                    "fetches_used": 0,
+                    "max_fetches": 15,
+                    "validation_fetches_used": 0,
+                    "validation_fetch_limit": 5,
+                    "sent": False,
+                    "send_reason": "telegram_not_configured",
+                    "served_marked": False,
+                    "uncovered_tier1": [],
+                },
+            },
+        ],
+    )
+    result = json.loads(_run_cmd("audit-run", ["--run-id", run_id], tmp_path, monkeypatch))
+    assert result["ok"] is False
+    assert any("run_complete send_reason does not match telegram_send.reason" in error for error in result["errors"])
 
 
 def test_cmd_audit_run_warns_on_implicit_phase_starts(tmp_path, monkeypatch):
@@ -1779,16 +1944,20 @@ def test_format_message_keeps_tmp_files_when_later_command_logic_fails(tmp_path,
     )
     monkeypatch.setattr(telegram_module, "format_scout_message", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
 
-    with pytest.raises(RuntimeError, match="boom"):
-        _run_format_message(
-            ["--saturday", "2026-03-28", "--sunday", "2026-03-29",
-             "--city-events-file", str(city_events_path), "--trips-file", str(trips_path),
-             "--output", str(output)],
-            tmp_path, monkeypatch,
-        )
+    result = _run_format_message(
+        ["--saturday", "2026-03-28", "--sunday", "2026-03-29",
+         "--city-events-file", str(city_events_path), "--trips-file", str(trips_path),
+         "--output", str(output)],
+        tmp_path, monkeypatch,
+    )
 
+    assert result["error_code"] == "unexpected_exception"
+    assert "format-message failed: boom" in result["error"]
     assert city_events_path.exists()
     assert trips_path.exists()
+    failures = _read_python_failures(tmp_path)
+    assert failures[-1]["command"] == "format-message"
+    assert failures[-1]["error_code"] == "unexpected_exception"
 
 
 def test_format_message_mixed_cleanup_deletes_only_skill_tmp_files(tmp_path, monkeypatch):
@@ -1819,17 +1988,64 @@ def test_cmd_send_missing_token_returns_sent_false(tmp_path, monkeypatch):
     msg_file.write_text("Hello", encoding="utf-8")
     output = _run_cmd("send", ["--file", str(msg_file)], tmp_path, monkeypatch)
     result = json.loads(output)
-    assert result == {"sent": False}
+    assert result == {
+        "sent": False,
+        "reason": "telegram_not_configured",
+        "error_code": "telegram_not_configured",
+        "status_code": None,
+        "error": "Missing config: telegram_bot_token, telegram_chat_id",
+        "parts_sent": 0,
+    }
 
 
 def test_cmd_send_logs_run_id(tmp_path, monkeypatch):
+    import weekend_scout.telegram as telegram_module
+
     msg_file = tmp_path / "msg.txt"
     msg_file.write_text("Hello", encoding="utf-8")
+    monkeypatch.setattr(
+        telegram_module,
+        "send_telegram",
+        lambda config, message: {
+            "sent": False,
+            "reason": "send_failed",
+            "error_code": "telegram_http_error",
+            "status_code": 403,
+            "error": "Forbidden",
+            "parts_sent": 0,
+        },
+    )
     _run_cmd("send", ["--file", str(msg_file), "--run-id", "run-xyz"], tmp_path, monkeypatch)
     log_file = tmp_path / "cache" / "action_log.jsonl"
     entry = json.loads(log_file.read_text(encoding="utf-8").strip())
     assert entry["run_id"] == "run-xyz"
     assert entry["action"] == "telegram_send"
+    assert entry["detail"]["reason"] == "send_failed"
+    assert entry["detail"]["error_code"] == "telegram_http_error"
+    assert entry["detail"]["status_code"] == 403
+
+
+def test_run_scoped_command_failure_mirrors_action_log(tmp_path, monkeypatch):
+    output = _run_cmd(
+        "send",
+        ["--file", str(tmp_path / "missing.txt"), "--run-id", "run-err"],
+        tmp_path,
+        monkeypatch,
+    )
+    result = json.loads(output)
+    assert result["error_code"] == "message_file_not_found"
+    failures = _read_python_failures(tmp_path)
+    assert failures[-1]["command"] == "send"
+    assert failures[-1]["failure_id"] == result["failure_id"]
+    log_file = tmp_path / "cache" / "action_log.jsonl"
+    entries = [
+        json.loads(line)
+        for line in log_file.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert entries[-1]["action"] == "command_failed"
+    assert entries[-1]["detail"]["error_code"] == "message_file_not_found"
+    assert entries[-1]["detail"]["failure_id"] == result["failure_id"]
 
 
 # --- cmd_run ---

@@ -91,15 +91,22 @@ Expected response shape:
 
 ## Send handling
 
-`send` returning `{"sent": false}` is a documented delivery outcome, not contract drift, as long
-as the command itself succeeds.
+If a required delivery command returns a top-level `error`, report the human-readable `error`,
+include the `failure_id`, include any short safe detail that was returned, and stop the run without
+inventing a diagnosis.
 
-If `{"sent": true}`:
+`send` returning `{"sent": false, "reason": "telegram_not_configured", ...}` is a documented
+delivery outcome, not contract drift, as long as the command itself succeeds.
+
+`send` returning `{"sent": false, "reason": "send_failed", ...}` is a documented delivery outcome,
+not contract drift, as long as the command itself succeeds.
+
+If `{"sent": true, "reason": "sent", ...}`:
 
 - tell the user the digest was sent to Telegram
 - proceed to served marking
 
-If `{"sent": false}` because Telegram is not configured:
+If `{"sent": false, "reason": "telegram_not_configured", ...}`:
 
 - do **not** mark served
 - tell the user:
@@ -109,11 +116,11 @@ python -m weekend_scout config telegram_bot_token YOUR_BOT_TOKEN
 python -m weekend_scout config telegram_chat_id YOUR_CHAT_ID
 ```
 
-If `{"sent": false}` because Telegram sending failed:
+If `{"sent": false, "reason": "send_failed", ...}`:
 
 - do **not** mark served
-- report the failure
-- suggest checking the configured token and chat ID
+- report the failure briefly using `reason` plus any short returned `error` / `status_code`
+- do **not** guess that Telegram is unconfigured unless `reason` says so
 
 ## Mark served
 
@@ -140,6 +147,7 @@ If send failed because Telegram sending failed:
 
 - `served_marked = false`
 - `send_reason = "send_failed"`
+- `run_complete.send_reason` must copy `send.reason`
 
 ## Run-complete contract
 

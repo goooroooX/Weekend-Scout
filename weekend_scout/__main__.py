@@ -30,8 +30,10 @@ import fnmatch
 import json
 import re
 import sys
+from typing import Any, NoReturn
 
 from weekend_scout.cache import VALIDATION_FETCH_LIMIT
+from weekend_scout.diagnostics import CommandFailure, emit_command_failure
 
 _TARGETED_RETRY_HINTS: dict[str, str] = {
     "de": "Stadtfest Markt Frühlingsfest Wochenende",
@@ -58,9 +60,111 @@ _DIGEST_EVENT_FIELDS: tuple[str, ...] = (
 _TIER_SORT_ORDER: dict[str, int] = {"tier1": 1, "tier2": 2, "tier3": 3, "unknown": 9}
 
 
-def _print_error_and_exit(message: str) -> "NoReturn":
-    print(json.dumps({"error": message}, ensure_ascii=False))
-    sys.exit(1)
+def _print_error_and_exit(
+    message: str,
+    *,
+    error_code: str = "command_failed",
+    detail: dict[str, Any] | None = None,
+    retryable: bool = False,
+    run_id: str | None = None,
+    phase: str | None = None,
+    target_weekend: str | None = None,
+    config: dict[str, Any] | None = None,
+) -> NoReturn:
+    raise CommandFailure(
+        message=message,
+        error_code=error_code,
+        detail=detail or {},
+        retryable=retryable,
+        run_id=run_id,
+        phase=phase,
+        target_weekend=target_weekend,
+        config=config,
+    )
+
+
+_FAILURE_CONTEXT_EXCLUDE = {
+    "json_data",
+    "message",
+    "events",
+    "city_events",
+    "trips",
+    "detail",
+}
+
+
+def _build_failure_context(args: argparse.Namespace) -> dict[str, Any]:
+    """Build a safe diagnostics context from parsed CLI args."""
+    context: dict[str, Any] = {}
+    for key, value in vars(args).items():
+        if key in _FAILURE_CONTEXT_EXCLUDE or value is None:
+            continue
+        if isinstance(value, (str, int, float, bool)):
+            context[key] = value
+    return context
+
+
+def _resolve_target_weekend_arg(args: argparse.Namespace) -> str | None:
+    """Best-effort target weekend extraction for diagnostics."""
+    for attr in ("target_weekend", "saturday", "date"):
+        value = getattr(args, attr, None)
+        if isinstance(value, str) and value:
+            return value
+    run_id = getattr(args, "run_id", None)
+    if isinstance(run_id, str):
+        match = re.fullmatch(r"(\d{4}-\d{2}-\d{2})_\d{4}", run_id)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _load_config_for_diagnostics() -> dict[str, Any] | None:
+    """Best-effort config load so failures land in the active cache dir."""
+    try:
+        from weekend_scout.config import load_config
+
+        return load_config()
+    except Exception:
+        return None
+
+
+def dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser | None = None) -> None:
+    """Run one parsed CLI command through the shared failure wrapper."""
+    handler = COMMANDS.get(args.command)
+    if handler is None:
+        if parser is not None:
+            parser.print_help()
+        raise SystemExit(1)
+
+    try:
+        handler(args)
+    except CommandFailure as exc:
+        emit_command_failure(
+            command=args.command,
+            error_code=exc.error_code,
+            message=exc.message,
+            detail=exc.detail or _build_failure_context(args),
+            retryable=exc.retryable,
+            config=exc.config or _load_config_for_diagnostics(),
+            run_id=exc.run_id or getattr(args, "run_id", None),
+            phase=exc.phase or getattr(args, "phase", None),
+            target_weekend=exc.target_weekend or _resolve_target_weekend_arg(args),
+        )
+    except SystemExit:
+        raise
+    except Exception as exc:
+        emit_command_failure(
+            command=args.command,
+            error_code="unexpected_exception",
+            message=f"{args.command} failed: {exc}",
+            detail=_build_failure_context(args),
+            retryable=False,
+            exception=exc,
+            config=_load_config_for_diagnostics(),
+            run_id=getattr(args, "run_id", None),
+            phase=getattr(args, "phase", None),
+            target_weekend=_resolve_target_weekend_arg(args),
+        )
 
 
 def _is_skill_generated_payload_file(path: "Path", cache_dir: "Path") -> bool:
@@ -144,15 +248,27 @@ def _load_json_argument(
         try:
             raw_value = payload_path.read_text(encoding="utf-8-sig")
         except FileNotFoundError:
-            _print_error_and_exit(f"{option_name}-file not found: {file_path}")
+            _print_error_and_exit(
+                f"{option_name}-file not found: {file_path}",
+                error_code="input_file_not_found",
+                detail={"option": option_name, "path": file_path},
+            )
         except OSError as exc:
-            _print_error_and_exit(f"Failed to read {option_name}-file {file_path}: {exc}")
+            _print_error_and_exit(
+                f"Failed to read {option_name}-file {file_path}: {exc}",
+                error_code="input_file_read_failed",
+                detail={"option": option_name, "path": file_path},
+            )
     elif inline_value is not None:
         raw_value = inline_value
     elif default_json is not None:
         raw_value = default_json
     elif required:
-        _print_error_and_exit(f"Provide {option_name} or {option_name}-file")
+        _print_error_and_exit(
+            f"Provide {option_name} or {option_name}-file",
+            error_code="missing_required_input",
+            detail={"option": option_name},
+        )
     else:
         return None
 
@@ -160,10 +276,18 @@ def _load_json_argument(
         parsed = json.loads(raw_value)
     except json.JSONDecodeError as exc:
         source = f"{option_name}-file {file_path}" if file_path else option_name
-        _print_error_and_exit(f"Invalid JSON in {source}: {exc.msg}")
+        _print_error_and_exit(
+            f"Invalid JSON in {source}: {exc.msg}",
+            error_code="invalid_json",
+            detail={"option": option_name, "source": source},
+        )
 
     if not isinstance(parsed, expected_type):
-        _print_error_and_exit(f"{option_name} must be a {expected_label}")
+        _print_error_and_exit(
+            f"{option_name} must be a {expected_label}",
+            error_code="invalid_json_type",
+            detail={"option": option_name, "expected_type": expected_label},
+        )
 
     if (
         file_path
@@ -183,14 +307,22 @@ def _parse_bool_arg(value: str, *, option_name: str) -> bool:
         return True
     if lowered in {"false", "0", "no"}:
         return False
-    _print_error_and_exit(f"{option_name} must be true or false")
+    _print_error_and_exit(
+        f"{option_name} must be true or false",
+        error_code="invalid_boolean",
+        detail={"option": option_name, "value": value},
+    )
 
 
 def _extract_saturday_from_run_id(run_id: str) -> str:
     """Extract the ISO Saturday prefix from a run_id."""
     match = re.fullmatch(r"(\d{4}-\d{2}-\d{2})_\d{4}", run_id)
     if not match:
-        _print_error_and_exit(f"run_id must look like YYYY-MM-DD_HHMM, got: {run_id}")
+        _print_error_and_exit(
+            f"run_id must look like YYYY-MM-DD_HHMM, got: {run_id}",
+            error_code="invalid_run_id",
+            detail={"run_id": run_id},
+        )
     return match.group(1)
 
 
@@ -277,8 +409,12 @@ def cmd_config(args: argparse.Namespace) -> None:
         key = args.key
         value = args.value
         if key not in config:
-            print(json.dumps({"error": f"Unknown config key: {key}"}))
-            sys.exit(1)
+            _print_error_and_exit(
+                f"Unknown config key: {key}",
+                error_code="unknown_config_key",
+                detail={"key": key},
+                config=config,
+            )
         if value is None:
             print(json.dumps({key: config[key]}, ensure_ascii=False))
             return
@@ -296,8 +432,12 @@ def cmd_config(args: argparse.Namespace) -> None:
                 if not isinstance(value, type(existing)):
                     raise ValueError
         except (ValueError, TypeError, json.JSONDecodeError):
-            print(json.dumps({"error": f"Invalid value for {key}: expected {type(existing).__name__}"}))
-            sys.exit(1)
+            _print_error_and_exit(
+                f"Invalid value for {key}: expected {type(existing).__name__}",
+                error_code="invalid_config_value",
+                detail={"key": key, "expected_type": type(existing).__name__},
+                config=config,
+            )
         config[key] = value
         save_config(config)
         print(json.dumps({"set": {key: value}}))
@@ -315,7 +455,12 @@ def cmd_save(args: argparse.Namespace) -> None:
     cleanup_candidates = []
     if args.from_session:
         if not args.run_id:
-            _print_error_and_exit("--run-id is required with --from-session")
+            _print_error_and_exit(
+                "--run-id is required with --from-session",
+                error_code="missing_run_id",
+                detail={"command": "save", "mode": "from-session"},
+                config=config,
+            )
         finalized = finalize_session_candidates(config, args.run_id)
         events = finalized["candidates"]
     else:
@@ -347,20 +492,51 @@ def cmd_send(args: argparse.Namespace) -> None:
     if args.file:
         from pathlib import Path
         try:
-            message = Path(args.file).read_text(encoding="utf-8")
+            message = Path(args.file).read_text(encoding="utf-8-sig")
         except FileNotFoundError:
-            print(json.dumps({"error": f"File not found: {args.file}"}))
-            sys.exit(1)
+            _print_error_and_exit(
+                f"File not found: {args.file}",
+                error_code="message_file_not_found",
+                detail={"path": args.file},
+                run_id=args.run_id,
+                config=config,
+            )
+        except OSError as exc:
+            _print_error_and_exit(
+                f"Failed to read message file {args.file}: {exc}",
+                error_code="message_file_read_failed",
+                detail={"path": args.file},
+                run_id=args.run_id,
+                config=config,
+            )
     elif args.message:
         message = args.message
     else:
-        print(json.dumps({"error": "Provide --message or --file"}))
-        sys.exit(1)
+        _print_error_and_exit(
+            "Provide --message or --file",
+            error_code="missing_message_input",
+            run_id=args.run_id,
+            config=config,
+        )
 
-    success = send_telegram(config, message)
-    log_action(config, "telegram_send", run_id=args.run_id,
-               detail={"success": success, "char_count": len(message)})
-    print(json.dumps({"sent": success}))
+    send_result = send_telegram(config, message)
+    send_target_weekend = _resolve_target_weekend_arg(args)
+    log_action(
+        config,
+        "telegram_send",
+        run_id=args.run_id,
+        target_weekend=send_target_weekend,
+        detail={
+            "success": send_result["sent"],
+            "reason": send_result["reason"],
+            "error_code": send_result.get("error_code"),
+            "status_code": send_result.get("status_code"),
+            "error": send_result.get("error"),
+            "parts_sent": send_result.get("parts_sent", 0),
+            "char_count": len(message),
+        },
+    )
+    print(json.dumps(send_result, ensure_ascii=False))
 
 
 def cmd_cache_query(args: argparse.Namespace) -> None:
@@ -401,7 +577,12 @@ def cmd_log_search(args: argparse.Namespace) -> None:
         expected_label="JSON array",
     )
     if events is not None and not args.run_id:
-        _print_error_and_exit("--run-id is required with --events or --events-file")
+        _print_error_and_exit(
+            "--run-id is required with --events or --events-file",
+            error_code="missing_run_id",
+            detail={"command": "log-search", "has_events": True},
+            config=config,
+        )
     try:
         result = log_search(
             config=config,
@@ -415,7 +596,14 @@ def cmd_log_search(args: argparse.Namespace) -> None:
             events=events,
         )
     except ValueError as exc:
-        _print_error_and_exit(str(exc))
+        _print_error_and_exit(
+            str(exc),
+            error_code="invalid_log_search_request",
+            detail={"query": args.query, "phase": args.phase},
+            run_id=args.run_id,
+            target_weekend=args.target_weekend,
+            config=config,
+        )
     session_candidate_count = result["session_candidate_count"]
     if events is None and args.run_id:
         session_candidate_count = get_session_candidate_count(config, args.run_id)
@@ -859,7 +1047,12 @@ def _build_init_payload(
         try:
             config["radius_km"] = int(args.radius)
         except ValueError:
-            return {"error": "radius must be an integer"}, None
+            _print_error_and_exit(
+                "radius must be an integer",
+                error_code="invalid_radius",
+                detail={"radius": args.radius},
+                config=config,
+            )
 
     saturday, sunday = next_weekend_dates()
     target_weekend = {"saturday": saturday, "sunday": sunday}
@@ -933,8 +1126,6 @@ def cmd_init(args: argparse.Namespace) -> None:
     output, config = _build_init_payload(args, compact_cache=False)
     if config is None:
         print(json.dumps(output, ensure_ascii=False))
-        if "error" in output:
-            sys.exit(1)
         return
 
     saturday = output["config"]["target_weekend"]["saturday"]
@@ -954,8 +1145,6 @@ def cmd_init_skill(args: argparse.Namespace) -> None:
     output, config = _build_init_payload(args, compact_cache=True)
     if config is None:
         print(json.dumps(output, ensure_ascii=False))
-        if "error" in output:
-            sys.exit(1)
         return
 
     saturday = output["config"]["target_weekend"]["saturday"]
@@ -981,9 +1170,17 @@ def cmd_phase_c_cities(args: argparse.Namespace) -> None:
     from weekend_scout.session_cache import get_session_covered_cities
 
     if args.offset < 0:
-        _print_error_and_exit("--offset must be >= 0")
+        _print_error_and_exit(
+            "--offset must be >= 0",
+            error_code="invalid_offset",
+            detail={"offset": args.offset},
+        )
     if args.limit <= 0:
-        _print_error_and_exit("--limit must be > 0")
+        _print_error_and_exit(
+            "--limit must be > 0",
+            error_code="invalid_limit",
+            detail={"limit": args.limit},
+        )
 
     config = load_config()
     saturday = _extract_saturday_from_run_id(args.run_id)
@@ -1239,8 +1436,11 @@ def cmd_install_skill(args: argparse.Namespace) -> None:
     from pathlib import Path
     skill_data_dir = Path(__file__).resolve().parent / "skill_data"
     if not skill_data_dir.exists():
-        print(json.dumps({"error": "skill_data directory not found in package"}))
-        sys.exit(1)
+        _print_error_and_exit(
+            "skill_data directory not found in package",
+            error_code="skill_data_missing",
+            detail={"path": str(skill_data_dir)},
+        )
 
     platforms = _resolve_platforms(args.platform)
     install_targets = _get_install_targets()
@@ -1482,12 +1682,7 @@ def main() -> None:
 
     parser = build_parser()
     args = parser.parse_args()
-    handler = COMMANDS.get(args.command)
-    if handler:
-        handler(args)
-    else:
-        parser.print_help()
-        sys.exit(1)
+    dispatch_command(args, parser)
 
 
 if __name__ == "__main__":

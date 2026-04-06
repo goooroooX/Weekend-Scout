@@ -16,7 +16,6 @@ from __future__ import annotations
 import datetime
 import html
 import re
-import sys
 from typing import Any
 
 import requests
@@ -82,7 +81,42 @@ def split_message(message: str, max_length: int = TELEGRAM_MAX_LENGTH) -> list[s
     return parts if parts else [""]
 
 
-def send_telegram(config: dict[str, Any], message: str) -> bool:
+def _safe_error_text(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if len(text) > 200:
+        return text[:197] + "..."
+    return text
+
+
+def _telegram_response_description(resp: object) -> str | None:
+    json_reader = getattr(resp, "json", None)
+    if callable(json_reader):
+        try:
+            payload = json_reader()
+        except ValueError:
+            payload = None
+        if isinstance(payload, dict):
+            description = _safe_error_text(payload.get("description"))
+            if description:
+                return description
+    text = _safe_error_text(getattr(resp, "text", None))
+    return text
+
+
+def _network_error_code(exc: requests.RequestException) -> str:
+    message = str(exc).lower()
+    if isinstance(exc, requests.Timeout):
+        return "telegram_timeout"
+    if "10013" in message or "access permissions" in message:
+        return "telegram_network_blocked"
+    return "telegram_network_error"
+
+
+def send_telegram(config: dict[str, Any], message: str) -> dict[str, Any]:
     """Send a message to the configured Telegram chat.
 
     Automatically splits messages longer than 4096 characters.
@@ -93,17 +127,29 @@ def send_telegram(config: dict[str, Any], message: str) -> bool:
         message: Formatted message text (HTML).
 
     Returns:
-        True if all parts were sent successfully, False otherwise.
+        Structured send result with authoritative reason and safe diagnostics.
     """
     token = config.get("telegram_bot_token", "")
     chat_id = config.get("telegram_chat_id", "")
 
     if not token or not chat_id:
-        print("send_telegram: telegram_bot_token or telegram_chat_id not configured", file=sys.stderr)
-        return False
+        missing = []
+        if not token:
+            missing.append("telegram_bot_token")
+        if not chat_id:
+            missing.append("telegram_chat_id")
+        return {
+            "sent": False,
+            "reason": "telegram_not_configured",
+            "error_code": "telegram_not_configured",
+            "status_code": None,
+            "error": f"Missing config: {', '.join(missing)}",
+            "parts_sent": 0,
+        }
 
     url = f"{TELEGRAM_API_BASE}/bot{token}/sendMessage"
     parts = split_message(message)
+    parts_sent = 0
 
     try:
         for part in parts:
@@ -118,11 +164,55 @@ def send_telegram(config: dict[str, Any], message: str) -> bool:
                 timeout=30,
             )
             if resp.status_code != 200:
-                return False
-    except requests.RequestException:
-        return False
+                return {
+                    "sent": False,
+                    "reason": "send_failed",
+                    "error_code": "telegram_http_error",
+                    "status_code": resp.status_code,
+                    "error": _telegram_response_description(resp) or f"HTTP {resp.status_code}",
+                    "parts_sent": parts_sent,
+                }
+            json_reader = getattr(resp, "json", None)
+            if callable(json_reader):
+                try:
+                    payload = json_reader()
+                except ValueError:
+                    return {
+                        "sent": False,
+                        "reason": "send_failed",
+                        "error_code": "telegram_bad_response",
+                        "status_code": resp.status_code,
+                        "error": "Telegram returned a non-JSON success response",
+                        "parts_sent": parts_sent,
+                    }
+                if isinstance(payload, dict) and payload.get("ok") is False:
+                    return {
+                        "sent": False,
+                        "reason": "send_failed",
+                        "error_code": "telegram_bad_response",
+                        "status_code": resp.status_code,
+                        "error": _safe_error_text(payload.get("description")) or "Telegram returned ok=false",
+                        "parts_sent": parts_sent,
+                    }
+            parts_sent += 1
+    except requests.RequestException as exc:
+        return {
+            "sent": False,
+            "reason": "send_failed",
+            "error_code": _network_error_code(exc),
+            "status_code": None,
+            "error": _safe_error_text(exc) or type(exc).__name__,
+            "parts_sent": parts_sent,
+        }
 
-    return True
+    return {
+        "sent": True,
+        "reason": "sent",
+        "error_code": None,
+        "status_code": None,
+        "error": None,
+        "parts_sent": len(parts),
+    }
 
 
 def format_event_block(event: dict[str, Any]) -> str:

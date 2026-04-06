@@ -246,9 +246,10 @@ python -m weekend_scout phase-summary --run-id "<run_id>" --phase <A|B|C|D> --ta
 ```
 
 Required Step 2 CLI calls must succeed before discovery continues. If any such call exits non-zero,
-returns a top-level `error`, or returns a required-success payload indicating failure, stop the run
-and report contract drift. Do **not** repair failed Step 2 state by retroactive logging or manual
-payload synthesis.
+returns a top-level `error`, or returns a required-success payload indicating failure, stop the run,
+show the human-readable `error` plus the `failure_id`, and stop the run without inventing a
+diagnosis. Do **not** repair failed Step 2 state by retroactive logging or manual payload
+synthesis.
 
 ## Phase A: Broad sweep
 
