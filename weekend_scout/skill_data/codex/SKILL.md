@@ -77,7 +77,7 @@ workflow
 - Do **not** open scoring or delivery references during Step 2.
 - Read `references/platform-codex.md` only immediately before the first file-backed Step 2 call
   documented in the discovery reference.
-- If the user invoked `$weekend-scout --cached-only`, follow the cached-only path from that reference.
+- If the user invoked `$weekend-scout --cached-only`, follow the cached-only path from that reference, then continue with the normal Step 3 and Step 5/6 flow.
 - `--cached-only` is a skill invocation argument. Do **not** append it to
   `python -m weekend_scout init` or `python -m weekend_scout init-skill`.
 - Otherwise follow the full Step 2 contract from that reference exactly. The normal-run failure

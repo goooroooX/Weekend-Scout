@@ -2129,6 +2129,97 @@ def test_audit_run_uses_last_telegram_send_after_failed_resend(tmp_path, monkeyp
     assert result["ok"] is True
 
 
+def test_cmd_audit_run_accepts_valid_cached_only_run(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    run_id = "run-cached-only"
+    saturday = "2026-04-04"
+    _write_action_log_fixture(
+        tmp_path,
+        [
+            {
+                "ts": "2026-04-03T12:24:45",
+                "run_id": run_id,
+                "source": "python",
+                "action": "run_init",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"home_city": "Warsaw", "radius_km": 150, "cached_count": 2, "tier1": ["Radom|PL"]},
+            },
+            {
+                "ts": "2026-04-03T12:24:50",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "search",
+                "target_weekend": saturday,
+                "detail": {"reason": "cached_only_requested"},
+            },
+            {
+                "ts": "2026-04-03T12:25:20",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "score_summary",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"total_pool": 2, "city_events_selected": 1, "trip_options": 1},
+            },
+            {
+                "ts": "2026-04-03T12:25:30",
+                "run_id": run_id,
+                "source": "python",
+                "action": "message_formatted",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"city_events": 1, "trips": 1, "char_count": 250},
+            },
+            {
+                "ts": "2026-04-03T12:25:35",
+                "run_id": run_id,
+                "source": "python",
+                "action": "telegram_send",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"success": True, "reason": "sent", "char_count": 250},
+            },
+            {
+                "ts": "2026-04-03T12:25:40",
+                "run_id": run_id,
+                "source": "python",
+                "action": "events_served",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"count": 2},
+            },
+            {
+                "ts": "2026-04-03T12:25:45",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "run_complete",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {
+                    "events_sent": 2,
+                    "new_events": 0,
+                    "cached_events": 2,
+                    "searches_used": 0,
+                    "max_searches": 15,
+                    "fetches_used": 0,
+                    "max_fetches": 15,
+                    "validation_fetches_used": 0,
+                    "validation_fetch_limit": 5,
+                    "sent": True,
+                    "send_reason": "sent",
+                    "served_marked": True,
+                    "uncovered_tier1": ["Radom"],
+                },
+            },
+        ],
+    )
+    result = json.loads(_run_cmd("audit-run", ["--run-id", run_id], tmp_path, monkeypatch))
+    assert result["ok"] is True
+    assert result["summary"]["search_bypass_reason"] == "cached_only_requested"
+
+
 def test_cmd_audit_run_warns_on_implicit_phase_starts(tmp_path, monkeypatch):
     _write_minimal_config(tmp_path)
     run_id = "run-implicit"

@@ -167,6 +167,7 @@ def test_core_runtime_skills_are_short_and_reference_driven():
         assert "Do **not** open `references/search-workflow.md` before setup is complete." in content
         assert "If either setup condition is true, do **not** open any other reference" in content
         assert "`--cached-only` is a skill invocation argument." in content
+        assert "continue with the normal Step 3 and Step 5/6 flow" in content
         assert "python -m weekend_scout audit-run --run-id" not in content
         assert "workflow.audit_command" in content
         assert "workflow.phase_order" not in content
@@ -352,6 +353,10 @@ def test_search_workflow_restores_monolith_guardrails():
     assert "python -m weekend_scout save --run-id \"<run_id>\" --from-session" in content
     assert "`duplicates_merged`" in content
     assert "Store that helper result as `digest_input` and use only `digest_input` for Step 3." in content
+    assert '"reason": "cached_only_requested"' in content
+    assert "Cached-only bypasses the offline pre-check and discovery Phases A-D." in content
+    assert "After this cached-only bypass, continue with the normal Step 3 and Step 5/6 flow." in content
+    assert "Skip this section entirely when invoked with `--cached-only`." in content
     assert "Do **not** append `--cached-only` to" in content
     assert "`python -m weekend_scout init` or `python -m weekend_scout init-skill`." in content
     assert "Finish and log the current batch before requesting the next one." in content

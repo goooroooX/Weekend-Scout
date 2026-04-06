@@ -44,6 +44,18 @@ If invoked with `--cached-only`:
 
 - This is a skill-invocation mode. Do **not** append `--cached-only` to
   `python -m weekend_scout init` or `python -m weekend_scout init-skill`.
+- Do not branch on cache coverage completeness. If cached-only was requested, use this bypass.
+- Cached-only bypasses the offline pre-check and discovery Phases A-D.
+
+Before writing the detail payload, read `references/platform-codex.md`.
+Write `{"reason": "cached_only_requested"}` to `detail_json_path`, then run:
+
+```bash
+python -m weekend_scout log-action --run-id "<run_id>" --action skip \
+  --phase search --target-weekend "<saturday>" --detail-file "$detail_json_path"
+```
+
+Then load the cached weekend rows:
 
 ```bash
 python -m weekend_scout cache-query --date "<saturday>"
@@ -59,8 +71,11 @@ python -m weekend_scout prepare-digest --date "<saturday>"
 ```
 
 Store that helper result as `digest_input` and use only `digest_input` for Step 3.
+After this cached-only bypass, continue with the normal Step 3 and Step 5/6 flow.
 
-## Offline pre-check
+## Offline pre-check (normal discovery only)
+
+Skip this section entirely when invoked with `--cached-only`.
 
 If `cached_covered_cities` already covers every city in `tier1`, log the skip and proceed
 directly to Step 3:

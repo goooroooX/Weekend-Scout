@@ -73,7 +73,7 @@ workflow
 - Before discovery work, read `references/search-workflow.md`.
 - The discovery reference is the sole authority for Step 2 phase lifecycle, helper command order, and authoritative command shapes.
 - Do **not** open scoring or delivery references during Step 2.
-- If the user invoked `weekend-scout --cached-only`, follow the cached-only path from that reference.
+- If the user invoked `weekend-scout --cached-only`, follow the cached-only path from that reference, then continue with the normal Step 3 and Step 5/6 flow.
 - `--cached-only` is a skill invocation argument. Do **not** append it to
   `python -m weekend_scout init` or `python -m weekend_scout init-skill`.
 - Otherwise follow the full Step 2 contract from that reference exactly. The normal-run failure
