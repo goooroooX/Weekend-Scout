@@ -20,6 +20,13 @@ live in `onboarding.md`, `search-workflow.md`, `scoring-and-trips.md`, and `deli
 - `trips_json_path` -> `_tmp_trips.tmp`
 </recommended-paths>
 
+<approval-retry-rule>
+- Only request Codex approval / outside-sandbox execution when a stage reference explicitly authorizes it.
+- For Telegram resend fallback, rerun the exact same `python -m weekend_scout send ...` command once with approval-gated outside-sandbox execution.
+- Do not change arguments, do not rerun `format-message`, and do not broaden this to any other command or failure class.
+- If approval is denied, or the retried command still returns `{"sent": false, ...}`, stop retrying and treat that result as final.
+</approval-retry-rule>
+
 <powershell-example>
 ```powershell
 $cache_dir = '.weekend_scout/cache'

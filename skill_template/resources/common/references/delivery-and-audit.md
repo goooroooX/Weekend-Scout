@@ -132,8 +132,19 @@ python -m weekend_scout config telegram_chat_id YOUR_CHAT_ID
 
 If `{"sent": false, "reason": "send_failed", ...}`:
 
+- if `error_code = "telegram_network_blocked"`, handle it as a local execution restriction, not a bad Telegram token/chat configuration
+#@IF !codex
 - do **not** mark served
 - report the failure briefly using `reason` plus any short returned `error` / `status_code`
+- do **not** guess that Telegram is unconfigured unless `reason` says so
+#@ENDIF
+#@IF codex
+- if `error_code = "telegram_network_blocked"`, request Codex approval to rerun the exact same `python -m weekend_scout send --file "<path from written>" --run-id "<run_id>"` command once outside the sandbox
+- do **not** rerun `format-message`, do **not** change the file path, and do **not** retry more than once
+- if the approved retry returns `{"sent": true, "reason": "sent", ...}`, proceed to served marking
+- if approval is denied, or the retry still returns `{"sent": false, ...}`, do **not** mark served and treat the second result as final
+- for any other `send_failed` `error_code`, do **not** request elevated resend; report the failure briefly using `reason` plus any short returned `error` / `status_code`
+#@ENDIF
 - do **not** guess that Telegram is unconfigured unless `reason` says so
 
 ## Mark served

@@ -114,8 +114,10 @@ python -m weekend_scout config telegram_chat_id YOUR_CHAT_ID
 
 If `{"sent": false, "reason": "send_failed", ...}`:
 
+- if `error_code = "telegram_network_blocked"`, handle it as a local execution restriction, not a bad Telegram token/chat configuration
 - do **not** mark served
 - report the failure briefly using `reason` plus any short returned `error` / `status_code`
+- do **not** guess that Telegram is unconfigured unless `reason` says so
 - do **not** guess that Telegram is unconfigured unless `reason` says so
 
 ## Mark served

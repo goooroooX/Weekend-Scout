@@ -855,6 +855,7 @@ def audit_run(config: dict[str, Any], run_id: str) -> dict[str, Any]:
         elif action == "message_formatted":
             message_formatted_entry = entry
         elif action == "telegram_send":
+            # Delivery retries are allowed; the last telegram_send entry is authoritative.
             telegram_send_entry = entry
         elif action == "events_served":
             events_served_entry = entry

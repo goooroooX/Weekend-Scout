@@ -242,6 +242,25 @@ def test_codex_platform_reference_has_dedicated_setup_transport_example():
         assert 'python -m weekend_scout setup --json-file "$setup_json_path"' in content
 
 
+def test_codex_delivery_reference_has_one_shot_network_blocked_resend():
+    codex_delivery = _read_text(Path(".agents/skills/weekend-scout/references/delivery-and-audit.md"))
+    claude_delivery = _read_text(Path(".claude/skills/weekend-scout/references/delivery-and-audit.md"))
+    openclaw_delivery = _read_text(Path(".openclaw/skills/weekend-scout/references/delivery-and-audit.md"))
+    codex_platform = _read_text(Path(".agents/skills/weekend-scout/references/platform-codex.md"))
+
+    assert 'error_code = "telegram_network_blocked"' in codex_delivery
+    assert 'request Codex approval to rerun the exact same `python -m weekend_scout send --file "<path from written>" --run-id "<run_id>"` command once outside the sandbox' in codex_delivery
+    assert "do **not** rerun `format-message`" in codex_delivery
+    assert "do **not** retry more than once" in codex_delivery
+    assert "if approval is denied" in codex_delivery
+
+    assert 'request Codex approval' not in claude_delivery
+    assert 'request Codex approval' not in openclaw_delivery
+
+    assert "Only request Codex approval / outside-sandbox execution when a stage reference explicitly authorizes it." in codex_platform
+    assert "rerun the exact same `python -m weekend_scout send ...` command once with approval-gated outside-sandbox execution" in codex_platform
+
+
 def test_search_workflow_restores_monolith_guardrails():
     content = _read_text(Path("skill_template/resources/common/references/search-workflow.md"))
     phase_a = content.split("## Phase A: Broad sweep", 1)[1].split("## Phase B: Aggregator deep-dive", 1)[0]
