@@ -431,7 +431,7 @@ def cmd_log_search(args: argparse.Namespace) -> None:
 def cmd_log_action(args: argparse.Namespace) -> None:
     """Append a structured action log entry to action_log.jsonl."""
     from weekend_scout.config import load_config, get_cache_dir
-    from weekend_scout.cache import log_action
+    from weekend_scout.cache import ensure_phase_started, log_action
 
     config = load_config()
     cleanup_candidates = []
@@ -445,6 +445,14 @@ def cmd_log_action(args: argparse.Namespace) -> None:
         expected_label="JSON object",
         default_json="{}",
     )
+    if (args.action == "skip" and args.phase in {"A", "B", "C", "D"}):
+        ensure_phase_started(
+            config,
+            run_id=args.run_id,
+            phase=args.phase,
+            target_weekend=args.target_weekend,
+            trigger=f"log_action:skip:{args.phase}",
+        )
     log_action(
         config,
         args.action,
@@ -964,7 +972,12 @@ def cmd_phase_c_cities(args: argparse.Namespace) -> None:
     """Return one filtered phase-C batch for tier2 or tier3."""
     from weekend_scout.config import load_config, get_cache_dir
     from weekend_scout.cities import get_city_list, generate_targeted_by_country
-    from weekend_scout.cache import get_searches_this_week, log_action, query_events_summary
+    from weekend_scout.cache import (
+        ensure_phase_started,
+        get_searches_this_week,
+        log_action,
+        query_events_summary,
+    )
     from weekend_scout.session_cache import get_session_covered_cities
 
     if args.offset < 0:
@@ -1018,6 +1031,13 @@ def cmd_phase_c_cities(args: argparse.Namespace) -> None:
         "next_offset": next_offset if next_offset < len(filtered_cards) else None,
         "request_note": "Finish and log the current batch before requesting the next batch.",
     }
+    ensure_phase_started(
+        config,
+        run_id=args.run_id,
+        phase="C",
+        target_weekend=saturday,
+        trigger="phase_c_batch_requested",
+    )
     log_action(
         config,
         "phase_c_batch_requested",

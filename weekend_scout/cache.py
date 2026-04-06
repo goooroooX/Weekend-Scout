@@ -401,6 +401,14 @@ def log_search(
             (query, today, target_weekend, result_count,
              json.dumps(cities_covered), phase, run_id, events_discovered),
         )
+    if run_id is not None and phase in DISCOVERY_PHASE_MAP:
+        ensure_phase_started(
+            config,
+            run_id=run_id,
+            phase=DISCOVERY_PHASE_MAP[phase],
+            target_weekend=target_weekend,
+            trigger=f"log_search:{phase}",
+        )
     action = "fetch" if phase in ("aggregator", "verification") else "search"
     log_action(config, action, phase=phase, run_id=run_id, source="skill",
                target_weekend=target_weekend,
@@ -498,6 +506,35 @@ def _existing_run_entry(
             continue
         return entry
     return None
+
+
+def ensure_phase_started(
+    config: dict[str, Any],
+    *,
+    run_id: str | None,
+    phase: str,
+    target_weekend: str | None,
+    trigger: str,
+) -> bool:
+    """Ensure a run has a phase_start entry before any phase-scoped activity."""
+    if run_id is None or target_weekend is None or phase not in PHASES:
+        return False
+
+    entries = read_action_log(config, run_id=run_id)
+    for action_name in ("phase_start", "skip", "phase_summary"):
+        if _existing_run_entry(entries, action=action_name, phase=phase) is not None:
+            return False
+
+    log_action(
+        config,
+        "phase_start",
+        phase=phase,
+        detail={"implicit": True, "trigger": trigger},
+        run_id=run_id,
+        source="python",
+        target_weekend=target_weekend,
+    )
+    return True
 
 
 def summarize_run_activity(
@@ -782,6 +819,8 @@ def audit_run(config: dict[str, Any], run_id: str) -> dict[str, Any]:
         for phase in PHASES
     }
     phase_skip_reasons: dict[str, str | None] = {}
+    implicit_phase_starts: set[str] = set()
+    prestart_activity_phases: set[str] = set()
 
     search_bypass_reason: str | None = None
     search_bypass_index: int | None = None
@@ -831,6 +870,9 @@ def audit_run(config: dict[str, Any], run_id: str) -> dict[str, Any]:
                 errors.append(f"Discovery action {action!r} occurred after Phase D completed")
             if search_bypass_index is not None:
                 warnings.append("Search bypass skip was logged, but discovery actions still ran")
+            if phase_state[phase_name] == "not_seen" and phase_name not in prestart_activity_phases:
+                errors.append(f"Phase {phase_name} has activity before phase_start")
+                prestart_activity_phases.add(phase_name)
             if action == "search":
                 phase_activity[phase_name]["searches"] += 1
                 total_searches += 1
@@ -865,6 +907,12 @@ def audit_run(config: dict[str, Any], run_id: str) -> dict[str, Any]:
                 continue
             phase_state[phase] = "started"
             phase_started_at[phase] = entry_index
+            if detail.get("implicit") is True and phase not in implicit_phase_starts:
+                trigger = str(detail.get("trigger") or "unknown")
+                warnings.append(
+                    f"Phase {phase} phase_start was inserted implicitly by python (trigger: {trigger})"
+                )
+                implicit_phase_starts.add(phase)
         elif action == "phase_summary":
             if phase_state[phase] != "started":
                 errors.append(f"Phase {phase} has phase_summary without a matching phase_start")
@@ -879,6 +927,8 @@ def audit_run(config: dict[str, Any], run_id: str) -> dict[str, Any]:
             if phase == "D":
                 d_complete_index = entry_index
         elif action == "skip":
+            if phase_state[phase] != "started":
+                errors.append(f"Phase {phase} has skip without a matching phase_start")
             if phase in phase_completed_at:
                 errors.append(f"Phase {phase} has multiple completion entries")
                 continue
@@ -889,6 +939,10 @@ def audit_run(config: dict[str, Any], run_id: str) -> dict[str, Any]:
             current_phase_idx = min(phase_idx + 1, len(PHASES) - 1)
             if phase == "D":
                 d_complete_index = entry_index
+        elif action == "phase_c_batch_requested" and phase == "C":
+            if phase_state["C"] == "not_seen" and "C" not in prestart_activity_phases:
+                errors.append("Phase C has activity before phase_start")
+                prestart_activity_phases.add("C")
 
     phase_entries_seen = any(
         entry.get("phase") in PHASE_RANK and entry.get("action") in {"phase_start", "phase_summary", "skip"}

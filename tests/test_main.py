@@ -1033,6 +1033,80 @@ def test_cmd_phase_c_cities_accepts_deprecated_searches_used_noop(tmp_path, monk
     assert "reason" not in result
 
 
+def test_cmd_log_search_implicitly_starts_phase_for_targeted_activity(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    _run_cmd(
+        "log-search",
+        [
+            "--query", "Potsdam query",
+            "--target-weekend", "2026-04-04",
+            "--phase", "targeted",
+            "--cities", '["Potsdam"]',
+            "--run-id", "run-c",
+        ],
+        tmp_path, monkeypatch,
+    )
+    log_entries = [json.loads(line) for line in (tmp_path / "cache" / "action_log.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert log_entries[0]["action"] == "phase_start"
+    assert log_entries[0]["phase"] == "C"
+    assert log_entries[0]["source"] == "python"
+    assert log_entries[0]["detail"] == {"implicit": True, "trigger": "log_search:targeted"}
+    assert log_entries[1]["action"] == "search"
+    assert log_entries[1]["phase"] == "targeted"
+
+    result = json.loads(
+        _run_cmd(
+            "phase-summary",
+            ["--run-id", "run-c", "--phase", "C", "--target-weekend", "2026-04-04"],
+            tmp_path, monkeypatch,
+        )
+    )
+    assert result["logged"] is True
+    assert result["detail"]["searches_used_in_phase"] == 1
+
+
+def test_cmd_phase_c_cities_implicitly_starts_phase_c(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    import weekend_scout.cities as cities_module
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {"tier1": [], "tier2": ["Berlin|DE", "Leipzig|DE"], "tier3": []},
+    )
+    _run_cmd(
+        "phase-c-cities",
+        ["--run-id", "2026-04-04_1200", "--tier", "2", "--offset", "0", "--limit", "6"],
+        tmp_path, monkeypatch,
+    )
+    log_entries = [json.loads(line) for line in (tmp_path / "cache" / "action_log.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert log_entries[0]["action"] == "phase_start"
+    assert log_entries[0]["phase"] == "C"
+    assert log_entries[0]["detail"] == {"implicit": True, "trigger": "phase_c_batch_requested"}
+    assert log_entries[1]["action"] == "phase_c_batch_requested"
+    assert log_entries[1]["phase"] == "C"
+
+
+def test_cmd_log_action_skip_implicitly_starts_phase(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    _run_cmd(
+        "log-action",
+        [
+            "--run-id", "run-skip",
+            "--action", "skip",
+            "--phase", "B",
+            "--target-weekend", "2026-04-04",
+            "--detail", '{"reason":"no_aggregator_urls"}',
+        ],
+        tmp_path, monkeypatch,
+    )
+    log_entries = [json.loads(line) for line in (tmp_path / "cache" / "action_log.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert log_entries[0]["action"] == "phase_start"
+    assert log_entries[0]["phase"] == "B"
+    assert log_entries[0]["detail"] == {"implicit": True, "trigger": "log_action:skip:B"}
+    assert log_entries[1]["action"] == "skip"
+    assert log_entries[1]["phase"] == "B"
+
+
 def test_cmd_phase_summary_logs_canonical_counts(tmp_path, monkeypatch):
     _write_minimal_config(tmp_path)
     _write_action_log_fixture(
@@ -1206,6 +1280,25 @@ def test_cmd_audit_run_flags_known_phase_drift(tmp_path, monkeypatch):
     assert any("phase_summary without a matching phase_start" in error for error in result["errors"])
 
 
+def test_cmd_audit_run_flags_phase_activity_before_phase_start(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    _write_action_log_fixture(
+        tmp_path,
+        [
+            {"ts": "2026-04-06T19:26:53", "run_id": "run-c-drift", "source": "python", "action": "run_init", "phase": None, "target_weekend": "2026-04-11", "detail": {"home_city": "Berlin", "radius_km": 150, "cached_count": 9, "tier1": ["Potsdam|DE"]}},
+            {"ts": "2026-04-06T19:27:04", "run_id": "run-c-drift", "source": "skill", "action": "phase_start", "phase": "A", "target_weekend": "2026-04-11", "detail": {}},
+            {"ts": "2026-04-06T19:27:17", "run_id": "run-c-drift", "source": "skill", "action": "phase_summary", "phase": "A", "target_weekend": "2026-04-11", "detail": {"searches_used_in_phase": 0, "fetches_used_in_phase": 0, "new_events_in_phase": 0, "cumulative_searches_used": 0, "cumulative_fetches_used": 0}},
+            {"ts": "2026-04-06T19:27:20", "run_id": "run-c-drift", "source": "skill", "action": "skip", "phase": "B", "target_weekend": "2026-04-11", "detail": {"reason": "no_aggregator_urls"}},
+            {"ts": "2026-04-06T19:27:28", "run_id": "run-c-drift", "source": "skill", "action": "search", "phase": "targeted", "target_weekend": "2026-04-11", "detail": {"query": "Potsdam retry", "result_count": 0, "cities": ["Potsdam"], "events_discovered": 0}},
+            {"ts": "2026-04-06T19:27:47", "run_id": "run-c-drift", "source": "skill", "action": "phase_c_batch_requested", "phase": "C", "target_weekend": "2026-04-11", "detail": {"tier": 2, "offset": 0, "limit": 6, "covered_count": 4, "returned_count": 6, "has_more": True, "next_offset": 6}},
+        ],
+    )
+    result = json.loads(_run_cmd("audit-run", ["--run-id", "run-c-drift"], tmp_path, monkeypatch))
+    assert result["ok"] is False
+    assert any("Phase C has activity before phase_start" in error for error in result["errors"])
+    assert any("Phase B has skip without a matching phase_start" in error for error in result["errors"])
+
+
 def test_cmd_audit_run_default_is_advisory(tmp_path, monkeypatch):
     _write_minimal_config(tmp_path)
     fixture_path = Path("tests/fixtures/run_2026-04-03_1529.jsonl")
@@ -1298,6 +1391,15 @@ def test_cmd_audit_run_accepts_valid_run(tmp_path, monkeypatch):
                 "ts": "2026-04-03T12:25:05",
                 "run_id": "run-ok",
                 "source": "skill",
+                "action": "phase_start",
+                "phase": "B",
+                "target_weekend": "2026-04-04",
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:25:06",
+                "run_id": "run-ok",
+                "source": "skill",
                 "action": "skip",
                 "phase": "B",
                 "target_weekend": "2026-04-04",
@@ -1307,6 +1409,15 @@ def test_cmd_audit_run_accepts_valid_run(tmp_path, monkeypatch):
                 "ts": "2026-04-03T12:25:10",
                 "run_id": "run-ok",
                 "source": "skill",
+                "action": "phase_start",
+                "phase": "C",
+                "target_weekend": "2026-04-04",
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:25:11",
+                "run_id": "run-ok",
+                "source": "skill",
                 "action": "skip",
                 "phase": "C",
                 "target_weekend": "2026-04-04",
@@ -1314,6 +1425,15 @@ def test_cmd_audit_run_accepts_valid_run(tmp_path, monkeypatch):
             },
             {
                 "ts": "2026-04-03T12:25:15",
+                "run_id": "run-ok",
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "D",
+                "target_weekend": "2026-04-04",
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:25:16",
                 "run_id": "run-ok",
                 "source": "skill",
                 "action": "skip",
@@ -1495,6 +1615,81 @@ def test_successful_send_flow_audits_ok_with_run_scoped_events_served(tmp_path, 
 
     result = json.loads(_run_cmd("audit-run", ["--run-id", run_id], tmp_path, monkeypatch))
     assert result["ok"] is True
+
+
+def test_cmd_audit_run_warns_on_implicit_phase_starts(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    run_id = "run-implicit"
+    saturday = "2026-04-04"
+
+    _run_cmd(
+        "log-action",
+        [
+            "--run-id", run_id,
+            "--action", "run_init",
+            "--target-weekend", saturday,
+            '--detail', '{"home_city":"Warsaw","radius_km":150,"cached_count":0,"tier1":["Radom|PL"]}',
+            "--source", "python",
+        ],
+        tmp_path, monkeypatch,
+    )
+    for phase, reason in (
+        ("A", "all_queries_in_done_q"),
+        ("B", "no_aggregator_urls"),
+    ):
+        _run_cmd(
+            "log-action",
+            [
+                "--run-id", run_id,
+                "--action", "skip",
+                "--phase", phase,
+                "--target-weekend", saturday,
+                "--detail", json.dumps({"reason": reason}),
+            ],
+            tmp_path, monkeypatch,
+        )
+    _run_cmd(
+        "log-search",
+        [
+            "--query", "Radom query",
+            "--target-weekend", saturday,
+            "--phase", "targeted",
+            "--cities", '["Radom"]',
+            "--run-id", run_id,
+        ],
+        tmp_path, monkeypatch,
+    )
+    _run_cmd(
+        "phase-summary",
+        ["--run-id", run_id, "--phase", "C", "--target-weekend", saturday],
+        tmp_path, monkeypatch,
+    )
+    _run_cmd(
+        "log-action",
+        [
+            "--run-id", run_id,
+            "--action", "skip",
+            "--phase", "D",
+            "--target-weekend", saturday,
+            '--detail', '{"reason":"all_confirmed"}',
+        ],
+        tmp_path, monkeypatch,
+    )
+    _run_cmd(
+        "run-complete",
+        [
+            "--run-id", run_id,
+            "--target-weekend", saturday,
+            "--events-sent", "0",
+            "--sent", "false",
+            "--send-reason", "telegram_not_configured",
+            "--served-marked", "false",
+        ],
+        tmp_path, monkeypatch,
+    )
+    result = json.loads(_run_cmd("audit-run", ["--run-id", run_id], tmp_path, monkeypatch))
+    assert result["ok"] is True
+    assert any("inserted implicitly by python" in warning for warning in result["warnings"])
 
 
 # --- cmd_cache_mark_served ---

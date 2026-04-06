@@ -244,6 +244,10 @@ def test_codex_platform_reference_has_dedicated_setup_transport_example():
 
 def test_search_workflow_restores_monolith_guardrails():
     content = _read_text(Path("skill_template/resources/common/references/search-workflow.md"))
+    phase_a = content.split("## Phase A: Broad sweep", 1)[1].split("## Phase B: Aggregator deep-dive", 1)[0]
+    phase_b = content.split("## Phase B: Aggregator deep-dive", 1)[1].split("## Phase C: Targeted city searches", 1)[0]
+    phase_c = content.split("## Phase C: Targeted city searches", 1)[1].split("## Phase D: Verification", 1)[0]
+    phase_d = content.split("## Phase D: Verification", 1)[1]
 
     assert "## Event filter" in content
     assert "### Status line templates" in content
@@ -273,6 +277,11 @@ def test_search_workflow_restores_monolith_guardrails():
     assert "max_searches * 0.6" not in content
     assert "max_searches * 0.8" not in content
     assert "--searches-used" not in content
+    assert "Otherwise:" not in content
+    assert "Reset phase counters" not in content
+    assert "phase_searches" not in content
+    assert "phase_fetches" not in content
+    assert "phase_new_events" not in content
     assert "Show the progress line." not in content
     assert "Do **not** skip tier2 or tier3 because coverage looks good elsewhere." in content
     assert "validation_fetches_used/validation_fetch_limit" in content
@@ -332,6 +341,10 @@ def test_search_workflow_restores_monolith_guardrails():
     assert "phase-summary --run-id \"<run_id>\" --phase C --target-weekend \"<saturday>\"" in content
     assert "phase-summary --run-id \"<run_id>\" --phase D --target-weekend \"<saturday>\"" in content
     assert "Do **not** call `phase-summary` between tier batches." in content
+    assert phase_a.index("1. Log Phase A start:") < phase_a.index("all_queries_in_done_q")
+    assert phase_b.index("1. Log Phase B start:") < phase_b.index("no_aggregator_urls")
+    assert phase_c.index("1. Log Phase C start:") < phase_c.index("all_cities_covered")
+    assert phase_d.index("1. Log Phase D start:") < phase_d.index("all_confirmed")
 
 
 def test_delivery_reference_uses_helper_commands_and_debug_audit():

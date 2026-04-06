@@ -83,17 +83,11 @@ Initialize before Phase A:
 - `validation_fetches_used = 0`
 - `validation_fetch_limit = workflow.phase_d.validation_fetch_limit`
 
-Initialize at the start of every phase A/B/C/D:
-
-- `phase_searches = 0`
-- `phase_fetches = 0`
-- `phase_new_events = 0`
-
 Track usage explicitly:
 
-- Increment `searches_used` and `phase_searches` after every `WebSearch`.
-- Increment `fetches_used` and `phase_fetches` after every discovery `WebFetch` in Phases B/C.
-- Increment `validation_fetches_used` and `phase_fetches` after every verification `WebFetch` in Phase D.
+- Increment `searches_used` after every `WebSearch`.
+- Increment `fetches_used` after every discovery `WebFetch` in Phases B/C.
+- Increment `validation_fetches_used` after every verification `WebFetch` in Phase D.
 - Keep only the current action's event payload in memory. The CLI owns the canonical run-level candidate set.
 - Before any `WebSearch`, stop if `searches_used >= max_searches`.
 - Before any discovery `WebFetch`, stop if `fetches_used >= max_fetches`.
@@ -162,7 +156,7 @@ Action triplet rule for this step:
 1. Gate on `searches_used >= max_searches`.
 2. Show the exact `SEARCH STATUS` line.
 3. Execute `WebSearch(query)`.
-4. Increment `searches_used` and `phase_searches`.
+4. Increment `searches_used`.
 5. Keep only relevant outdoor weekend events.
 6. Log immediately with `log-search`.
 7. Do **not** start another web action until the matching `log-search` succeeds.
@@ -191,7 +185,7 @@ Action triplet rule for this step:
    - discovery fetch in Phases B/C: show the exact `DISCOVERY FETCH STATUS` line
    - verification fetch in Phase D: show the exact `VALIDATION FETCH STATUS` line
 3. Execute `WebFetch(url, prompt)`.
-4. Increment the correct counter and `phase_fetches`:
+4. Increment the correct counter:
    - discovery fetch in Phases B/C: increment `fetches_used`
    - verification fetch in Phase D: increment `validation_fetches_used`
 5. Keep only relevant outdoor weekend events.
@@ -260,15 +254,6 @@ payload synthesis.
 
 Use `workflow.phase_a.queries` in the emitted order.
 
-Skip check: if every broad query card is already marked `query_already_done`, log `skip` for Phase A and jump to Phase B.
-
-```bash
-python -m weekend_scout log-action --run-id "<run_id>" --action skip \
-  --phase A --target-weekend "<saturday>" --detail '{"reason": "all_queries_in_done_q"}'
-```
-
-Otherwise:
-
 1. Log Phase A start:
 
 ```bash
@@ -276,8 +261,14 @@ python -m weekend_scout log-action --run-id "<run_id>" --action phase_start \
   --phase A --target-weekend "<saturday>"
 ```
 
-2. Reset phase counters.
-3. For each broad query card:
+2. If every broad query card is already marked `query_already_done`, log `skip` for Phase A and jump to Phase B.
+
+```bash
+python -m weekend_scout log-action --run-id "<run_id>" --action skip \
+  --phase A --target-weekend "<saturday>" --detail '{"reason": "all_queries_in_done_q"}'
+```
+
+3. Otherwise, for each broad query card:
    - skip cards already marked `query_already_done`
    - execute `SEARCH STEP` with `phase_label = broad`
    - keep direct event hits immediately
@@ -293,15 +284,6 @@ python -m weekend_scout phase-summary --run-id "<run_id>" --phase A --target-wee
 
 ## Phase B: Aggregator deep-dive
 
-Skip if no aggregator URLs were queued in Phase A.
-
-```bash
-python -m weekend_scout log-action --run-id "<run_id>" --action skip \
-  --phase B --target-weekend "<saturday>" --detail '{"reason": "no_aggregator_urls"}'
-```
-
-Otherwise:
-
 1. Log Phase B start:
 
 ```bash
@@ -309,8 +291,14 @@ python -m weekend_scout log-action --run-id "<run_id>" --action phase_start \
   --phase B --target-weekend "<saturday>"
 ```
 
-2. Reset phase counters.
-3. For each queued aggregator URL, execute `FETCH STEP` with `phase_label = aggregator` and this prompt:
+2. If no aggregator URLs were queued in Phase A, log `skip` for Phase B and jump to Phase C.
+
+```bash
+python -m weekend_scout log-action --run-id "<run_id>" --action skip \
+  --phase B --target-weekend "<saturday>" --detail '{"reason": "no_aggregator_urls"}'
+```
+
+3. Otherwise, for each queued aggregator URL, execute `FETCH STEP` with `phase_label = aggregator` and this prompt:
 
 Queued aggregator URL work in Phase B uses the exact `DISCOVERY FETCH STATUS` line.
 Every Phase B web action must be `DISCOVERY FETCH STATUS` -> `WebFetch(url, prompt)` -> `log-search --phase aggregator`.
@@ -343,15 +331,6 @@ Rules:
 - Follow the emitted tier order exactly.
 - Do **not** skip tier2 or tier3 because coverage looks good elsewhere. Sweep later tiers deterministically while main search budget remains.
 
-If all cities in all tiers are already covered, log `skip` for Phase C and jump to Phase D.
-
-```bash
-python -m weekend_scout log-action --run-id "<run_id>" --action skip \
-  --phase C --target-weekend "<saturday>" --detail '{"reason": "all_cities_covered"}'
-```
-
-Otherwise:
-
 1. Log Phase C start:
 
 ```bash
@@ -359,8 +338,14 @@ python -m weekend_scout log-action --run-id "<run_id>" --action phase_start \
   --phase C --target-weekend "<saturday>"
 ```
 
-2. Reset phase counters.
-3. Search cities in priority order: tier1 first, then tier2, then tier3. Stop only when the main search budget is exhausted or the current tier is fully exhausted.
+2. If all cities in all tiers are already covered, log `skip` for Phase C and jump to Phase D.
+
+```bash
+python -m weekend_scout log-action --run-id "<run_id>" --action skip \
+  --phase C --target-weekend "<saturday>" --detail '{"reason": "all_cities_covered"}'
+```
+
+3. Otherwise, search cities in priority order: tier1 first, then tier2, then tier3. Stop only when the main search budget is exhausted or the current tier is fully exhausted.
 
 Tier 1:
 
@@ -435,15 +420,6 @@ python -m weekend_scout phase-summary --run-id "<run_id>" --phase C --target-wee
 Use the fixed validation reserve from `workflow.phase_d.validation_fetch_limit`.
 Do **not** count Phase D fetches against `max_fetches`.
 
-Skip if all top candidates are already `confidence: "confirmed"`.
-
-```bash
-python -m weekend_scout log-action --run-id "<run_id>" --action skip \
-  --phase D --target-weekend "<saturday>" --detail '{"reason": "all_confirmed"}'
-```
-
-Otherwise:
-
 1. Log Phase D start:
 
 ```bash
@@ -451,8 +427,14 @@ python -m weekend_scout log-action --run-id "<run_id>" --action phase_start \
   --phase D --target-weekend "<saturday>"
 ```
 
-2. Reset phase counters.
-3. Load the canonical weekend candidate set:
+2. If all top candidates are already `confidence: "confirmed"`, log `skip` for Phase D.
+
+```bash
+python -m weekend_scout log-action --run-id "<run_id>" --action skip \
+  --phase D --target-weekend "<saturday>" --detail '{"reason": "all_confirmed"}'
+```
+
+3. Otherwise, load the canonical weekend candidate set:
 
 ```bash
 python -m weekend_scout session-query --run-id "<run_id>"
