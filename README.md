@@ -6,9 +6,9 @@ and delivers them to Telegram.
 
 ## Supported Platforms
 
-- **Claude Code** — end-to-end tested, primary development platform
-- **OpenAI Codex** — end-to-end tested, generated from shared template
-- **OpenClaw** — skill compatible, generated from shared template
+- **Claude Code** 
+- **OpenAI Codex** 
+- **OpenClaw** 
 - Any agent supporting the Agent Skills standard (agentskills.io)
 
 ## Installation
@@ -204,9 +204,9 @@ Cache files (database, city lists, logs, GeoNames data) live in:
 
 Phase D verification uses a separate fixed reserve of 5 WebFetch calls and does not consume `max_fetches`.
 
-## Supported Countries
+## Supported Languages
 
-27 countries with native-language search queries:
+27 native-language search queries supported:
 Poland, Germany, France, Czech Republic, Slovakia, Austria, Hungary, Ukraine,
 Lithuania, Latvia, Estonia, Belarus, Italy, Spain, Portugal, Netherlands, Sweden,
 Norway, Denmark, Finland, Romania, Croatia, Bulgaria, Serbia, Greece, Turkey, Russia.
