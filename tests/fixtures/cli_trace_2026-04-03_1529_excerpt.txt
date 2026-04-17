@@ -1,0 +1,10 @@
+• Ran python -m weekend_scout init-skill
+  {"needs_setup": true, "message": "Weekend Scout is not configured. Run: python -m weekend_scout setup"}
+
+• Ran Get-Content -LiteralPath 'D:\Work\Weekend-Scout\.agents\skills\weekend-scout\references\onboarding.md'
+
+• Ran Get-Content -LiteralPath 'D:\Work\Weekend-Scout\.agents\skills\weekend-scout\references\search-workflow.md'
+
+• Weekend Scout needs a quick one-time setup. What city do you live in, and how far in km are you willing to drive for a
+
+• Searched Otwock imprezy plenerowe 4 kwietnia 2026
