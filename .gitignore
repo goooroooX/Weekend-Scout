@@ -28,6 +28,7 @@ MANIFEST
 
 # project-specific
 .kilo/
+.claude/settings.local.json
 pytest-of-nikodim/
 prompts/
 /ws_audit_*/
