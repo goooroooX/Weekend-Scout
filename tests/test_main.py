@@ -1,0 +1,4092 @@
+"""Tests for weekend_scout.__main__ CLI commands."""
+
+import json
+import sys
+import pytest
+from pathlib import Path
+
+
+@pytest.fixture(autouse=True)
+def _disable_country_alternate_name_downloads(monkeypatch):
+    import weekend_scout.cities as cities_module
+
+    monkeypatch.setattr(
+        cities_module,
+        "_download_zip",
+        lambda _url, _zip_path: (_ for _ in ()).throw(
+            RuntimeError("alternate-name download disabled in tests")
+        ),
+    )
+
+
+@pytest.fixture
+def patched_config(tmp_path, monkeypatch):
+    """Redirect config module to a temp directory for isolation."""
+    import weekend_scout.config as cfg_module
+    config_file = tmp_path / "config.yaml"
+    monkeypatch.setattr(cfg_module, "get_config_path", lambda: config_file)
+    monkeypatch.setattr(cfg_module, "get_config_dir", lambda: tmp_path)
+    return tmp_path
+
+
+def _run_config(args: list[str], tmp_path, monkeypatch) -> dict:
+    """Helper: call cmd_config with given args, return parsed JSON output."""
+    import weekend_scout.config as cfg_module
+    config_file = tmp_path / "config.yaml"
+    monkeypatch.setattr(cfg_module, "get_config_path", lambda: config_file)
+    monkeypatch.setattr(cfg_module, "get_config_dir", lambda: tmp_path)
+
+    from weekend_scout.__main__ import build_parser, dispatch_command
+    parser = build_parser()
+    parsed = parser.parse_args(["config"] + args)
+
+    captured = []
+    monkeypatch.setattr("builtins.print", lambda *a, **kw: captured.append(a[0]))
+    try:
+        dispatch_command(parsed, parser)
+    except SystemExit:
+        pass
+    return json.loads(captured[-1])
+
+
+# --- config (no args) ---
+
+def test_cmd_config_shows_all_keys(tmp_path, monkeypatch):
+    result = _run_config([], tmp_path, monkeypatch)
+    assert "home_city" in result
+    assert "radius_km" in result
+    assert "search_language" in result
+
+
+def test_cmd_config_search_language_default_en(tmp_path, monkeypatch):
+    result = _run_config([], tmp_path, monkeypatch)
+    assert result["search_language"] == "en"
+
+
+# --- config KEY (read single key) ---
+
+def test_cmd_config_read_single_key(tmp_path, monkeypatch):
+    result = _run_config(["radius_km"], tmp_path, monkeypatch)
+    assert result == {"radius_km": 150}
+
+
+def test_cmd_config_read_string_key(tmp_path, monkeypatch):
+    result = _run_config(["search_language"], tmp_path, monkeypatch)
+    assert result == {"search_language": "en"}
+
+
+def test_cmd_config_read_unknown_key_returns_error(tmp_path, monkeypatch):
+    result = _run_config(["nonexistent_key"], tmp_path, monkeypatch)
+    assert "error" in result
+
+
+# --- config KEY VALUE (set) ---
+
+def test_cmd_config_set_string_value(tmp_path, monkeypatch):
+    result = _run_config(["home_city", "Krakow"], tmp_path, monkeypatch)
+    assert result == {"set": {"home_city": "Krakow"}}
+    # Verify persisted
+    result2 = _run_config(["home_city"], tmp_path, monkeypatch)
+    assert result2 == {"home_city": "Krakow"}
+
+
+def test_cmd_config_set_int_value_coerces_type(tmp_path, monkeypatch):
+    result = _run_config(["radius_km", "200"], tmp_path, monkeypatch)
+    assert result == {"set": {"radius_km": 200}}
+    assert isinstance(result["set"]["radius_km"], int)
+
+
+def test_cmd_config_set_unknown_key_returns_error(tmp_path, monkeypatch):
+    result = _run_config(["bad_key", "value"], tmp_path, monkeypatch)
+    assert "error" in result
+
+
+def test_cmd_reset_requires_confirmation(tmp_path, monkeypatch):
+    output = _run_cmd("reset", [], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert result["error_code"] == "confirmation_required"
+    assert "Re-run with --yes" in result["error"]
+
+
+def test_cmd_reset_deletes_config_and_cache(tmp_path, monkeypatch):
+    (tmp_path / "config.yaml").write_text("home_city: Warsaw\n", encoding="utf-8")
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    (cache_dir / "cache.db").write_text("x", encoding="utf-8")
+
+    output = _run_cmd("reset", ["--yes"], tmp_path, monkeypatch)
+    result = json.loads(output)
+
+    assert result["reset"] is True
+    assert str(tmp_path / "config.yaml") in result["removed"]
+    assert str(cache_dir) in result["removed"]
+    assert not (tmp_path / "config.yaml").exists()
+    assert not cache_dir.exists()
+
+
+# --- format-message ---
+
+def _run_format_message(args: list[str], tmp_path, monkeypatch) -> dict:
+    """Helper: call cmd_format_message, return parsed JSON output."""
+    import weekend_scout.config as cfg_module
+    config_file = tmp_path / "config.yaml"
+    monkeypatch.setattr(cfg_module, "get_config_path", lambda: config_file)
+    monkeypatch.setattr(cfg_module, "get_config_dir", lambda: tmp_path)
+
+    from weekend_scout.__main__ import build_parser, dispatch_command
+    parser = build_parser()
+    parsed = parser.parse_args(["format-message"] + args)
+
+    captured = []
+    monkeypatch.setattr("builtins.print", lambda *a, **kw: captured.append(a[0]))
+    try:
+        dispatch_command(parsed, parser)
+    except SystemExit:
+        pass
+    return json.loads(captured[-1])
+
+
+def test_format_message_creates_file(tmp_path, monkeypatch):
+    output = tmp_path / "msg.txt"
+    result = _run_format_message(
+        ["--saturday", "2026-03-28", "--sunday", "2026-03-29", "--output", str(output)],
+        tmp_path, monkeypatch,
+    )
+    assert result["written"] == str(output)
+    assert "preview" in result
+    assert output.exists()
+
+
+def test_format_message_with_events(tmp_path, monkeypatch):
+    import json as _json
+    output = tmp_path / "msg.txt"
+    events = _json.dumps([{
+        "event_name": "Spring Festival", "city": "Warsaw",
+        "start_date": "2026-03-28", "free_entry": True,
+    }])
+    _run_format_message(
+        ["--saturday", "2026-03-28", "--sunday", "2026-03-29",
+         "--city-events", events, "--output", str(output)],
+        tmp_path, monkeypatch,
+    )
+    content = output.read_text(encoding="utf-8")
+    assert "Spring Festival" in content
+    assert "Weekend Scout" in content
+
+
+def test_format_message_no_events_graceful(tmp_path, monkeypatch):
+    output = tmp_path / "msg.txt"
+    result = _run_format_message(
+        ["--saturday", "2026-03-28", "--sunday", "2026-03-29", "--output", str(output)],
+        tmp_path, monkeypatch,
+    )
+    content = output.read_text(encoding="utf-8")
+    assert "No events found" in content
+    assert "No events found" in result["preview"]
+
+
+def test_format_message_preview_uses_markdownish_formatting(tmp_path, monkeypatch):
+    output = tmp_path / "msg.txt"
+    result = _run_format_message(
+        ["--saturday", "2026-03-28", "--sunday", "2026-03-29", "--output", str(output)],
+        tmp_path, monkeypatch,
+    )
+    assert "<b>" not in result["preview"]
+    assert "<i>" not in result["preview"]
+    assert "<a href=" not in result["preview"]
+    assert "**🗓 Weekend Scout | March 28\\-29, 2026**" in result["preview"]
+    assert "_🌱 Scouted by Weekend Scout_" in result["preview"]
+
+
+def test_format_message_includes_stats_and_notes_blocks(tmp_path, monkeypatch):
+    output = tmp_path / "msg.txt"
+    stats_path = _write_skill_tmp_payload(
+        tmp_path,
+        "delivery-stats",
+        ["Events found: 4 (2 new, 2 cached)", "Discovery budget: 3/15 searches, 1/15 fetches"],
+    )
+    notes_path = _write_skill_tmp_payload(
+        tmp_path,
+        "delivery-notes",
+        ["DEBUG INFORMATION", "Phase D skipped: all_confirmed"],
+    )
+
+    result = _run_format_message(
+        [
+            "--saturday", "2026-03-28",
+            "--sunday", "2026-03-29",
+            "--stats-lines-file", str(stats_path),
+            "--notes-lines-file", str(notes_path),
+            "--output", str(output),
+        ],
+        tmp_path,
+        monkeypatch,
+    )
+
+    content = output.read_text(encoding="utf-8")
+    assert content.index("Events found: 4 (2 new, 2 cached)") > content.index("Scouted by Weekend Scout")
+    assert content.index("DEBUG INFORMATION") > content.index("Scouted by Weekend Scout")
+    assert "--------------------" in content
+    assert "<i>Events found: 4 (2 new, 2 cached)</i>" in content
+    assert "<i>DEBUG INFORMATION</i>" in content
+    assert result["preview"].index("Events found: 4 \\(2 new, 2 cached\\)") > result["preview"].index("Scouted by Weekend Scout")
+    assert result["preview"].index("DEBUG INFORMATION") > result["preview"].index("Scouted by Weekend Scout")
+    assert "--------------------" in result["preview"]
+    assert "<i>" not in result["preview"]
+    assert "_Events found: 4 \\(2 new, 2 cached\\)_" in result["preview"]
+    assert "_DEBUG INFORMATION_" in result["preview"]
+    assert not stats_path.exists()
+    assert not notes_path.exists()
+
+
+# --- cmd_config: error handling ---
+
+def test_cmd_config_set_int_invalid_value_returns_error(tmp_path, monkeypatch):
+    result = _run_config(["radius_km", "not_a_number"], tmp_path, monkeypatch)
+    assert "error" in result
+
+
+def test_cmd_config_set_float_invalid_value_returns_error(tmp_path, monkeypatch):
+    # home_coordinates is a dict, not float — test with a hypothetical float field
+    # use radius_km coercion indirectly to confirm the error path
+    result = _run_config(["radius_km", "3.5.9"], tmp_path, monkeypatch)
+    assert "error" in result
+
+
+def test_cmd_config_set_dict_value_parses_json(tmp_path, monkeypatch):
+    result = _run_config(
+        ["home_coordinates", '{"lat": 52.20, "lon": 20.91}'],
+        tmp_path, monkeypatch,
+    )
+    assert result == {"set": {"home_coordinates": {"lat": 52.20, "lon": 20.91}}}
+    # Verify the stored value is a dict, not a string
+    stored = _run_config(["home_coordinates"], tmp_path, monkeypatch)
+    assert isinstance(stored["home_coordinates"], dict)
+    assert stored["home_coordinates"]["lat"] == 52.20
+
+
+def test_cmd_config_set_dict_invalid_json_returns_error(tmp_path, monkeypatch):
+    result = _run_config(["home_coordinates", "notjson"], tmp_path, monkeypatch)
+    assert "error" in result
+
+
+def test_cmd_config_set_dict_wrong_type_returns_error(tmp_path, monkeypatch):
+    # home_coordinates expects a dict; passing a JSON list should fail
+    result = _run_config(["home_coordinates", "[1, 2, 3]"], tmp_path, monkeypatch)
+    assert "error" in result
+
+
+# --- cmd_init ---
+
+def _run_cmd(name: str, args: list[str], tmp_path, monkeypatch) -> str:
+    """Helper: call any cmd_* function, return raw stdout capture (may be JSON string)."""
+    import weekend_scout.config as cfg_module
+    config_file = tmp_path / "config.yaml"
+    monkeypatch.setattr(cfg_module, "get_config_path", lambda: config_file)
+    monkeypatch.setattr(cfg_module, "get_config_dir", lambda: tmp_path)
+
+    from weekend_scout.__main__ import build_parser, dispatch_command
+    parser = build_parser()
+    parsed = parser.parse_args([name] + args)
+
+    captured = []
+    monkeypatch.setattr("builtins.print", lambda *a, **kw: captured.append(str(a[0])))
+    try:
+        dispatch_command(parsed, parser)
+    except SystemExit:
+        pass
+    return captured[-1] if captured else ""
+
+
+def _write_minimal_config(tmp_path) -> None:
+    """Write a minimal valid config so cmd_init doesn't hit the needs_setup guard."""
+    import yaml
+    cfg = {
+        "home_city": "Warsaw",
+        "home_country": "Poland",
+        "home_coordinates": {"lat": 52.2297, "lon": 21.0122},
+        "radius_km": 150,
+        "search_language": "pl",
+    }
+    (tmp_path / "config.yaml").write_text(yaml.dump(cfg), encoding="utf-8")
+
+
+def _write_json_file(path: Path, payload, *, encoding: str = "utf-8") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding=encoding)
+    return path
+
+
+def _write_skill_tmp_payload(tmp_path: Path, name: str, payload, *, encoding: str = "utf-8") -> Path:
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return _write_json_file(cache_dir / f"_tmp_{name}.tmp", payload, encoding=encoding)
+
+
+def _stub_empty_geonames(tmp_path: Path, monkeypatch) -> Path:
+    import weekend_scout.cities as cities_module
+
+    geonames_path = tmp_path / "cache" / "geonames" / "cities15000.txt"
+    geonames_path.parent.mkdir(parents=True, exist_ok=True)
+    geonames_path.write_text("", encoding="utf-8")
+    monkeypatch.setattr(cities_module, "ensure_geonames", lambda: geonames_path)
+    return geonames_path
+
+
+def _write_country_alternate_names_file(tmp_path: Path, country_code: str, rows: list[str]) -> Path:
+    alt_path = tmp_path / "cache" / "geonames" / "alternatenames" / f"{country_code}.txt"
+    alt_path.parent.mkdir(parents=True, exist_ok=True)
+    alt_path.write_text("\n".join(rows), encoding="utf-8")
+    return alt_path
+
+
+def _make_alternate_name_row(
+    alternate_name_id: str,
+    geonameid: str,
+    isolanguage: str,
+    name: str,
+    *,
+    is_preferred: bool = False,
+) -> str:
+    return "\t".join(
+        [
+            alternate_name_id,
+            geonameid,
+            isolanguage,
+            name,
+            "1" if is_preferred else "",
+            "",
+            "",
+            "",
+            "",
+            "",
+        ]
+    )
+
+
+def _write_action_log_fixture(tmp_path: Path, lines: list[dict]) -> Path:
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    log_path = cache_dir / "action_log.jsonl"
+    log_path.write_text(
+        "\n".join(json.dumps(line, ensure_ascii=False) for line in lines) + "\n",
+        encoding="utf-8",
+    )
+    return log_path
+
+
+def _invoke_command_no_catch(name: str, args: list[str], tmp_path, monkeypatch):
+    """Invoke one command directly and return (captured, raised_system_exit)."""
+    import weekend_scout.config as cfg_module
+    config_file = tmp_path / "config.yaml"
+    monkeypatch.setattr(cfg_module, "get_config_path", lambda: config_file)
+    monkeypatch.setattr(cfg_module, "get_config_dir", lambda: tmp_path)
+
+    from weekend_scout.__main__ import build_parser, dispatch_command
+    parser = build_parser()
+    parsed = parser.parse_args([name] + args)
+
+    captured = []
+    monkeypatch.setattr("builtins.print", lambda *a, **kw: captured.append(str(a[0])))
+    raised = None
+    try:
+        dispatch_command(parsed, parser)
+    except SystemExit as exc:
+        raised = exc
+    return captured[-1] if captured else "", raised
+
+
+def _read_python_failures(tmp_path: Path) -> list[dict]:
+    path = tmp_path / "cache" / "python_failures.jsonl"
+    if not path.exists():
+        return []
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
+def _read_action_log(tmp_path: Path) -> list[dict]:
+    path = tmp_path / "cache" / "action_log.jsonl"
+    if not path.exists():
+        return []
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
+def test_cmd_init_radius_invalid_returns_error(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    output = _run_cmd("init", ["--radius", "abc"], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert "error" in result
+    assert result["error_code"] == "invalid_radius"
+    failures = _read_python_failures(tmp_path)
+    assert failures[-1]["command"] == "init"
+    assert failures[-1]["error_code"] == "invalid_radius"
+    assert failures[-1]["failure_id"] == result["failure_id"]
+
+
+def test_cmd_init_returns_json(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    # Patch get_city_list to avoid needing GeoNames file
+    import weekend_scout.cities as cities_module
+    _stub_empty_geonames(tmp_path, monkeypatch)
+    monkeypatch.setattr(cities_module, "get_city_list",
+                        lambda _cfg, bypass_cache=False: {"tier1": ["Potsdam|DE"], "tier2": [], "tier3": ["Szczecin|PL"]})
+    output = _run_cmd("init", [], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert "config" in result
+    assert result["cache_dir"] == (tmp_path / "cache").resolve().as_posix()
+    assert "cities" in result
+    assert "cached" in result
+    assert "debug" in result
+    assert "city_meta" not in result
+    assert result["cities"] == {"tier1": ["Potsdam|DE"], "tier2_count": 0, "tier3_count": 1}
+    sq = result["debug"]["suggested_queries"]
+    assert "vars" in sq
+    assert "broad" in sq
+    assert "targeted_by_country" in sq
+    assert "targeted_template" not in sq
+    assert isinstance(sq["broad"], list)
+    assert "{city}" in sq["targeted_by_country"]["DE"]["template"]
+    assert sq["targeted_by_country"]["DE"]["date"]
+    assert "{city}" in sq["targeted_by_country"]["PL"]["template"]
+    assert sq["targeted_by_country"]["PL"]["date"]
+    workflow = result["workflow"]
+    assert workflow["coverage"]["minimum_home_city_events"] == 3
+    assert workflow["phase_a"]["queries"]
+    assert set(workflow["phase_a"]["queries"][0]) == {"query", "query_already_done"}
+    assert workflow["phase_c"]["tier1"][0]["query"]
+    assert set(workflow["phase_c"]["tier1"][0]) == {
+        "city_name",
+        "query",
+        "query_already_done",
+        "still_uncovered",
+        "retry_on_rerun",
+        "retry_query",
+    }
+    assert workflow["phase_c"]["tier1"][0]["still_uncovered"] is True
+    assert workflow["phase_c"]["tier1"][0]["retry_on_rerun"] is False
+    assert workflow["phase_c"]["tier1"][0]["retry_query"] != workflow["phase_c"]["tier1"][0]["query"]
+    assert workflow["phase_d"]["max_candidates"] == 5
+    assert workflow["phase_d"]["validation_fetch_limit"] == 5
+    assert workflow["phase_d"]["prepare_digest_command"].startswith(
+        'python -m weekend_scout prepare-digest --date "'
+    )
+    assert "max_fetches" not in workflow["phase_d"]
+    assert "reserve_fetches_before_targeted" not in workflow["phase_d"]
+    assert "budget_gate" not in workflow["phase_c"]["tier2_request"]
+    assert "budget_gate" not in workflow["phase_c"]["tier3_request"]
+    assert "--searches-used" not in workflow["phase_c"]["tier2_request"]["request_command"]
+    assert "--searches-used" not in workflow["phase_c"]["tier3_request"]["request_command"]
+    assert "--covered-cities" not in workflow["phase_c"]["tier2_request"]["request_command"]
+    assert "--covered-cities" not in workflow["phase_c"]["tier3_request"]["request_command"]
+    assert result["cities"]["tier1"] == ["Potsdam|DE"]
+    assert result["config"]["max_city_options"] == 3
+    assert result["config"]["max_trip_options"] == 10
+    assert result["config"]["max_searches"] == 15
+    assert result["config"]["max_fetches"] == 15
+    assert result["cached"] == {"count": 0, "covered_cities": [], "city_counts": {}}
+    assert result["debug"]["cached_events"] == []
+    assert result["debug"]["searches_this_week"] == []
+    assert result["debug"]["cities_full"]["tier3"] == ["Szczecin|PL"]
+    assert "minimum_trip_cities" not in workflow["coverage"]
+    assert "tier1" not in result["debug"]["phase_c_full"]
+    assert set(result["debug"]["phase_c_full"]["tier3"][0]) == {
+        "city_name",
+        "query",
+        "query_already_done",
+        "still_uncovered",
+        "retry_on_rerun",
+        "retry_query",
+    }
+
+
+def test_cmd_init_skill_returns_compact_cached_metadata(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    import weekend_scout.cities as cities_module
+    _stub_empty_geonames(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {"tier1": ["Potsdam|DE"], "tier2": [], "tier3": ["Szczecin|PL"]},
+    )
+    output = _run_cmd("init-skill", [], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert "config" in result
+    assert result["cache_dir"] == (tmp_path / "cache").resolve().as_posix()
+    assert "cities" in result
+    assert "cached" in result
+    assert "cached_events" not in result
+    assert "searches_this_week" not in result
+    assert result["config"]["max_city_options"] == 3
+    assert result["config"]["max_trip_options"] == 10
+    assert result["cached"] == {"count": 0, "covered_cities": [], "city_counts": {}}
+    assert "suggested_queries" not in result
+    assert result["cities"] == {"tier1": ["Potsdam|DE"], "tier2_count": 0, "tier3_count": 1}
+    workflow = result["workflow"]
+    assert workflow["audit_command"].endswith(f'--run-id "{result["run_id"]}"')
+    assert workflow["phase_a"]["search_limit"] == 5
+    assert set(workflow["phase_a"]["queries"][0]) == {"query", "query_already_done"}
+    assert workflow["phase_c"]["tier1"][0]["city_name"] == "Potsdam"
+    assert set(workflow["phase_c"]["tier1"][0]) == {
+        "city_name",
+        "query",
+        "query_already_done",
+        "still_uncovered",
+        "retry_on_rerun",
+        "retry_query",
+    }
+    assert workflow["phase_c"]["tier1"][0]["still_uncovered"] is True
+    assert workflow["phase_c"]["tier2_request"]["available_count"] == 0
+    assert workflow["phase_c"]["tier3_request"]["available_count"] == 1
+    assert "--searches-used" not in workflow["phase_c"]["tier2_request"]["request_command"]
+    assert "--searches-used" not in workflow["phase_c"]["tier3_request"]["request_command"]
+    assert "--covered-cities" not in workflow["phase_c"]["tier2_request"]["request_command"]
+    assert "--covered-cities" not in workflow["phase_c"]["tier3_request"]["request_command"]
+    assert "budget_gate" not in workflow["phase_c"]["tier2_request"]
+    assert "budget_gate" not in workflow["phase_c"]["tier3_request"]
+    assert workflow["phase_d"]["validation_fetch_limit"] == 5
+    assert workflow["phase_d"]["session_query_command"] == (
+        f'python -m weekend_scout session-query --run-id "{result["run_id"]}"'
+    )
+    assert workflow["phase_d"]["prepare_digest_command"].startswith(
+        'python -m weekend_scout prepare-digest --date "'
+    )
+    assert "phase_order" not in workflow
+    assert "log_checkpoints" not in workflow
+    assert "compact_note" in workflow
+    assert "minimum_trip_cities" not in workflow["coverage"]
+
+
+def test_cmd_init_skill_marks_done_queries_in_task_cards(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    import weekend_scout.cities as cities_module
+    _stub_empty_geonames(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {"tier1": ["Potsdam|DE"], "tier2": [], "tier3": []},
+    )
+    first_result = json.loads(_run_cmd("init-skill", [], tmp_path, monkeypatch))
+    query = first_result["workflow"]["phase_c"]["tier1"][0]["query"]
+    saturday = first_result["config"]["target_weekend"]["saturday"]
+    _run_cmd(
+        "log-search",
+        ["--query", query, "--target-weekend", saturday,
+         "--phase", "targeted", "--result-count", "1", "--cities", '["Potsdam"]'],
+        tmp_path, monkeypatch,
+    )
+    output = _run_cmd("init-skill", [], tmp_path, monkeypatch)
+    result = json.loads(output)
+    tier1_card = result["workflow"]["phase_c"]["tier1"][0]
+    assert tier1_card["query"] == query
+    assert tier1_card["query_already_done"] is True
+    assert tier1_card["still_uncovered"] is True
+    assert tier1_card["retry_on_rerun"] is True
+    assert tier1_card["retry_query"] != query
+
+
+def test_cmd_init_skill_compact_payload_omits_full_later_tiers(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    import weekend_scout.cities as cities_module
+    _stub_empty_geonames(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {
+            "tier1": ["Potsdam|DE"],
+            "tier2": ["Berlin|DE", "Brandenburg|DE"],
+            "tier3": ["Szczecin|PL", "Lublin|PL"],
+        },
+    )
+    result = json.loads(_run_cmd("init-skill", [], tmp_path, monkeypatch))
+    assert result["cities"]["tier1"] == ["Potsdam|DE"]
+    assert result["cities"]["tier2_count"] == 2
+    assert result["cities"]["tier3_count"] == 2
+    phase_c = result["workflow"]["phase_c"]
+    assert "tier2" not in phase_c
+    assert "tier3" not in phase_c
+    assert phase_c["tier2_request"]["default_limit"] == 6
+    assert phase_c["tier3_request"]["default_limit"] == 6
+
+
+def test_cmd_init_skill_cached_summary_matches_saved_events(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    import weekend_scout.cities as cities_module
+    _stub_empty_geonames(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {"tier1": ["Berlin|DE", "Potsdam|DE"], "tier2": [], "tier3": []},
+    )
+    _run_cmd(
+        "save",
+        ["--events", json.dumps([
+            {"event_name": "A", "city": "Berlin", "start_date": "2026-04-04"},
+            {"event_name": "B", "city": "Berlin", "start_date": "2026-04-05"},
+            {"event_name": "C", "city": "Potsdam", "start_date": "2026-04-04"},
+        ])],
+        tmp_path,
+        monkeypatch,
+    )
+    output = _run_cmd("init-skill", [], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert result["cached"]["count"] == 3
+    assert result["cached"]["covered_cities"] == ["Berlin", "Potsdam"]
+    assert result["cached"]["city_counts"] == {"Berlin": 2, "Potsdam": 1}
+
+
+def test_cmd_init_skill_needs_setup_matches_init(tmp_path, monkeypatch):
+    output = _run_cmd("init-skill", [], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert result["needs_setup"] is True
+    assert result["cache_dir"] == (tmp_path / "cache").resolve().as_posix()
+
+    full_output = _run_cmd("init", [], tmp_path, monkeypatch)
+    full_result = json.loads(full_output)
+    assert full_result["needs_setup"] is True
+    assert full_result["cache_dir"] == (tmp_path / "cache").resolve().as_posix()
+
+
+def test_cmd_init_skill_cache_dir_uses_forward_slashes(tmp_path, monkeypatch):
+    """cache_dir must be safe to interpolate into bash — no backslashes.
+
+    Windows-native backslashes in the returned cache_dir used to be silently
+    eaten by bash when the skill built `--*-file` arguments, corrupting the
+    path. The CLI now emits the POSIX form on every platform.
+    """
+    _write_minimal_config(tmp_path)
+    import weekend_scout.cities as cities_module
+    _stub_empty_geonames(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {"tier1": [], "tier2": [], "tier3": []},
+    )
+    output = _run_cmd("init-skill", [], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert "\\" not in result["cache_dir"]
+    assert Path(result["cache_dir"]).is_dir()
+
+
+def test_log_search_rejects_drive_relative_malformed_path(tmp_path, monkeypatch):
+    """Bash-eaten Windows paths are rejected with malformed_path, not silently treated as relative."""
+    _write_minimal_config(tmp_path)
+    output = _run_cmd(
+        "log-search",
+        [
+            "--query", "q",
+            "--target-weekend", "2026-04-18",
+            "--result-count", "0",
+            "--cities-file", "D:WorkWeekend-Scout.weekend_scoutcache_tmp_cities_1.tmp",
+            "--events-file", (tmp_path / "events.json").as_posix(),
+            "--phase", "broad",
+        ],
+        tmp_path,
+        monkeypatch,
+    )
+    result = json.loads(output)
+    assert result.get("error_code") == "malformed_path"
+    assert result["detail"]["context"]["option"] == "--cities"
+
+
+def test_cmd_init_skill_bootstraps_first_run_with_city_and_radius(tmp_path, monkeypatch):
+    import weekend_scout.cities as cities_module
+
+    geonames_path = tmp_path / "cache" / "geonames" / "cities15000.txt"
+    geonames_path.parent.mkdir(parents=True, exist_ok=True)
+    geonames_path.write_text("", encoding="utf-8")
+
+    ensure_calls: list[Path] = []
+
+    monkeypatch.setattr(
+        cities_module,
+        "ensure_geonames",
+        lambda: ensure_calls.append(geonames_path) or geonames_path,
+    )
+    monkeypatch.setattr(
+        cities_module,
+        "find_city_coords",
+        lambda city, _path, country_filter=None: {
+            "lat": 52.52437,
+            "lon": 13.41053,
+            "country": "DE",
+            "population": 3769000,
+        } if city == "Berlin" else None,
+    )
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {"tier1": ["Potsdam|DE"], "tier2": [], "tier3": []},
+    )
+
+    first = json.loads(
+        _run_cmd("init-skill", ["--city", "Berlin", "--radius", "150"], tmp_path, monkeypatch)
+    )
+
+    assert "needs_setup" not in first
+    assert first["config"]["home_city"] == "Berlin"
+    assert first["config"]["home_country"] == "Germany"
+    assert first["config"]["radius_km"] == 150
+    assert first["config"]["city_geocoded"] is True
+    assert ensure_calls == [geonames_path]
+
+    persisted = _run_config(["home_city"], tmp_path, monkeypatch)
+    assert persisted == {"home_city": "Berlin"}
+
+    second = json.loads(_run_cmd("init-skill", [], tmp_path, monkeypatch))
+    assert "needs_setup" not in second
+    assert second["config"]["home_city"] == "Berlin"
+    assert ensure_calls == [geonames_path, geonames_path]
+
+
+def test_cmd_init_skill_city_bootstrap_geocode_miss_uses_warning_flow(tmp_path, monkeypatch):
+    import yaml
+    import weekend_scout.cities as cities_module
+
+    (tmp_path / "config.yaml").write_text(
+        yaml.dump(
+            {
+                "home_city": "",
+                "home_country": "Poland",
+                "home_coordinates": {"lat": 52.2297, "lon": 21.0122},
+                "radius_km": 90,
+                "search_language": "pl",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    geonames_path = tmp_path / "cache" / "geonames" / "cities15000.txt"
+    geonames_path.parent.mkdir(parents=True, exist_ok=True)
+    geonames_path.write_text("", encoding="utf-8")
+
+    ensure_calls: list[Path] = []
+    monkeypatch.setattr(
+        cities_module,
+        "ensure_geonames",
+        lambda: ensure_calls.append(geonames_path) or geonames_path,
+    )
+    monkeypatch.setattr(cities_module, "find_city_coords", lambda _city, _path, country_filter=None: None)
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: (_ for _ in ()).throw(AssertionError("get_city_list should not run")),
+    )
+
+    result = json.loads(
+        _run_cmd("init-skill", ["--city", "new york (usa)", "--radius", "150"], tmp_path, monkeypatch)
+    )
+
+    assert "needs_setup" not in result
+    assert result["config"]["home_city"] == "New York"
+    assert result["config"]["radius_km"] == 150
+    assert result["config"]["city_geocoded"] is False
+    assert result["warnings"] == ["coordinates_not_set: nearby city suggestions disabled"]
+    assert ensure_calls == [geonames_path]
+
+    persisted = _run_config(["home_city"], tmp_path, monkeypatch)
+    assert persisted == {"home_city": ""}
+
+
+def test_cmd_init_skill_uses_country_hint_for_ambiguous_city(tmp_path, monkeypatch):
+    import weekend_scout.cities as cities_module
+
+    geonames_path = tmp_path / "cache" / "geonames" / "cities15000.txt"
+    geonames_path.parent.mkdir(parents=True, exist_ok=True)
+    geonames_path.write_text("", encoding="utf-8")
+
+    captured: list[tuple[str, str | None]] = []
+    monkeypatch.setattr(cities_module, "ensure_geonames", lambda: geonames_path)
+    monkeypatch.setattr(
+        cities_module,
+        "find_city_coords",
+        lambda city, _path, country_filter=None: captured.append((city, country_filter)) or {
+            "name": "London",
+            "name_local": "London",
+            "lat": 42.98339,
+            "lon": -81.23304,
+            "country": "CA",
+            "population": 422324,
+        },
+    )
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {"tier1": [], "tier2": [], "tier3": []},
+    )
+
+    result = json.loads(
+        _run_cmd("init-skill", ["--city", "london (canada)", "--radius", "150"], tmp_path, monkeypatch)
+    )
+
+    assert captured == [("London", "Canada")]
+    assert result["config"]["home_city"] == "London"
+    assert result["config"]["home_country"] == "Canada"
+    assert result["config"]["search_language"] == "en"
+
+
+def test_cmd_init_skill_resolves_native_script_city_input_from_alternate_names(tmp_path, monkeypatch):
+    import weekend_scout.cities as cities_module
+
+    geonames_path = tmp_path / "cache" / "geonames" / "cities15000.txt"
+    geonames_path.parent.mkdir(parents=True, exist_ok=True)
+    geonames_path.write_text(
+        "\t".join(
+            [
+                "1",
+                "Baranovichi",
+                "Baranovichi",
+                "\u0411\u0430\u0440\u0430\u043d\u043e\u0432\u0438\u0447\u0438,\u0411\u0430\u0440\u0430\u043d\u0430\u0432\u0456\u0447\u044b",
+                "53.1327",
+                "26.0139",
+                "P",
+                "PPLA",
+                "BY",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "168772",
+                "",
+                "100",
+                "Europe/Minsk",
+                "2024-01-01",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(cities_module, "ensure_geonames", lambda: geonames_path)
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {"tier1": [], "tier2": [], "tier3": []},
+    )
+
+    result = json.loads(
+        _run_cmd("init-skill", ["--city", "\u0411\u0430\u0440\u0430\u043d\u0430\u0432\u0456\u0447\u044b", "--radius", "150"], tmp_path, monkeypatch)
+    )
+
+    assert "needs_setup" not in result
+    assert result["config"]["home_city"] == "Baranovichi"
+    assert result["config"]["home_country"] == "Belarus"
+    assert result["config"]["search_language"] == "be"
+
+
+def test_cmd_init_skill_radius_invalid_returns_error(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    output = _run_cmd("init-skill", ["--radius", "abc"], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert "error" in result
+
+
+def test_cmd_init_skill_radius_invalid_returns_error_without_saved_config(tmp_path, monkeypatch):
+    output = _run_cmd("init-skill", ["--radius", "abc"], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert "error" in result
+
+
+# --- cmd_save ---
+
+def test_cmd_save_returns_counts(tmp_path, monkeypatch):
+    events = json.dumps([{
+        "event_name": "Fest", "city": "Warsaw", "start_date": "2026-03-28",
+    }])
+    output = _run_cmd("save", ["--events", events], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert result == {"saved": 1, "skipped": 0}
+
+
+def test_cmd_setup_accepts_json_file(tmp_path, monkeypatch):
+    payload_path = _write_json_file(
+        tmp_path / "setup.json",
+        {
+            "home_city": "Berlin",
+            "home_country": "Germany",
+            "home_coordinates": {"lat": 52.52437, "lon": 13.41053},
+            "radius_km": 150,
+        },
+    )
+    output = _run_cmd("setup", ["--json-file", str(payload_path)], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert result["saved"] is True
+
+    stored = _run_config(["home_city"], tmp_path, monkeypatch)
+    assert stored == {"home_city": "Berlin"}
+
+
+def test_cmd_setup_normalizes_decorated_home_city_before_saving(tmp_path, monkeypatch):
+    payload_path = _write_json_file(
+        tmp_path / "setup.json",
+        {
+            "home_city": "new york (usa)",
+            "home_country": "United States",
+            "home_coordinates": {"lat": 40.71427, "lon": -74.00597},
+            "radius_km": 150,
+        },
+    )
+    output = _run_cmd("setup", ["--json-file", str(payload_path)], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert result["saved"] is True
+
+    stored = _run_config(["home_city"], tmp_path, monkeypatch)
+    assert stored == {"home_city": "New York"}
+
+
+@pytest.mark.parametrize(
+    ("country", "expected_language"),
+    [
+        ("United States", "en"),
+        ("Canada", "en"),
+        ("Japan", "ja"),
+        ("South Korea", "ko"),
+    ],
+)
+def test_cmd_setup_derives_search_language_for_new_supported_countries(
+    tmp_path, monkeypatch, country, expected_language
+):
+    payload_path = _write_json_file(
+        tmp_path / "setup.json",
+        {
+            "home_city": "Test City",
+            "home_country": country,
+            "home_coordinates": {"lat": 1.0, "lon": 2.0},
+            "radius_km": 150,
+        },
+    )
+    output = _run_cmd("setup", ["--json-file", str(payload_path)], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert result["saved"] is True
+
+    stored = _run_config(["search_language"], tmp_path, monkeypatch)
+    assert stored == {"search_language": expected_language}
+
+
+def test_cmd_setup_uses_country_filter_for_ambiguous_city(tmp_path, monkeypatch):
+    import weekend_scout.cities as cities_module
+
+    geonames_path = tmp_path / "cache" / "geonames" / "cities15000.txt"
+    geonames_path.parent.mkdir(parents=True, exist_ok=True)
+    geonames_path.write_text("", encoding="utf-8")
+
+    captured: list[tuple[str, str | None]] = []
+    monkeypatch.setattr(cities_module, "ensure_geonames", lambda: geonames_path)
+    monkeypatch.setattr(
+        cities_module,
+        "find_city_coords",
+        lambda city, _path, country_filter=None: captured.append((city, country_filter)) or {
+            "name": "London",
+            "name_local": "London",
+            "lat": 42.98339,
+            "lon": -81.23304,
+            "country": "CA",
+            "population": 422324,
+        },
+    )
+
+    payload_path = _write_json_file(
+        tmp_path / "setup.json",
+        {
+            "home_city": "London",
+            "home_country": "Canada",
+            "radius_km": 150,
+        },
+    )
+
+    result = json.loads(_run_cmd("setup", ["--json-file", str(payload_path)], tmp_path, monkeypatch))
+
+    assert result["saved"] is True
+    assert captured == [("London", "Canada")]
+    assert _run_config(["home_country"], tmp_path, monkeypatch) == {"home_country": "Canada"}
+    assert _run_config(["search_language"], tmp_path, monkeypatch) == {"search_language": "en"}
+
+
+def test_cmd_setup_derives_search_language_from_home_country(tmp_path, monkeypatch):
+    payload_path = _write_json_file(
+        tmp_path / "setup.json",
+        {
+            "home_city": "Berlin",
+            "home_country": "Germany",
+            "home_coordinates": {"lat": 52.52437, "lon": 13.41053},
+            "radius_km": 150,
+        },
+    )
+    output = _run_cmd("setup", ["--json-file", str(payload_path)], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert result["saved"] is True
+
+    stored = _run_config(["search_language"], tmp_path, monkeypatch)
+    assert stored == {"search_language": "de"}
+
+
+def test_cmd_setup_keeps_explicit_search_language(tmp_path, monkeypatch):
+    payload_path = _write_json_file(
+        tmp_path / "setup.json",
+        {
+            "home_city": "Berlin",
+            "home_country": "Germany",
+            "home_coordinates": {"lat": 52.52437, "lon": 13.41053},
+            "radius_km": 150,
+            "search_language": "en",
+        },
+    )
+    output = _run_cmd("setup", ["--json-file", str(payload_path)], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert result["saved"] is True
+
+    stored = _run_config(["search_language"], tmp_path, monkeypatch)
+    assert stored == {"search_language": "en"}
+
+
+def test_cmd_setup_deletes_skill_generated_tmp_file_after_success(tmp_path, monkeypatch):
+    payload_path = _write_skill_tmp_payload(
+        tmp_path,
+        "setup",
+        {
+            "home_city": "Berlin",
+            "home_country": "Germany",
+            "home_coordinates": {"lat": 52.52437, "lon": 13.41053},
+        },
+    )
+    output = _run_cmd("setup", ["--json-file", str(payload_path)], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert result["saved"] is True
+    assert not payload_path.exists()
+
+
+def test_cmd_setup_json_file_accepts_utf8_bom(tmp_path, monkeypatch):
+    payload_path = _write_json_file(
+        tmp_path / "setup-bom.json",
+        {
+            "home_city": "Berlin",
+            "home_country": "Germany",
+            "home_coordinates": {"lat": 52.52437, "lon": 13.41053},
+        },
+        encoding="utf-8-sig",
+    )
+    output = _run_cmd("setup", ["--json-file", str(payload_path)], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert result["saved"] is True
+
+
+def test_cmd_setup_json_file_missing_returns_error(tmp_path, monkeypatch):
+    output = _run_cmd("setup", ["--json-file", str(tmp_path / "missing.json")], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert "error" in result
+    assert "--json-file not found" in result["error"]
+
+
+def test_cmd_setup_json_file_invalid_json_returns_error(tmp_path, monkeypatch):
+    payload_path = tmp_path / "bad.json"
+    payload_path.write_text("{bad", encoding="utf-8")
+    output = _run_cmd("setup", ["--json-file", str(payload_path)], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert "error" in result
+    assert "Invalid JSON in --json-file" in result["error"]
+
+
+def test_cmd_setup_keeps_skill_tmp_file_when_json_invalid(tmp_path, monkeypatch):
+    payload_path = tmp_path / "cache" / "_tmp_setup.tmp"
+    payload_path.parent.mkdir(parents=True, exist_ok=True)
+    payload_path.write_text("{bad", encoding="utf-8")
+    output = _run_cmd("setup", ["--json-file", str(payload_path)], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert "error" in result
+    assert payload_path.exists()
+
+
+def test_cmd_setup_keeps_non_tmp_file_after_success(tmp_path, monkeypatch):
+    payload_path = _write_json_file(
+        tmp_path / "cache" / "setup.json",
+        {
+            "home_city": "Berlin",
+            "home_country": "Germany",
+            "home_coordinates": {"lat": 52.52437, "lon": 13.41053},
+        },
+    )
+    output = _run_cmd("setup", ["--json-file", str(payload_path)], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert result["saved"] is True
+    assert payload_path.exists()
+
+
+def test_cmd_find_city_normalizes_decorated_name_before_lookup(tmp_path, monkeypatch):
+    import weekend_scout.cities as cities_module
+
+    geonames_path = tmp_path / "cache" / "geonames" / "cities15000.txt"
+    geonames_path.parent.mkdir(parents=True, exist_ok=True)
+    geonames_path.write_text("", encoding="utf-8")
+
+    captured: list[tuple[str, str | None]] = []
+    monkeypatch.setattr(cities_module, "ensure_geonames", lambda: geonames_path)
+    monkeypatch.setattr(
+        cities_module,
+        "find_city_candidates",
+        lambda name, _path, country_filter=None: captured.append((name, country_filter)) or [
+            {"name": "Warsaw", "country_name": "Poland"}
+        ],
+    )
+
+    output = _run_cmd("find-city", ["--name", "warsaw (poland)"], tmp_path, monkeypatch)
+    result = json.loads(output)
+
+    assert captured == [("Warsaw", "Poland")]
+    assert result["matches"][0]["name"] == "Warsaw"
+
+
+def test_cmd_find_city_supports_new_country_alias(tmp_path, monkeypatch):
+    import weekend_scout.cities as cities_module
+
+    geonames_path = tmp_path / "cache" / "geonames" / "cities15000.txt"
+    geonames_path.parent.mkdir(parents=True, exist_ok=True)
+    geonames_path.write_text("", encoding="utf-8")
+
+    captured: list[tuple[str, str | None]] = []
+    monkeypatch.setattr(cities_module, "ensure_geonames", lambda: geonames_path)
+    monkeypatch.setattr(
+        cities_module,
+        "find_city_candidates",
+        lambda name, _path, country_filter=None: captured.append((name, country_filter)) or [
+            {"name": "Seoul", "country_name": "South Korea"}
+        ],
+    )
+
+    output = _run_cmd("find-city", ["--name", "seoul (kr)"], tmp_path, monkeypatch)
+    result = json.loads(output)
+
+    assert captured == [("Seoul", "South Korea")]
+    assert result["matches"][0]["country_name"] == "South Korea"
+
+
+def test_cmd_find_city_matches_native_script_from_exact_alternate_name(tmp_path, monkeypatch):
+    import weekend_scout.cities as cities_module
+
+    geonames_path = tmp_path / "cache" / "geonames" / "cities15000.txt"
+    geonames_path.parent.mkdir(parents=True, exist_ok=True)
+    geonames_path.write_text(
+        "\t".join(
+            [
+                "1",
+                "Lida",
+                "Lida",
+                "\u041b\u0438\u0434\u0430,\u041b\u0456\u0434\u0430",
+                "53.8833",
+                "25.2997",
+                "P",
+                "PPLA",
+                "BY",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "101616",
+                "",
+                "100",
+                "Europe/Minsk",
+                "2024-01-01",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cities_module, "ensure_geonames", lambda: geonames_path)
+
+    output = _run_cmd("find-city", ["--name", "\u041b\u0456\u0434\u0430", "--country", "Belarus"], tmp_path, monkeypatch)
+    result = json.loads(output)
+
+    assert result["matches"]
+    assert result["matches"][0]["country_name"] == "Belarus"
+
+
+def test_cmd_save_accepts_events_file(tmp_path, monkeypatch):
+    payload_path = _write_skill_tmp_payload(
+        tmp_path,
+        "events",
+        [{"event_name": "Fest", "city": "Warsaw", "start_date": "2026-03-28"}],
+    )
+    output = _run_cmd("save", ["--events-file", str(payload_path)], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert result == {"saved": 1, "skipped": 0}
+    assert not payload_path.exists()
+
+
+def test_cmd_save_events_file_missing_returns_error(tmp_path, monkeypatch):
+    output = _run_cmd("save", ["--events-file", str(tmp_path / "missing.json")], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert "error" in result
+    assert "--events-file not found" in result["error"]
+
+
+# --- cmd_cache_query ---
+
+def test_cmd_cache_query_returns_list(tmp_path, monkeypatch):
+    output = _run_cmd("cache-query", ["--date", "2026-03-28"], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert isinstance(result, list)
+
+
+# --- cmd_log_search ---
+
+def test_cmd_log_search_returns_logged(tmp_path, monkeypatch):
+    output = _run_cmd(
+        "log-search",
+        ["--query", "test query", "--target-weekend", "2026-03-28",
+         "--phase", "broad", "--result-count", "5"],
+        tmp_path, monkeypatch,
+    )
+    result = json.loads(output)
+    assert result == {
+        "logged": True,
+        "events_discovered": 0,
+        "session_candidate_count": 0,
+        "duplicates_merged": 0,
+    }
+
+
+def test_cmd_log_search_accepts_cities_file(tmp_path, monkeypatch):
+    payload_path = _write_skill_tmp_payload(tmp_path, "cities", ["Berlin", "Potsdam"], encoding="utf-8-sig")
+    output = _run_cmd(
+        "log-search",
+        ["--query", "test query", "--target-weekend", "2026-03-28",
+         "--phase", "broad", "--result-count", "5", "--cities-file", str(payload_path)],
+        tmp_path, monkeypatch,
+    )
+    result = json.loads(output)
+    assert result == {
+        "logged": True,
+        "events_discovered": 0,
+        "session_candidate_count": 0,
+        "duplicates_merged": 0,
+    }
+    assert not payload_path.exists()
+
+
+def test_cmd_log_search_rejects_reused_cities_and_events_file(tmp_path, monkeypatch):
+    payload_path = _write_skill_tmp_payload(tmp_path, "search1", {"cities": ["Warsaw"], "events": []})
+    output = _run_cmd(
+        "log-search",
+        [
+            "--query", "test query",
+            "--target-weekend", "2026-03-28",
+            "--phase", "broad",
+            "--result-count", "5",
+            "--cities-file", str(payload_path),
+            "--events-file", str(payload_path),
+            "--run-id", "2026-03-28_1200",
+        ],
+        tmp_path, monkeypatch,
+    )
+    result = json.loads(output)
+    assert result["error_code"] == "duplicate_input_files"
+    assert "must use separate files" in result["error"]
+    assert result["remediation"] == {
+        "summary": "Use separate temp files for each --*-file flag in this command.",
+        "steps": [
+            "Write one file for city names and a different file for event objects.",
+            "Pass different file paths to --cities-file and --events-file.",
+            "Rewrite both files immediately before the retry.",
+        ],
+    }
+    assert payload_path.exists()
+    failures = _read_python_failures(tmp_path)
+    assert failures[-1]["error_code"] == "duplicate_input_files"
+    assert failures[-1]["remediation"] == result["remediation"]
+    entries = _read_action_log(tmp_path)
+    assert entries[-1]["action"] == "command_failed"
+    assert entries[-1]["detail"]["remediation"] == result["remediation"]
+
+
+def test_cmd_log_search_missing_cities_file_includes_remediation(tmp_path, monkeypatch):
+    missing_path = tmp_path / "cache" / "_tmp_cities.tmp"
+    output = _run_cmd(
+        "log-search",
+        [
+            "--query", "test query",
+            "--target-weekend", "2026-03-28",
+            "--phase", "aggregator",
+            "--cities-file", str(missing_path),
+            "--run-id", "2026-03-28_1300",
+        ],
+        tmp_path, monkeypatch,
+    )
+    result = json.loads(output)
+    assert result["error_code"] == "input_file_not_found"
+    assert "--cities-file not found" in result["error"]
+    assert result["remediation"] == {
+        "summary": "Write a fresh temp payload file immediately before rerunning this command.",
+        "steps": [
+            "Create the required _tmp_*.tmp file again before the retry.",
+            "Do not reuse a temp file path after a successful CLI call, because Weekend Scout may delete it.",
+            "Use the cache_dir returned by init/init-skill and write the file right before the command that consumes it.",
+        ],
+    }
+    failures = _read_python_failures(tmp_path)
+    assert failures[-1]["error_code"] == "input_file_not_found"
+    assert failures[-1]["remediation"] == result["remediation"]
+
+
+def test_cmd_log_search_invalid_json_type_includes_remediation(tmp_path, monkeypatch):
+    payload_path = _write_skill_tmp_payload(tmp_path, "cities", {"city": "Warsaw"})
+    output = _run_cmd(
+        "log-search",
+        [
+            "--query", "test query",
+            "--target-weekend", "2026-03-28",
+            "--phase", "broad",
+            "--cities-file", str(payload_path),
+        ],
+        tmp_path, monkeypatch,
+    )
+    result = json.loads(output)
+    assert result["error_code"] == "invalid_json_type"
+    assert result["error"] == "--cities must be a JSON array"
+    assert result["remediation"] == {
+        "summary": "Rewrite the payload file with the JSON type expected by this option.",
+        "steps": [
+            "Write the payload again just before the retry.",
+            "Match the expected JSON type from the error context.",
+            "Do not reuse a file prepared for a different CLI flag.",
+        ],
+    }
+    failures = _read_python_failures(tmp_path)
+    assert failures[-1]["error_code"] == "invalid_json_type"
+    assert failures[-1]["remediation"] == result["remediation"]
+
+
+def test_cmd_log_action_accepts_detail_file(tmp_path, monkeypatch):
+    payload_path = _write_skill_tmp_payload(tmp_path, "detail", {"reason": "all_confirmed"}, encoding="utf-8-sig")
+    output = _run_cmd(
+        "log-action",
+        ["--action", "skip", "--detail-file", str(payload_path)],
+        tmp_path, monkeypatch,
+    )
+    result = json.loads(output)
+    assert result == {"logged": True}
+    assert not payload_path.exists()
+
+
+def test_cmd_log_action_detail_file_invalid_json_returns_error(tmp_path, monkeypatch):
+    payload_path = tmp_path / "detail.json"
+    payload_path.write_text("{bad", encoding="utf-8")
+    output = _run_cmd(
+        "log-action",
+        ["--action", "skip", "--detail-file", str(payload_path)],
+        tmp_path, monkeypatch,
+    )
+    result = json.loads(output)
+    assert "error" in result
+    assert "Invalid JSON in --detail-file" in result["error"]
+
+
+def test_cmd_log_search_events_file_persists_session_candidates(tmp_path, monkeypatch):
+    events_path = _write_skill_tmp_payload(
+        tmp_path,
+        "events",
+        [{"event_name": "Spring Fest", "city": "Berlin", "start_date": "2026-04-04"}],
+    )
+    result = json.loads(
+        _run_cmd(
+            "log-search",
+            ["--query", "berlin search", "--target-weekend", "2026-04-04",
+             "--phase", "targeted", "--result-count", "2",
+             "--cities", '["Berlin"]', "--events-file", str(events_path),
+             "--run-id", "2026-04-04_1200"],
+            tmp_path, monkeypatch,
+        )
+    )
+    assert result == {
+        "logged": True,
+        "events_discovered": 1,
+        "session_candidate_count": 1,
+        "duplicates_merged": 0,
+    }
+    assert not events_path.exists()
+    session_result = json.loads(
+        _run_cmd("session-query", ["--run-id", "2026-04-04_1200"], tmp_path, monkeypatch)
+    )
+    assert session_result == [
+        {"event_name": "Spring Fest", "city": "Berlin", "start_date": "2026-04-04"}
+    ]
+
+
+def test_cmd_log_search_backfills_source_url_from_fetch_query(tmp_path, monkeypatch):
+    result = json.loads(
+        _run_cmd(
+            "log-search",
+            ["--query", "https://events.example/spring-fest", "--target-weekend", "2026-04-04",
+             "--phase", "verification", "--result-count", "1",
+             "--cities", '["Berlin"]',
+             "--events", '[{"event_name":"Spring Fest","city":"Berlin","start_date":"2026-04-04"}]',
+             "--run-id", "2026-04-04_1200"],
+            tmp_path, monkeypatch,
+        )
+    )
+    assert result == {
+        "logged": True,
+        "events_discovered": 1,
+        "session_candidate_count": 1,
+        "duplicates_merged": 0,
+    }
+    session_result = json.loads(
+        _run_cmd("session-query", ["--run-id", "2026-04-04_1200"], tmp_path, monkeypatch)
+    )
+    assert session_result == [
+        {
+            "event_name": "Spring Fest",
+            "city": "Berlin",
+            "start_date": "2026-04-04",
+            "source_url": "https://events.example/spring-fest",
+        }
+    ]
+
+
+def test_cmd_log_search_preserves_explicit_source_url_over_fetch_query(tmp_path, monkeypatch):
+    _run_cmd(
+        "log-search",
+        ["--query", "https://events.example/spring-fest", "--target-weekend", "2026-04-04",
+         "--phase", "verification", "--result-count", "1",
+         "--cities", '["Berlin"]',
+         "--events", '[{"event_name":"Spring Fest","city":"Berlin","start_date":"2026-04-04","source_url":"https://official.example/spring-fest"}]',
+         "--run-id", "2026-04-04_1200"],
+        tmp_path, monkeypatch,
+    )
+    session_result = json.loads(
+        _run_cmd("session-query", ["--run-id", "2026-04-04_1200"], tmp_path, monkeypatch)
+    )
+    assert session_result == [
+        {
+            "event_name": "Spring Fest",
+            "city": "Berlin",
+            "start_date": "2026-04-04",
+            "source_url": "https://official.example/spring-fest",
+        }
+    ]
+
+
+def test_cmd_log_search_does_not_backfill_source_url_from_non_url_query(tmp_path, monkeypatch):
+    _run_cmd(
+        "log-search",
+        ["--query", "berlin spring fest", "--target-weekend", "2026-04-04",
+         "--phase", "targeted", "--result-count", "1",
+         "--cities", '["Berlin"]',
+         "--events", '[{"event_name":"Spring Fest","city":"Berlin","start_date":"2026-04-04"}]',
+         "--run-id", "2026-04-04_1200"],
+        tmp_path, monkeypatch,
+    )
+    session_result = json.loads(
+        _run_cmd("session-query", ["--run-id", "2026-04-04_1200"], tmp_path, monkeypatch)
+    )
+    assert session_result == [
+        {"event_name": "Spring Fest", "city": "Berlin", "start_date": "2026-04-04"}
+    ]
+
+
+def test_source_url_survives_later_duplicate_without_url_through_digest(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    import weekend_scout.cities as cities_module
+
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {"tier1": ["Berlin|DE"], "tier2": [], "tier3": []},
+    )
+
+    _run_cmd(
+        "log-search",
+        ["--query", "berlin spring fair", "--target-weekend", "2026-04-04",
+         "--phase", "targeted", "--result-count", "1",
+         "--cities", '["Berlin"]',
+         "--events", '[{"event_name":"Spring Fair","city":"Berlin","start_date":"2026-04-04","source_url":"https://listing.example/spring-fair","confidence":"likely"}]',
+         "--run-id", "2026-04-04_1200"],
+        tmp_path, monkeypatch,
+    )
+    _run_cmd(
+        "log-search",
+        ["--query", "berlin spring fair followup", "--target-weekend", "2026-04-04",
+         "--phase", "targeted", "--result-count", "1",
+         "--cities", '["Berlin"]',
+         "--events", '[{"event_name":"Spring Fair","city":"Berlin","start_date":"2026-04-04","location_name":"Central Square","confidence":"confirmed"}]',
+         "--run-id", "2026-04-04_1200"],
+        tmp_path, monkeypatch,
+    )
+
+    session_result = json.loads(
+        _run_cmd("session-query", ["--run-id", "2026-04-04_1200"], tmp_path, monkeypatch)
+    )
+    assert session_result == [
+        {
+            "event_name": "Spring Fair",
+            "city": "Berlin",
+            "country": "Germany",
+            "start_date": "2026-04-04",
+            "location_name": "Central Square",
+            "source_url": "https://listing.example/spring-fair",
+            "confidence": "confirmed",
+        }
+    ]
+
+    save_result = json.loads(
+        _run_cmd("save", ["--run-id", "2026-04-04_1200", "--from-session"], tmp_path, monkeypatch)
+    )
+    assert save_result == {"saved": 1, "skipped": 0}
+
+    cached = json.loads(_run_cmd("cache-query", ["--date", "2026-04-04"], tmp_path, monkeypatch))
+    assert len(cached) == 1
+    assert cached[0]["event_name"] == "Spring Fair"
+    assert cached[0]["city"] == "Berlin"
+    assert cached[0]["country"] == "Germany"
+    assert cached[0]["location_name"] == "Central Square"
+    assert cached[0]["source_url"] == "https://listing.example/spring-fair"
+    assert cached[0]["confidence"] == "confirmed"
+
+    digest = json.loads(_run_cmd("prepare-digest", ["--date", "2026-04-04"], tmp_path, monkeypatch))
+    assert digest["home_city_candidates"] == []
+    assert digest["trip_city_groups"] == [
+        {
+            "city": "Berlin",
+            "country": "Germany",
+            "tier": "tier1",
+            "event_count": 1,
+            "confirmed_count": 1,
+            "events": [
+                {
+                    "event_name": "Spring Fair",
+                    "city": "Berlin",
+                    "country": "Germany",
+                    "start_date": "2026-04-04",
+                    "location_name": "Central Square",
+                    "source_url": "https://listing.example/spring-fair",
+                    "confidence": "confirmed",
+                }
+            ],
+        }
+    ]
+
+
+def test_cmd_save_from_session_uses_canonical_candidates(tmp_path, monkeypatch):
+    _run_cmd(
+        "log-search",
+        ["--query", "berlin search", "--target-weekend", "2026-04-04",
+         "--phase", "targeted", "--result-count", "2",
+         "--cities", '["Berlin"]',
+         "--events", '[{"event_name":"Spring Fest","city":"Berlin","start_date":"2026-04-04"}]',
+         "--run-id", "2026-04-04_1200"],
+        tmp_path, monkeypatch,
+    )
+    result = json.loads(
+        _run_cmd(
+            "save",
+            ["--run-id", "2026-04-04_1200", "--from-session"],
+            tmp_path, monkeypatch,
+        )
+    )
+    assert result == {"saved": 1, "skipped": 0}
+    cached = json.loads(_run_cmd("cache-query", ["--date", "2026-04-04"], tmp_path, monkeypatch))
+    assert len(cached) == 1
+    assert cached[0]["event_name"] == "Spring Fest"
+
+
+def test_cmd_save_from_session_deduplicates_aliases_and_backfills_country(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    import weekend_scout.cities as cities_module
+
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {"tier1": ["Berlin|DE"], "tier2": [], "tier3": []},
+    )
+    _run_cmd(
+        "log-search",
+        ["--query", "berlin one", "--target-weekend", "2026-04-11",
+         "--phase", "targeted", "--result-count", "2",
+         "--cities", '["Berlin"]',
+         "--events", '[{"event_name":"Berliner Staudenmarkt","city":"Berlin","start_date":"2026-04-11","end_date":"2026-04-12","source_url":"https://visitberlin.example/markets","confidence":"likely"}]',
+         "--run-id", "2026-04-11_2151"],
+        tmp_path, monkeypatch,
+    )
+    _run_cmd(
+        "log-search",
+        ["--query", "berlin two", "--target-weekend", "2026-04-11",
+         "--phase", "verification", "--result-count", "1",
+         "--cities", '["Berlin"]',
+         "--events", '[{"event_name":"Berliner Staudenmarkt auf der Domäne Dahlem","city":"Berlin","start_date":"2026-04-11","end_date":"2026-04-12","source_url":"https://visitberlin.example/markets","confidence":"confirmed"}]',
+         "--run-id", "2026-04-11_2151"],
+        tmp_path, monkeypatch,
+    )
+
+    result = json.loads(
+        _run_cmd("save", ["--run-id", "2026-04-11_2151", "--from-session"], tmp_path, monkeypatch)
+    )
+    assert result == {"saved": 1, "skipped": 0}
+
+    cached = json.loads(_run_cmd("cache-query", ["--date", "2026-04-11"], tmp_path, monkeypatch))
+    assert len(cached) == 1
+    assert cached[0]["event_name"] == "Berliner Staudenmarkt auf der Domäne Dahlem"
+    assert cached[0]["country"] == "Germany"
+
+
+def test_cmd_save_from_session_preserves_backfilled_source_url(tmp_path, monkeypatch):
+    _run_cmd(
+        "log-search",
+        ["--query", "https://events.example/spring-fest", "--target-weekend", "2026-04-04",
+         "--phase", "verification", "--result-count", "1",
+         "--cities", '["Berlin"]',
+         "--events", '[{"event_name":"Spring Fest","city":"Berlin","start_date":"2026-04-04"}]',
+         "--run-id", "2026-04-04_1200"],
+        tmp_path, monkeypatch,
+    )
+    result = json.loads(
+        _run_cmd("save", ["--run-id", "2026-04-04_1200", "--from-session"], tmp_path, monkeypatch)
+    )
+    assert result == {"saved": 1, "skipped": 0}
+    cached = json.loads(_run_cmd("cache-query", ["--date", "2026-04-04"], tmp_path, monkeypatch))
+    assert len(cached) == 1
+    assert cached[0]["event_name"] == "Spring Fest"
+    assert cached[0]["source_url"] == "https://events.example/spring-fest"
+
+
+def test_many_logged_searches_can_save_from_session_without_final_events_array(tmp_path, monkeypatch):
+    run_id = "2026-04-04_1945"
+    for idx in range(18):
+        city = f"City{idx:02d}"
+        _run_cmd(
+            "log-search",
+            ["--query", f"query-{idx}", "--target-weekend", "2026-04-04",
+             "--phase", "targeted", "--result-count", "3",
+             "--cities", f'["{city}"]',
+             "--events", json.dumps([{"event_name": f"Fest {idx}", "city": city, "start_date": "2026-04-04"}]),
+             "--run-id", run_id],
+            tmp_path, monkeypatch,
+        )
+    save_result = json.loads(
+        _run_cmd("save", ["--run-id", run_id, "--from-session"], tmp_path, monkeypatch)
+    )
+    assert save_result == {"saved": 18, "skipped": 0}
+    cached = json.loads(_run_cmd("cache-query", ["--date", "2026-04-04"], tmp_path, monkeypatch))
+    assert len(cached) == 18
+
+
+def test_cmd_prepare_digest_groups_trip_cities_and_collapses_duplicates(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    import weekend_scout.cities as cities_module
+
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {
+            "tier1": ["Berlin|DE", "Potsdam|DE"],
+            "tier2": [],
+            "tier3": [],
+        },
+    )
+    _run_cmd(
+        "save",
+        ["--events", json.dumps([
+            {"event_name": "Warsaw Spring Fest", "city": "Warsaw", "start_date": "2026-04-11", "confidence": "confirmed"},
+            {"event_name": "Kirschblütenfest in den Gärten der Welt", "city": "Berlin", "start_date": "2026-04-11", "end_date": "2026-04-12", "confidence": "likely"},
+            {"event_name": "Sakura – Kirschblütenfest in den Gärten der Welt", "city": "Berlin", "start_date": "2026-04-11", "end_date": "2026-04-12", "confidence": "confirmed"},
+            {"event_name": "Potsdam Market", "city": "Potsdam", "start_date": "2026-04-11", "confidence": "confirmed"},
+            {"event_name": "Potsdam Food Fest", "city": "Potsdam", "start_date": "2026-04-12", "confidence": "likely"},
+        ])],
+        tmp_path,
+        monkeypatch,
+    )
+
+    result = json.loads(_run_cmd("prepare-digest", ["--date", "2026-04-11"], tmp_path, monkeypatch))
+    assert result["summary"] == {
+        "duplicates_collapsed": 1,
+        "home_city_count": 1,
+        "trip_city_count": 2,
+        "total_pool": 3,
+    }
+    assert [event["event_name"] for event in result["home_city_candidates"]] == ["Warsaw Spring Fest"]
+    assert [group["city"] for group in result["trip_city_groups"]] == ["Berlin", "Potsdam"]
+    assert result["trip_city_groups"][0]["events"][0]["event_name"] == "Sakura – Kirschblütenfest in den Gärten der Welt"
+    assert result["trip_city_groups"][0]["event_count"] == 1
+    assert result["trip_city_groups"][0]["country"] == "Germany"
+    assert result["trip_city_groups"][1]["event_count"] == 2
+
+
+def test_prepare_digest_returns_all_sorted_city_events(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    import weekend_scout.cities as cities_module
+
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {
+            "tier1": ["Berlin|DE", "Potsdam|DE"],
+            "tier2": [],
+            "tier3": [],
+        },
+    )
+    _run_cmd(
+        "save",
+        ["--events", json.dumps([
+            {"event_name": "Potsdam Confirmed", "city": "Potsdam", "start_date": "2026-04-11", "confidence": "confirmed"},
+            {"event_name": "Potsdam Free", "city": "Potsdam", "start_date": "2026-04-11", "free_entry": True, "confidence": "likely"},
+            {"event_name": "Potsdam Early", "city": "Potsdam", "start_date": "2026-04-11", "confidence": "likely"},
+            {"event_name": "Potsdam Sunday", "city": "Potsdam", "start_date": "2026-04-12", "confidence": "likely"},
+        ])],
+        tmp_path,
+        monkeypatch,
+    )
+
+    result = json.loads(_run_cmd("prepare-digest", ["--date", "2026-04-11"], tmp_path, monkeypatch))
+    potsdam_group = next(group for group in result["trip_city_groups"] if group["city"] == "Potsdam")
+    assert potsdam_group["event_count"] == 4
+    assert [event["event_name"] for event in potsdam_group["events"]] == [
+        "Potsdam Confirmed",
+        "Potsdam Free",
+        "Potsdam Early",
+        "Potsdam Sunday",
+    ]
+
+
+def test_prepare_digest_pool_changes_by_one_for_one_new_trip_city(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    import weekend_scout.cities as cities_module
+
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {
+            "tier1": ["Berlin|DE", "Potsdam|DE"],
+            "tier2": ["Leipzig|DE"],
+            "tier3": [],
+        },
+    )
+    _run_cmd(
+        "save",
+        ["--events", json.dumps([
+            {"event_name": "Warsaw Spring Fest", "city": "Warsaw", "start_date": "2026-04-11"},
+            {"event_name": "Berlin Bloom", "city": "Berlin", "start_date": "2026-04-11", "confidence": "confirmed"},
+            {"event_name": "Potsdam Fair", "city": "Potsdam", "start_date": "2026-04-11", "confidence": "confirmed"},
+        ])],
+        tmp_path,
+        monkeypatch,
+    )
+    first = json.loads(_run_cmd("prepare-digest", ["--date", "2026-04-11"], tmp_path, monkeypatch))
+
+    _run_cmd(
+        "save",
+        ["--events", json.dumps([
+            {"event_name": "Leipzig Spring Walk", "city": "Leipzig", "start_date": "2026-04-11", "confidence": "confirmed"},
+        ])],
+        tmp_path,
+        monkeypatch,
+    )
+    second = json.loads(_run_cmd("prepare-digest", ["--date", "2026-04-11"], tmp_path, monkeypatch))
+
+    assert first["summary"]["total_pool"] == 3
+    assert second["summary"]["total_pool"] == 4
+    assert first["summary"]["trip_city_count"] == 2
+    assert second["summary"]["trip_city_count"] == 3
+
+
+def test_cmd_phase_c_cities_batches_and_filters(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    import weekend_scout.cities as cities_module
+    _stub_empty_geonames(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {
+            "tier1": ["Potsdam|DE"],
+            "tier2": ["Berlin|DE", "Brandenburg|DE", "Leipzig|DE", "Dresden|DE"],
+            "tier3": [],
+        },
+    )
+    _run_cmd(
+        "save",
+        ["--events", '[{"event_name":"A","city":"Berlin","start_date":"2026-04-04"}]'],
+        tmp_path, monkeypatch,
+    )
+    _run_cmd(
+        "log-search",
+        ["--query", "Brandenburg query", "--target-weekend", "2026-04-04",
+         "--phase", "targeted", "--cities", '["Brandenburg"]',
+         "--events", '[{"event_name":"B","city":"Brandenburg","start_date":"2026-04-04"}]',
+         "--run-id", "2026-04-04_1200"],
+        tmp_path, monkeypatch,
+    )
+    result = json.loads(
+        _run_cmd(
+            "phase-c-cities",
+            ["--run-id", "2026-04-04_1200", "--tier", "2", "--offset", "0", "--limit", "2"],
+            tmp_path, monkeypatch,
+        )
+    )
+    assert [card["city_name"] for card in result["cards"]] == ["Leipzig", "Dresden"]
+    assert result["available_count"] == 2
+    assert result["has_more"] is False
+    assert "eligible" not in result
+    assert "reason" not in result
+    assert set(result["cards"][0]) == {
+        "city_name",
+        "query",
+        "query_already_done",
+        "still_uncovered",
+        "retry_on_rerun",
+        "retry_query",
+    }
+    assert result["cards"][0]["still_uncovered"] is True
+    assert result["cards"][0]["retry_on_rerun"] is False
+    log_entries = (tmp_path / "cache" / "action_log.jsonl").read_text(encoding="utf-8").splitlines()
+    last_entry = json.loads(log_entries[-1])
+    assert last_entry["action"] == "phase_c_batch_requested"
+    assert last_entry["detail"]["returned_count"] == 2
+    assert "eligible" not in last_entry["detail"]
+    assert "searches_used" not in last_entry["detail"]
+    assert last_entry["detail"]["covered_count"] == 2
+
+
+def test_cmd_phase_c_cities_accepts_deprecated_searches_used_noop(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    import weekend_scout.cities as cities_module
+    _stub_empty_geonames(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {"tier1": [], "tier2": ["Berlin|DE", "Leipzig|DE"], "tier3": []},
+    )
+    result = json.loads(
+        _run_cmd(
+            "phase-c-cities",
+            ["--run-id", "2026-04-04_1200", "--tier", "2", "--offset", "0", "--limit", "6",
+             "--covered-cities", "[]", "--searches-used", "30"],
+            tmp_path, monkeypatch,
+        )
+    )
+    assert [card["city_name"] for card in result["cards"]] == ["Berlin", "Leipzig"]
+    assert all(card["still_uncovered"] is True for card in result["cards"])
+    assert "eligible" not in result
+    assert "reason" not in result
+
+
+def test_cmd_phase_c_cities_localizes_belarusian_query_city_names(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    import yaml
+    import weekend_scout.cities as cities_module
+
+    (tmp_path / "config.yaml").write_text(
+        yaml.dump(
+            {
+                "home_city": "Baranovichi",
+                "home_country": "Belarus",
+                "home_coordinates": {"lat": 53.1327, "lon": 26.0139},
+                "radius_km": 150,
+                "search_language": "be",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    geonames_path = tmp_path / "cache" / "geonames" / "cities15000.txt"
+    geonames_path.parent.mkdir(parents=True, exist_ok=True)
+    geonames_path.write_text(
+        "\n".join(
+            [
+                "\t".join(
+                    [
+                        "1",
+                        "Lida",
+                        "Lida",
+                        "\u041b\u0438\u0434\u0430,\u041b\u0456\u0434\u0430",
+                        "53.8833",
+                        "25.2997",
+                        "P",
+                        "PPLA",
+                        "BY",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "101616",
+                        "",
+                        "100",
+                        "Europe/Minsk",
+                        "2024-01-01",
+                    ]
+                ),
+                "\t".join(
+                    [
+                        "2",
+                        "Novogrudok",
+                        "Novogrudok",
+                        "\u041d\u043e\u0432\u043e\u0433\u0440\u0443\u0434\u043e\u043a,\u041d\u0430\u0432\u0430\u0433\u0440\u0443\u0434\u0430\u043a",
+                        "53.5942",
+                        "25.8191",
+                        "P",
+                        "PPLA2",
+                        "BY",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "28591",
+                        "",
+                        "100",
+                        "Europe/Minsk",
+                        "2024-01-01",
+                    ]
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+    alt_path = _write_country_alternate_names_file(
+        tmp_path,
+        "BY",
+        [
+            _make_alternate_name_row("1", "1", "be", "\u041b\u0456\u0434\u0430", is_preferred=True),
+            _make_alternate_name_row("2", "2", "be", "\u041d\u0430\u0432\u0430\u0433\u0440\u0443\u0434\u0430\u043a", is_preferred=True),
+        ],
+    )
+
+    monkeypatch.setattr(cities_module, "ensure_geonames", lambda: geonames_path)
+    monkeypatch.setattr(cities_module, "ensure_country_alternate_names", lambda _code, force=False: alt_path)
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {"tier1": [], "tier2": ["Lida|BY", "Novogrudok|BY"], "tier3": []},
+    )
+
+    result = json.loads(
+        _run_cmd(
+            "phase-c-cities",
+            ["--run-id", "2026-04-18_1200", "--tier", "2", "--offset", "0", "--limit", "6"],
+            tmp_path,
+            monkeypatch,
+        )
+    )
+
+    assert result["cards"]
+    queries = [card["query"] for card in result["cards"]]
+    assert any("\u041b\u0456\u0434\u0430" in query for query in queries)
+    assert any("\u041d\u0430\u0432\u0430\u0433\u0440\u0443\u0434\u0430\u043a" in query for query in queries)
+
+
+def test_cmd_phase_c_cities_localizes_greek_query_city_names(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    import yaml
+    import weekend_scout.cities as cities_module
+
+    (tmp_path / "config.yaml").write_text(
+        yaml.dump(
+            {
+                "home_city": "Athens",
+                "home_country": "Greece",
+                "home_coordinates": {"lat": 37.9838, "lon": 23.7275},
+                "radius_km": 150,
+                "search_language": "el",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    geonames_path = tmp_path / "cache" / "geonames" / "cities15000.txt"
+    geonames_path.parent.mkdir(parents=True, exist_ok=True)
+    geonames_path.write_text(
+        "\n".join(
+            [
+                "\t".join(
+                    [
+                        "1",
+                        "Athens",
+                        "Athens",
+                        "\u0391\u03b8\u03ae\u03bd\u03b1,\u0391\u03b8\u03ae\u03bd\u03b1\u03b9",
+                        "37.9838",
+                        "23.7275",
+                        "P",
+                        "PPLC",
+                        "GR",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "664046",
+                        "",
+                        "100",
+                        "Europe/Athens",
+                        "2024-01-01",
+                    ]
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+    alt_path = _write_country_alternate_names_file(
+        tmp_path,
+        "GR",
+        [
+            _make_alternate_name_row("1", "1", "el", "\u0391\u03b8\u03ae\u03bd\u03b1", is_preferred=True),
+            _make_alternate_name_row("2", "1", "el", "\u0391\u03b8\u03ae\u03bd\u03b1\u03b9"),
+        ],
+    )
+
+    monkeypatch.setattr(cities_module, "ensure_geonames", lambda: geonames_path)
+    monkeypatch.setattr(cities_module, "ensure_country_alternate_names", lambda _code, force=False: alt_path)
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {"tier1": [], "tier2": ["Athens|GR"], "tier3": []},
+    )
+
+    result = json.loads(
+        _run_cmd(
+            "phase-c-cities",
+            ["--run-id", "2026-04-18_1201", "--tier", "2", "--offset", "0", "--limit", "6"],
+            tmp_path,
+            monkeypatch,
+        )
+    )
+
+    assert result["cards"]
+    assert any("\u0391\u03b8\u03ae\u03bd\u03b1" in card["query"] for card in result["cards"])
+
+
+def test_cmd_log_search_implicitly_starts_phase_for_targeted_activity(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    _run_cmd(
+        "log-search",
+        [
+            "--query", "Potsdam query",
+            "--target-weekend", "2026-04-04",
+            "--phase", "targeted",
+            "--cities", '["Potsdam"]',
+            "--run-id", "run-c",
+        ],
+        tmp_path, monkeypatch,
+    )
+    log_entries = [json.loads(line) for line in (tmp_path / "cache" / "action_log.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert log_entries[0]["action"] == "phase_start"
+    assert log_entries[0]["phase"] == "C"
+    assert log_entries[0]["source"] == "python"
+    assert log_entries[0]["detail"] == {"implicit": True, "trigger": "log_search:targeted"}
+    assert log_entries[1]["action"] == "search"
+    assert log_entries[1]["phase"] == "targeted"
+
+    result = json.loads(
+        _run_cmd(
+            "phase-summary",
+            ["--run-id", "run-c", "--phase", "C", "--target-weekend", "2026-04-04"],
+            tmp_path, monkeypatch,
+        )
+    )
+    assert result["logged"] is True
+    assert result["detail"]["searches_used_in_phase"] == 1
+
+
+def test_cmd_phase_c_cities_implicitly_starts_phase_c(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    import weekend_scout.cities as cities_module
+    _stub_empty_geonames(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        cities_module,
+        "get_city_list",
+        lambda _cfg, bypass_cache=False: {"tier1": [], "tier2": ["Berlin|DE", "Leipzig|DE"], "tier3": []},
+    )
+    _run_cmd(
+        "phase-c-cities",
+        ["--run-id", "2026-04-04_1200", "--tier", "2", "--offset", "0", "--limit", "6"],
+        tmp_path, monkeypatch,
+    )
+    log_entries = [json.loads(line) for line in (tmp_path / "cache" / "action_log.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert log_entries[0]["action"] == "phase_start"
+    assert log_entries[0]["phase"] == "C"
+    assert log_entries[0]["detail"] == {"implicit": True, "trigger": "phase_c_batch_requested"}
+    assert log_entries[1]["action"] == "phase_c_batch_requested"
+    assert log_entries[1]["phase"] == "C"
+
+
+def test_cmd_log_action_skip_implicitly_starts_phase(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    _run_cmd(
+        "log-action",
+        [
+            "--run-id", "run-skip",
+            "--action", "skip",
+            "--phase", "B",
+            "--target-weekend", "2026-04-04",
+            "--detail", '{"reason":"no_aggregator_urls"}',
+        ],
+        tmp_path, monkeypatch,
+    )
+    log_entries = [json.loads(line) for line in (tmp_path / "cache" / "action_log.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert log_entries[0]["action"] == "phase_start"
+    assert log_entries[0]["phase"] == "B"
+    assert log_entries[0]["detail"] == {"implicit": True, "trigger": "log_action:skip:B"}
+    assert log_entries[1]["action"] == "skip"
+    assert log_entries[1]["phase"] == "B"
+
+
+def test_cmd_phase_summary_logs_canonical_counts(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    _write_action_log_fixture(
+        tmp_path,
+        [
+            {"ts": "2026-04-03T12:24:45", "run_id": "run-a", "source": "python", "action": "run_init", "phase": None, "target_weekend": "2026-04-04", "detail": {"cached_count": 0, "tier1": ["Radom|PL"]}},
+            {"ts": "2026-04-03T12:24:50", "run_id": "run-a", "source": "skill", "action": "phase_start", "phase": "A", "target_weekend": "2026-04-04", "detail": {}},
+            {"ts": "2026-04-03T12:24:55", "run_id": "run-a", "source": "skill", "action": "search", "phase": "broad", "target_weekend": "2026-04-04", "detail": {"query": "q1", "result_count": 3, "cities": ["Warsaw"], "events_discovered": 1}},
+            {"ts": "2026-04-03T12:25:00", "run_id": "run-a", "source": "skill", "action": "search", "phase": "broad", "target_weekend": "2026-04-04", "detail": {"query": "q2", "result_count": 2, "cities": ["Warsaw"], "events_discovered": 0}},
+        ],
+    )
+    result = json.loads(
+        _run_cmd(
+            "phase-summary",
+            ["--run-id", "run-a", "--phase", "A", "--target-weekend", "2026-04-04"],
+            tmp_path, monkeypatch,
+        )
+    )
+    assert result["logged"] is True
+    assert result["detail"] == {
+        "searches_used_in_phase": 2,
+        "fetches_used_in_phase": 0,
+        "new_events_in_phase": 1,
+        "cumulative_searches_used": 2,
+        "cumulative_fetches_used": 0,
+    }
+
+
+def test_cmd_phase_summary_requires_phase_start(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    _write_action_log_fixture(
+        tmp_path,
+        [
+            {"ts": "2026-04-03T12:24:45", "run_id": "run-a", "source": "python", "action": "run_init", "phase": None, "target_weekend": "2026-04-04", "detail": {"cached_count": 0, "tier1": ["Radom|PL"]}},
+            {"ts": "2026-04-03T12:24:55", "run_id": "run-a", "source": "skill", "action": "search", "phase": "broad", "target_weekend": "2026-04-04", "detail": {"query": "q1", "result_count": 3, "cities": ["Warsaw"], "events_discovered": 1}},
+        ],
+    )
+    result = json.loads(
+        _run_cmd(
+            "phase-summary",
+            ["--run-id", "run-a", "--phase", "A", "--target-weekend", "2026-04-04"],
+            tmp_path, monkeypatch,
+        )
+    )
+    assert result["logged"] is False
+    assert result["detail"] == {}
+    assert result["error"] == "phase_start missing"
+
+
+def test_cmd_phase_summary_rejects_duplicate_phase_summary(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    _write_action_log_fixture(
+        tmp_path,
+        [
+            {"ts": "2026-04-03T12:24:45", "run_id": "run-a", "source": "python", "action": "run_init", "phase": None, "target_weekend": "2026-04-04", "detail": {"cached_count": 0, "tier1": ["Radom|PL"]}},
+            {"ts": "2026-04-03T12:24:50", "run_id": "run-a", "source": "skill", "action": "phase_start", "phase": "A", "target_weekend": "2026-04-04", "detail": {}},
+            {"ts": "2026-04-03T12:24:55", "run_id": "run-a", "source": "skill", "action": "phase_summary", "phase": "A", "target_weekend": "2026-04-04", "detail": {"searches_used_in_phase": 0, "fetches_used_in_phase": 0, "new_events_in_phase": 0, "cumulative_searches_used": 0, "cumulative_fetches_used": 0}},
+        ],
+    )
+    result = json.loads(
+        _run_cmd(
+            "phase-summary",
+            ["--run-id", "run-a", "--phase", "A", "--target-weekend", "2026-04-04"],
+            tmp_path, monkeypatch,
+        )
+    )
+    assert result["logged"] is False
+    assert result["error"] == "phase already summarized"
+
+
+def test_cleanup_transport_artifacts_removes_only_safe_patterns(tmp_path):
+    from weekend_scout.__main__ import _cleanup_transport_artifacts
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    removable = [
+        "setup.json",
+        "events.json",
+        "city-events.json",
+        "trips.json",
+        "covered-cities.json",
+        "uncovered-tier1.json",
+        "cities-1.json",
+        "detail-a.json",
+        "_tmp_test.tmp",
+    ]
+    keep = [
+        "cache.db",
+        "action_log.jsonl",
+        "cities_Warsaw_100.json",
+        "scout_message.txt",
+    ]
+    for name in removable + keep:
+        (cache_dir / name).write_text("x", encoding="utf-8")
+
+    removed = _cleanup_transport_artifacts(cache_dir)
+    assert set(removed) == set(removable)
+    for name in removable:
+        assert not (cache_dir / name).exists()
+    for name in keep:
+        assert (cache_dir / name).exists()
+
+
+def test_cmd_score_summary_logs_flat_payload(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    result = json.loads(
+        _run_cmd(
+            "score-summary",
+            ["--run-id", "run-score", "--target-weekend", "2026-04-04",
+             "--total-pool", "7", "--city-events-selected", "3", "--trip-options", "1"],
+            tmp_path, monkeypatch,
+        )
+    )
+    assert result["logged"] is True
+    assert result["detail"] == {"total_pool": 7, "city_events_selected": 3, "trip_options": 1}
+
+
+def test_cmd_run_complete_computes_counts_from_log(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    from weekend_scout.cache import save_events
+
+    save_events(
+        {"home_city": "Warsaw", "radius_km": 150, "_cache_dir": str(tmp_path / "cache")},
+        [
+            {"event_name": "City Event", "city": "Warsaw", "start_date": "2026-04-04"},
+            {"event_name": "Trip Event", "city": "Berlin", "start_date": "2026-04-04"},
+        ],
+    )
+    _write_action_log_fixture(
+        tmp_path,
+        [
+            {"ts": "2026-04-03T12:24:45", "run_id": "run-complete", "source": "python", "action": "run_init", "phase": None, "target_weekend": "2026-04-04", "detail": {"cached_count": 2, "tier1": ["Radom|PL"]}},
+            {"ts": "2026-04-03T12:24:50", "run_id": "run-complete", "source": "skill", "action": "search", "phase": "broad", "target_weekend": "2026-04-04", "detail": {"query": "q1", "result_count": 3, "cities": ["Warsaw"], "events_discovered": 1}},
+            {"ts": "2026-04-03T12:25:00", "run_id": "run-complete", "source": "skill", "action": "fetch", "phase": "aggregator", "target_weekend": "2026-04-04", "detail": {"query": "u1", "result_count": 2, "cities": ["Warsaw"], "events_discovered": 2}},
+            {"ts": "2026-04-03T12:25:05", "run_id": "run-complete", "source": "skill", "action": "fetch", "phase": "verification", "target_weekend": "2026-04-04", "detail": {"query": "u2", "result_count": 1, "cities": ["Radom"], "events_discovered": 0}},
+            {"ts": "2026-04-03T12:25:10", "run_id": "run-complete", "source": "python", "action": "events_saved", "phase": None, "target_weekend": None, "detail": {"saved": 3, "skipped": 0}},
+        ],
+    )
+    result = json.loads(
+        _run_cmd(
+            "run-complete",
+            ["--run-id", "run-complete", "--target-weekend", "2026-04-04",
+             "--events-sent", "4", "--sent", "false",
+             "--send-reason", "telegram_not_configured", "--served-marked", "false"],
+            tmp_path, monkeypatch,
+        )
+    )
+    assert result["logged"] is True
+    assert result["detail"]["new_events"] == 3
+    assert result["detail"]["searches_used"] == 1
+    assert result["detail"]["fetches_used"] == 1
+    assert result["detail"]["validation_fetches_used"] == 1
+    assert result["detail"]["validation_fetch_limit"] == 5
+    assert result["detail"]["events_sent"] == 4
+    assert result["detail"]["cached_events"] == 2
+    assert result["detail"]["uncovered_tier1"] == ["Radom"]
+
+
+def test_cmd_run_complete_accepts_telegram_internal(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    _write_action_log_fixture(
+        tmp_path,
+        [
+            {"ts": "2026-04-03T12:24:45", "run_id": "run-internal", "source": "python", "action": "run_init", "phase": None, "target_weekend": "2026-04-04", "detail": {"cached_count": 0, "tier1": ["Radom|PL"]}},
+            {"ts": "2026-04-03T12:24:50", "run_id": "run-internal", "source": "python", "action": "events_saved", "phase": None, "target_weekend": None, "detail": {"saved": 0, "skipped": 0}},
+        ],
+    )
+    result = json.loads(
+        _run_cmd(
+            "run-complete",
+            ["--run-id", "run-internal", "--target-weekend", "2026-04-04",
+             "--events-sent", "1", "--sent", "false",
+             "--send-reason", "telegram_internal", "--served-marked", "true"],
+            tmp_path, monkeypatch,
+        )
+    )
+    assert result["logged"] is True
+    assert result["detail"]["send_reason"] == "telegram_internal"
+    assert result["detail"]["served_marked"] is True
+
+
+def test_cmd_prepare_delivery_returns_shared_delivery_stats(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    from weekend_scout.cache import save_events
+
+    save_events(
+        {"home_city": "Warsaw", "radius_km": 150, "_cache_dir": str(tmp_path / "cache")},
+        [
+            {"event_name": "City Event", "city": "Warsaw", "start_date": "2026-04-04"},
+            {"event_name": "Trip Event", "city": "Berlin", "start_date": "2026-04-04"},
+        ],
+    )
+    _write_action_log_fixture(
+        tmp_path,
+        [
+            {"ts": "2026-04-03T12:24:45", "run_id": "prepare-delivery", "source": "python", "action": "run_init", "phase": None, "target_weekend": "2026-04-04", "detail": {"cached_count": 2, "tier1": ["Radom|PL"]}},
+            {"ts": "2026-04-03T12:24:50", "run_id": "prepare-delivery", "source": "skill", "action": "search", "phase": "broad", "target_weekend": "2026-04-04", "detail": {"query": "q1", "result_count": 3, "cities": ["Warsaw"], "events_discovered": 1}},
+            {"ts": "2026-04-03T12:25:00", "run_id": "prepare-delivery", "source": "skill", "action": "fetch", "phase": "aggregator", "target_weekend": "2026-04-04", "detail": {"query": "u1", "result_count": 2, "cities": ["Warsaw"], "events_discovered": 2}},
+            {"ts": "2026-04-03T12:25:05", "run_id": "prepare-delivery", "source": "skill", "action": "fetch", "phase": "verification", "target_weekend": "2026-04-04", "detail": {"query": "u2", "result_count": 1, "cities": ["Radom"], "events_discovered": 0}},
+            {"ts": "2026-04-03T12:25:10", "run_id": "prepare-delivery", "source": "python", "action": "events_saved", "phase": None, "target_weekend": None, "detail": {"saved": 3, "skipped": 0}},
+        ],
+    )
+
+    result = json.loads(
+        _run_cmd(
+            "prepare-delivery",
+            ["--run-id", "prepare-delivery", "--target-weekend", "2026-04-04", "--events-sent", "4"],
+            tmp_path,
+            monkeypatch,
+        )
+    )
+    assert result["detail"]["new_events"] == 3
+    assert result["detail"]["cached_events"] == 2
+    assert result["detail"]["searches_used"] == 1
+    assert result["detail"]["fetches_used"] == 1
+    assert result["detail"]["validation_fetches_used"] == 1
+    assert result["detail"]["events_sent"] == 4
+    assert result["detail"]["uncovered_tier1"] == ["Radom"]
+    assert "sent" not in result["detail"]
+
+
+def test_cmd_audit_run_flags_known_phase_drift(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    fixture_path = Path("tests/fixtures/phase_drift_2026-04-03.jsonl")
+    _write_action_log_fixture(
+        tmp_path,
+        [json.loads(line) for line in fixture_path.read_text(encoding="utf-8").splitlines() if line.strip()],
+    )
+    result = json.loads(
+        _run_cmd("audit-run", ["--run-id", "2026-04-04_1224"], tmp_path, monkeypatch)
+    )
+    assert result["ok"] is False
+    assert any("Phase A" in error for error in result["errors"])
+    assert any("phase_summary without a matching phase_start" in error for error in result["errors"])
+
+
+def test_cmd_audit_run_flags_phase_activity_before_phase_start(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    _write_action_log_fixture(
+        tmp_path,
+        [
+            {"ts": "2026-04-06T19:26:53", "run_id": "run-c-drift", "source": "python", "action": "run_init", "phase": None, "target_weekend": "2026-04-11", "detail": {"home_city": "Berlin", "radius_km": 150, "cached_count": 9, "tier1": ["Potsdam|DE"]}},
+            {"ts": "2026-04-06T19:27:04", "run_id": "run-c-drift", "source": "skill", "action": "phase_start", "phase": "A", "target_weekend": "2026-04-11", "detail": {}},
+            {"ts": "2026-04-06T19:27:17", "run_id": "run-c-drift", "source": "skill", "action": "phase_summary", "phase": "A", "target_weekend": "2026-04-11", "detail": {"searches_used_in_phase": 0, "fetches_used_in_phase": 0, "new_events_in_phase": 0, "cumulative_searches_used": 0, "cumulative_fetches_used": 0}},
+            {"ts": "2026-04-06T19:27:20", "run_id": "run-c-drift", "source": "skill", "action": "skip", "phase": "B", "target_weekend": "2026-04-11", "detail": {"reason": "no_aggregator_urls"}},
+            {"ts": "2026-04-06T19:27:28", "run_id": "run-c-drift", "source": "skill", "action": "search", "phase": "targeted", "target_weekend": "2026-04-11", "detail": {"query": "Potsdam retry", "result_count": 0, "cities": ["Potsdam"], "events_discovered": 0}},
+            {"ts": "2026-04-06T19:27:47", "run_id": "run-c-drift", "source": "skill", "action": "phase_c_batch_requested", "phase": "C", "target_weekend": "2026-04-11", "detail": {"tier": 2, "offset": 0, "limit": 6, "covered_count": 4, "returned_count": 6, "has_more": True, "next_offset": 6}},
+        ],
+    )
+    result = json.loads(_run_cmd("audit-run", ["--run-id", "run-c-drift"], tmp_path, monkeypatch))
+    assert result["ok"] is False
+    assert any("Phase C has activity before phase_start" in error for error in result["errors"])
+    assert any("Phase B has skip without a matching phase_start" in error for error in result["errors"])
+
+
+def test_cmd_audit_run_default_is_advisory(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    fixture_path = Path("tests/fixtures/run_2026-04-03_1529.jsonl")
+    _write_action_log_fixture(
+        tmp_path,
+        [json.loads(line) for line in fixture_path.read_text(encoding="utf-8").splitlines() if line.strip()],
+    )
+    _, raised = _invoke_command_no_catch(
+        "audit-run", ["--run-id", "2026-04-04_1529"], tmp_path, monkeypatch
+    )
+    assert raised is None
+
+
+def test_cmd_audit_run_strict_exits_non_zero(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    fixture_path = Path("tests/fixtures/run_2026-04-03_1529.jsonl")
+    _write_action_log_fixture(
+        tmp_path,
+        [json.loads(line) for line in fixture_path.read_text(encoding="utf-8").splitlines() if line.strip()],
+    )
+    _, raised = _invoke_command_no_catch(
+        "audit-run", ["--run-id", "2026-04-04_1529", "--strict"], tmp_path, monkeypatch
+    )
+    assert isinstance(raised, SystemExit)
+    assert raised.code == 1
+
+
+def test_cmd_audit_run_flags_score_summary_shape_on_last_failed_run(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    fixture_path = Path("tests/fixtures/run_2026-04-03_1529.jsonl")
+    _write_action_log_fixture(
+        tmp_path,
+        [json.loads(line) for line in fixture_path.read_text(encoding="utf-8").splitlines() if line.strip()],
+    )
+    result = json.loads(
+        _run_cmd("audit-run", ["--run-id", "2026-04-04_1529"], tmp_path, monkeypatch)
+    )
+    assert result["ok"] is False
+    assert any("score_summary total_pool must be an integer" in error for error in result["errors"])
+
+
+def test_cmd_audit_run_accepts_valid_run(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    _write_action_log_fixture(
+        tmp_path,
+        [
+            {
+                "ts": "2026-04-03T12:24:45",
+                "run_id": "run-ok",
+                "source": "python",
+                "action": "run_init",
+                "phase": None,
+                "target_weekend": "2026-04-04",
+                "detail": {"home_city": "Warsaw", "radius_km": 150, "cached_count": 0, "tier1": ["Radom|PL"]},
+            },
+            {
+                "ts": "2026-04-03T12:24:50",
+                "run_id": "run-ok",
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "A",
+                "target_weekend": "2026-04-04",
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:55",
+                "run_id": "run-ok",
+                "source": "skill",
+                "action": "search",
+                "phase": "broad",
+                "target_weekend": "2026-04-04",
+                "detail": {"query": "broad query", "result_count": 3, "cities": ["Warsaw"], "events_discovered": 1},
+            },
+            {
+                "ts": "2026-04-03T12:25:00",
+                "run_id": "run-ok",
+                "source": "skill",
+                "action": "phase_summary",
+                "phase": "A",
+                "target_weekend": "2026-04-04",
+                "detail": {
+                    "searches_used_in_phase": 1,
+                    "fetches_used_in_phase": 0,
+                    "new_events_in_phase": 1,
+                    "cumulative_searches_used": 1,
+                    "cumulative_fetches_used": 0,
+                },
+            },
+            {
+                "ts": "2026-04-03T12:25:05",
+                "run_id": "run-ok",
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "B",
+                "target_weekend": "2026-04-04",
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:25:06",
+                "run_id": "run-ok",
+                "source": "skill",
+                "action": "skip",
+                "phase": "B",
+                "target_weekend": "2026-04-04",
+                "detail": {"reason": "no_aggregator_urls"},
+            },
+            {
+                "ts": "2026-04-03T12:25:10",
+                "run_id": "run-ok",
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "C",
+                "target_weekend": "2026-04-04",
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:25:11",
+                "run_id": "run-ok",
+                "source": "skill",
+                "action": "skip",
+                "phase": "C",
+                "target_weekend": "2026-04-04",
+                "detail": {"reason": "all_cities_covered"},
+            },
+            {
+                "ts": "2026-04-03T12:25:15",
+                "run_id": "run-ok",
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "D",
+                "target_weekend": "2026-04-04",
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:25:16",
+                "run_id": "run-ok",
+                "source": "skill",
+                "action": "skip",
+                "phase": "D",
+                "target_weekend": "2026-04-04",
+                "detail": {"reason": "all_confirmed"},
+            },
+            {
+                "ts": "2026-04-03T12:25:20",
+                "run_id": "run-ok",
+                "source": "python",
+                "action": "events_saved",
+                "phase": None,
+                "target_weekend": None,
+                "detail": {"saved": 1, "skipped": 0},
+            },
+            {
+                "ts": "2026-04-03T12:25:25",
+                "run_id": "run-ok",
+                "source": "skill",
+                "action": "score_summary",
+                "phase": None,
+                "target_weekend": "2026-04-04",
+                "detail": {"total_pool": 1, "city_events_selected": 1, "trip_options": 0},
+            },
+            {
+                "ts": "2026-04-03T12:25:30",
+                "run_id": "run-ok",
+                "source": "python",
+                "action": "message_formatted",
+                "phase": None,
+                "target_weekend": "2026-04-04",
+                "detail": {"city_events": 1, "trips": 0, "char_count": 250},
+            },
+            {
+                "ts": "2026-04-03T12:25:35",
+                "run_id": "run-ok",
+                "source": "python",
+                "action": "telegram_send",
+                "phase": None,
+                "target_weekend": None,
+                "detail": {"success": True, "char_count": 250},
+            },
+            {
+                "ts": "2026-04-03T12:25:40",
+                "run_id": "run-ok",
+                "source": "python",
+                "action": "events_served",
+                "phase": None,
+                "target_weekend": "2026-04-04",
+                "detail": {"count": 1},
+            },
+            {
+                "ts": "2026-04-03T12:25:45",
+                "run_id": "run-ok",
+                "source": "skill",
+                "action": "run_complete",
+                "phase": None,
+                "target_weekend": "2026-04-04",
+                "detail": {
+                    "events_sent": 1,
+                    "new_events": 1,
+                    "cached_events": 0,
+                    "searches_used": 1,
+                    "max_searches": 30,
+                    "fetches_used": 0,
+                    "max_fetches": 30,
+                    "validation_fetches_used": 0,
+                    "validation_fetch_limit": 5,
+                    "sent": True,
+                    "send_reason": "sent",
+                    "served_marked": True,
+                    "uncovered_tier1": [],
+                },
+            },
+        ],
+    )
+    result = json.loads(
+        _run_cmd("audit-run", ["--run-id", "run-ok"], tmp_path, monkeypatch)
+    )
+    assert result["ok"] is True
+    assert result["summary"]["searches_used"] == 1
+    assert result["summary"]["completed_phases"] == ["A", "B", "C", "D"]
+
+
+def test_successful_send_flow_audits_ok_with_run_scoped_events_served(tmp_path, monkeypatch):
+    import weekend_scout.telegram as telegram_module
+
+    _write_minimal_config(tmp_path)
+    run_id = "run-flow"
+    saturday = "2026-04-04"
+    sunday = "2026-04-05"
+    event = {
+        "event_name": "Spring Festival",
+        "city": "Warsaw",
+        "country": "Poland",
+        "start_date": saturday,
+        "location_name": "Main Square",
+        "source_url": "https://example.com/festival",
+        "confidence": "confirmed",
+    }
+
+    monkeypatch.setattr(
+        telegram_module,
+        "send_telegram",
+        lambda config, message: {
+            "sent": True,
+            "reason": "sent",
+            "error_code": None,
+            "status_code": None,
+            "error": None,
+            "parts_sent": 1,
+        },
+    )
+
+    _run_cmd(
+        "log-action",
+        [
+            "--run-id", run_id,
+            "--action", "run_init",
+            "--target-weekend", saturday,
+            "--detail", '{"home_city":"Warsaw","radius_km":150,"cached_count":0,"tier1":["Radom|PL"]}',
+            "--source", "python",
+        ],
+        tmp_path, monkeypatch,
+    )
+    for phase, reason in (
+        ("A", "all_queries_in_done_q"),
+        ("B", "no_aggregator_urls"),
+        ("C", "all_cities_covered"),
+        ("D", "all_confirmed"),
+    ):
+        _run_cmd(
+            "log-action",
+            [
+                "--run-id", run_id,
+                "--action", "skip",
+                "--phase", phase,
+                "--target-weekend", saturday,
+                "--detail", json.dumps({"reason": reason}),
+            ],
+            tmp_path, monkeypatch,
+        )
+
+    _run_cmd(
+        "save",
+        ["--events", json.dumps([event]), "--run-id", run_id],
+        tmp_path, monkeypatch,
+    )
+    _run_cmd(
+        "score-summary",
+        [
+            "--run-id", run_id,
+            "--target-weekend", saturday,
+            "--total-pool", "1",
+            "--city-events-selected", "1",
+            "--trip-options", "0",
+        ],
+        tmp_path, monkeypatch,
+    )
+    message_path = tmp_path / "msg.txt"
+    _run_format_message(
+        [
+            "--saturday", saturday,
+            "--sunday", sunday,
+            "--city-events", json.dumps([event]),
+            "--output", str(message_path),
+            "--run-id", run_id,
+        ],
+        tmp_path, monkeypatch,
+    )
+    _run_cmd("send", ["--file", str(message_path), "--run-id", run_id], tmp_path, monkeypatch)
+    _run_cmd(
+        "cache-mark-served",
+        ["--date", saturday, "--run-id", run_id],
+        tmp_path, monkeypatch,
+    )
+    _run_cmd(
+        "run-complete",
+        [
+            "--run-id", run_id,
+            "--target-weekend", saturday,
+            "--events-sent", "1",
+            "--sent", "true",
+            "--send-reason", "sent",
+            "--served-marked", "true",
+        ],
+        tmp_path, monkeypatch,
+    )
+
+    result = json.loads(_run_cmd("audit-run", ["--run-id", run_id], tmp_path, monkeypatch))
+    assert result["ok"] is True
+
+
+def test_audit_run_flags_send_reason_mismatch(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    run_id = "run-send-mismatch"
+    saturday = "2026-04-04"
+    _write_action_log_fixture(
+        tmp_path,
+        [
+            {
+                "ts": "2026-04-03T12:24:45",
+                "run_id": run_id,
+                "source": "python",
+                "action": "run_init",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"home_city": "Warsaw", "radius_km": 150, "cached_count": 0, "tier1": ["Radom|PL"]},
+            },
+            {
+                "ts": "2026-04-03T12:24:50",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "A",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:51",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "A",
+                "target_weekend": saturday,
+                "detail": {"reason": "all_queries_in_done_q"},
+            },
+            {
+                "ts": "2026-04-03T12:24:52",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "B",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:53",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "B",
+                "target_weekend": saturday,
+                "detail": {"reason": "no_aggregator_urls"},
+            },
+            {
+                "ts": "2026-04-03T12:24:54",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "C",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:55",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "C",
+                "target_weekend": saturday,
+                "detail": {"reason": "all_cities_covered"},
+            },
+            {
+                "ts": "2026-04-03T12:24:56",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "D",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:57",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "D",
+                "target_weekend": saturday,
+                "detail": {"reason": "all_confirmed"},
+            },
+            {
+                "ts": "2026-04-03T12:25:00",
+                "run_id": run_id,
+                "source": "python",
+                "action": "telegram_send",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {
+                    "success": False,
+                    "reason": "send_failed",
+                    "error_code": "telegram_http_error",
+                    "status_code": 403,
+                    "error": "Forbidden",
+                    "parts_sent": 0,
+                    "char_count": 250,
+                },
+            },
+            {
+                "ts": "2026-04-03T12:25:05",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "run_complete",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {
+                    "events_sent": 0,
+                    "new_events": 0,
+                    "cached_events": 0,
+                    "searches_used": 0,
+                    "max_searches": 15,
+                    "fetches_used": 0,
+                    "max_fetches": 15,
+                    "validation_fetches_used": 0,
+                    "validation_fetch_limit": 5,
+                    "sent": False,
+                    "send_reason": "telegram_not_configured",
+                    "served_marked": False,
+                    "uncovered_tier1": [],
+                },
+            },
+        ],
+    )
+    result = json.loads(_run_cmd("audit-run", ["--run-id", run_id], tmp_path, monkeypatch))
+    assert result["ok"] is False
+    assert any("run_complete send_reason does not match telegram_send.reason" in error for error in result["errors"])
+
+
+def test_audit_run_accepts_openclaw_internal_delivery_mapping(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    run_id = "run-openclaw-internal"
+    saturday = "2026-04-04"
+    _write_action_log_fixture(
+        tmp_path,
+        [
+            {
+                "ts": "2026-04-03T12:24:45",
+                "run_id": run_id,
+                "source": "python",
+                "action": "run_init",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"home_city": "Warsaw", "radius_km": 150, "cached_count": 0, "tier1": ["Radom|PL"]},
+            },
+            {
+                "ts": "2026-04-03T12:24:50",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "A",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:51",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "A",
+                "target_weekend": saturday,
+                "detail": {"reason": "all_queries_in_done_q"},
+            },
+            {
+                "ts": "2026-04-03T12:24:52",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "B",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:53",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "B",
+                "target_weekend": saturday,
+                "detail": {"reason": "no_aggregator_urls"},
+            },
+            {
+                "ts": "2026-04-03T12:24:54",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "C",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:55",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "C",
+                "target_weekend": saturday,
+                "detail": {"reason": "all_cities_covered"},
+            },
+            {
+                "ts": "2026-04-03T12:24:56",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "D",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:57",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "D",
+                "target_weekend": saturday,
+                "detail": {"reason": "all_confirmed"},
+            },
+            {
+                "ts": "2026-04-03T12:25:00",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "score_summary",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"total_pool": 1, "city_events_selected": 1, "trip_options": 0},
+            },
+            {
+                "ts": "2026-04-03T12:25:01",
+                "run_id": run_id,
+                "source": "python",
+                "action": "message_formatted",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"city_events": 1, "trips": 0, "char_count": 250},
+            },
+            {
+                "ts": "2026-04-03T12:25:02",
+                "run_id": run_id,
+                "source": "python",
+                "action": "telegram_send",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {
+                    "success": False,
+                    "reason": "telegram_not_configured",
+                    "error_code": "telegram_not_configured",
+                    "status_code": None,
+                    "error": "Missing config: telegram_bot_token, telegram_chat_id",
+                    "parts_sent": 0,
+                    "char_count": 250,
+                },
+            },
+            {
+                "ts": "2026-04-03T12:25:03",
+                "run_id": run_id,
+                "source": "python",
+                "action": "events_served",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"count": 1},
+            },
+            {
+                "ts": "2026-04-03T12:25:05",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "run_complete",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {
+                    "events_sent": 1,
+                    "new_events": 0,
+                    "cached_events": 0,
+                    "searches_used": 0,
+                    "max_searches": 15,
+                    "fetches_used": 0,
+                    "max_fetches": 15,
+                    "validation_fetches_used": 0,
+                    "validation_fetch_limit": 5,
+                    "sent": False,
+                    "send_reason": "telegram_internal",
+                    "served_marked": True,
+                    "uncovered_tier1": [],
+                },
+            },
+        ],
+    )
+    result = json.loads(_run_cmd("audit-run", ["--run-id", run_id], tmp_path, monkeypatch))
+    assert result["ok"] is True
+
+
+def test_audit_run_requires_events_served_for_telegram_internal(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    run_id = "run-openclaw-internal-missing-served"
+    saturday = "2026-04-04"
+    _write_action_log_fixture(
+        tmp_path,
+        [
+            {
+                "ts": "2026-04-03T12:24:45",
+                "run_id": run_id,
+                "source": "python",
+                "action": "run_init",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"home_city": "Warsaw", "radius_km": 150, "cached_count": 0, "tier1": ["Radom|PL"]},
+            },
+            {
+                "ts": "2026-04-03T12:24:50",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "A",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:51",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "A",
+                "target_weekend": saturday,
+                "detail": {"reason": "all_queries_in_done_q"},
+            },
+            {
+                "ts": "2026-04-03T12:24:52",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "B",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:53",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "B",
+                "target_weekend": saturday,
+                "detail": {"reason": "no_aggregator_urls"},
+            },
+            {
+                "ts": "2026-04-03T12:24:54",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "C",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:55",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "C",
+                "target_weekend": saturday,
+                "detail": {"reason": "all_cities_covered"},
+            },
+            {
+                "ts": "2026-04-03T12:24:56",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "D",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:57",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "D",
+                "target_weekend": saturday,
+                "detail": {"reason": "all_confirmed"},
+            },
+            {
+                "ts": "2026-04-03T12:25:00",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "score_summary",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"total_pool": 1, "city_events_selected": 1, "trip_options": 0},
+            },
+            {
+                "ts": "2026-04-03T12:25:01",
+                "run_id": run_id,
+                "source": "python",
+                "action": "message_formatted",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"city_events": 1, "trips": 0, "char_count": 250},
+            },
+            {
+                "ts": "2026-04-03T12:25:02",
+                "run_id": run_id,
+                "source": "python",
+                "action": "telegram_send",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {
+                    "success": False,
+                    "reason": "telegram_not_configured",
+                    "error_code": "telegram_not_configured",
+                    "status_code": None,
+                    "error": "Missing config: telegram_bot_token, telegram_chat_id",
+                    "parts_sent": 0,
+                    "char_count": 250,
+                },
+            },
+            {
+                "ts": "2026-04-03T12:25:05",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "run_complete",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {
+                    "events_sent": 1,
+                    "new_events": 0,
+                    "cached_events": 0,
+                    "searches_used": 0,
+                    "max_searches": 15,
+                    "fetches_used": 0,
+                    "max_fetches": 15,
+                    "validation_fetches_used": 0,
+                    "validation_fetch_limit": 5,
+                    "sent": False,
+                    "send_reason": "telegram_internal",
+                    "served_marked": True,
+                    "uncovered_tier1": [],
+                },
+            },
+        ],
+    )
+    result = json.loads(_run_cmd("audit-run", ["--run-id", run_id], tmp_path, monkeypatch))
+    assert result["ok"] is False
+    assert any(
+        "run_complete send_reason=telegram_internal requires an events_served entry" in error
+        for error in result["errors"]
+    )
+
+
+def test_audit_run_rejects_served_telegram_not_configured_without_internal_mapping(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    run_id = "run-openclaw-internal-bad-reason"
+    saturday = "2026-04-04"
+    _write_action_log_fixture(
+        tmp_path,
+        [
+            {
+                "ts": "2026-04-03T12:24:45",
+                "run_id": run_id,
+                "source": "python",
+                "action": "run_init",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"home_city": "Warsaw", "radius_km": 150, "cached_count": 0, "tier1": ["Radom|PL"]},
+            },
+            {
+                "ts": "2026-04-03T12:24:50",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "A",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:51",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "A",
+                "target_weekend": saturday,
+                "detail": {"reason": "all_queries_in_done_q"},
+            },
+            {
+                "ts": "2026-04-03T12:24:52",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "B",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:53",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "B",
+                "target_weekend": saturday,
+                "detail": {"reason": "no_aggregator_urls"},
+            },
+            {
+                "ts": "2026-04-03T12:24:54",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "C",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:55",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "C",
+                "target_weekend": saturday,
+                "detail": {"reason": "all_cities_covered"},
+            },
+            {
+                "ts": "2026-04-03T12:24:56",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "D",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:57",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "D",
+                "target_weekend": saturday,
+                "detail": {"reason": "all_confirmed"},
+            },
+            {
+                "ts": "2026-04-03T12:25:00",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "score_summary",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"total_pool": 1, "city_events_selected": 1, "trip_options": 0},
+            },
+            {
+                "ts": "2026-04-03T12:25:01",
+                "run_id": run_id,
+                "source": "python",
+                "action": "message_formatted",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"city_events": 1, "trips": 0, "char_count": 250},
+            },
+            {
+                "ts": "2026-04-03T12:25:02",
+                "run_id": run_id,
+                "source": "python",
+                "action": "telegram_send",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {
+                    "success": False,
+                    "reason": "telegram_not_configured",
+                    "error_code": "telegram_not_configured",
+                    "status_code": None,
+                    "error": "Missing config: telegram_bot_token, telegram_chat_id",
+                    "parts_sent": 0,
+                    "char_count": 250,
+                },
+            },
+            {
+                "ts": "2026-04-03T12:25:03",
+                "run_id": run_id,
+                "source": "python",
+                "action": "events_served",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"count": 1},
+            },
+            {
+                "ts": "2026-04-03T12:25:05",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "run_complete",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {
+                    "events_sent": 1,
+                    "new_events": 0,
+                    "cached_events": 0,
+                    "searches_used": 0,
+                    "max_searches": 15,
+                    "fetches_used": 0,
+                    "max_fetches": 15,
+                    "validation_fetches_used": 0,
+                    "validation_fetch_limit": 5,
+                    "sent": False,
+                    "send_reason": "telegram_not_configured",
+                    "served_marked": True,
+                    "uncovered_tier1": [],
+                },
+            },
+        ],
+    )
+    result = json.loads(_run_cmd("audit-run", ["--run-id", run_id], tmp_path, monkeypatch))
+    assert result["ok"] is False
+    assert any("run_complete served_marked must be false when sent=false" in error for error in result["errors"])
+
+
+def test_audit_run_uses_last_telegram_send_after_successful_resend(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    run_id = "run-send-retry-ok"
+    saturday = "2026-04-04"
+    _write_action_log_fixture(
+        tmp_path,
+        [
+            {
+                "ts": "2026-04-03T12:24:45",
+                "run_id": run_id,
+                "source": "python",
+                "action": "run_init",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"home_city": "Warsaw", "radius_km": 150, "cached_count": 0, "tier1": ["Radom|PL"]},
+            },
+            {
+                "ts": "2026-04-03T12:24:50",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "A",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:51",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "A",
+                "target_weekend": saturday,
+                "detail": {"reason": "all_queries_in_done_q"},
+            },
+            {
+                "ts": "2026-04-03T12:24:52",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "B",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:53",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "B",
+                "target_weekend": saturday,
+                "detail": {"reason": "no_aggregator_urls"},
+            },
+            {
+                "ts": "2026-04-03T12:24:54",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "C",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:55",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "C",
+                "target_weekend": saturday,
+                "detail": {"reason": "all_cities_covered"},
+            },
+            {
+                "ts": "2026-04-03T12:24:56",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "D",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:57",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "D",
+                "target_weekend": saturday,
+                "detail": {"reason": "all_confirmed"},
+            },
+            {
+                "ts": "2026-04-03T12:25:00",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "score_summary",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"total_pool": 1, "city_events_selected": 1, "trip_options": 0},
+            },
+            {
+                "ts": "2026-04-03T12:25:01",
+                "run_id": run_id,
+                "source": "python",
+                "action": "message_formatted",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"city_events": 1, "trips": 0, "char_count": 250},
+            },
+            {
+                "ts": "2026-04-03T12:25:02",
+                "run_id": run_id,
+                "source": "python",
+                "action": "telegram_send",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {
+                    "success": False,
+                    "reason": "send_failed",
+                    "error_code": "telegram_network_blocked",
+                    "status_code": None,
+                    "error": "socket denied",
+                    "parts_sent": 0,
+                    "char_count": 250,
+                },
+            },
+            {
+                "ts": "2026-04-03T12:25:03",
+                "run_id": run_id,
+                "source": "python",
+                "action": "telegram_send",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {
+                    "success": True,
+                    "reason": "sent",
+                    "error_code": None,
+                    "status_code": None,
+                    "error": None,
+                    "parts_sent": 1,
+                    "char_count": 250,
+                },
+            },
+            {
+                "ts": "2026-04-03T12:25:04",
+                "run_id": run_id,
+                "source": "python",
+                "action": "events_served",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"count": 1},
+            },
+            {
+                "ts": "2026-04-03T12:25:05",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "run_complete",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {
+                    "events_sent": 1,
+                    "new_events": 0,
+                    "cached_events": 0,
+                    "searches_used": 0,
+                    "max_searches": 15,
+                    "fetches_used": 0,
+                    "max_fetches": 15,
+                    "validation_fetches_used": 0,
+                    "validation_fetch_limit": 5,
+                    "sent": True,
+                    "send_reason": "sent",
+                    "served_marked": True,
+                    "uncovered_tier1": [],
+                },
+            },
+        ],
+    )
+    result = json.loads(_run_cmd("audit-run", ["--run-id", run_id], tmp_path, monkeypatch))
+    assert result["ok"] is True
+
+
+def test_cmd_audit_run_pre_send_accepts_valid_prerequisites(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    run_id = "run-pre-send-ok"
+    saturday = "2026-04-04"
+    _write_action_log_fixture(
+        tmp_path,
+        [
+            {"ts": "2026-04-03T12:24:45", "run_id": run_id, "source": "python", "action": "run_init", "phase": None, "target_weekend": saturday, "detail": {"home_city": "Warsaw", "radius_km": 150, "cached_count": 0, "tier1": ["Radom|PL"]}},
+            {"ts": "2026-04-03T12:24:50", "run_id": run_id, "source": "skill", "action": "phase_start", "phase": "A", "target_weekend": saturday, "detail": {}},
+            {"ts": "2026-04-03T12:24:51", "run_id": run_id, "source": "skill", "action": "skip", "phase": "A", "target_weekend": saturday, "detail": {"reason": "all_queries_in_done_q"}},
+            {"ts": "2026-04-03T12:24:52", "run_id": run_id, "source": "skill", "action": "phase_start", "phase": "B", "target_weekend": saturday, "detail": {}},
+            {"ts": "2026-04-03T12:24:53", "run_id": run_id, "source": "skill", "action": "skip", "phase": "B", "target_weekend": saturday, "detail": {"reason": "no_aggregator_urls"}},
+            {"ts": "2026-04-03T12:24:54", "run_id": run_id, "source": "skill", "action": "phase_start", "phase": "C", "target_weekend": saturday, "detail": {}},
+            {"ts": "2026-04-03T12:24:55", "run_id": run_id, "source": "skill", "action": "skip", "phase": "C", "target_weekend": saturday, "detail": {"reason": "all_cities_covered"}},
+            {"ts": "2026-04-03T12:24:56", "run_id": run_id, "source": "skill", "action": "phase_start", "phase": "D", "target_weekend": saturday, "detail": {}},
+            {"ts": "2026-04-03T12:24:57", "run_id": run_id, "source": "skill", "action": "skip", "phase": "D", "target_weekend": saturday, "detail": {"reason": "all_confirmed"}},
+            {"ts": "2026-04-03T12:25:00", "run_id": run_id, "source": "skill", "action": "score_summary", "phase": None, "target_weekend": saturday, "detail": {"total_pool": 1, "city_events_selected": 1, "trip_options": 0}},
+        ],
+    )
+    result = json.loads(_run_cmd("audit-run", ["--run-id", run_id, "--stage", "pre_send"], tmp_path, monkeypatch))
+    assert result["ok"] is True
+    assert result["stage"] == "pre_send"
+    assert "Missing run_complete entry" not in result["errors"]
+    assert "Missing message_formatted entry" not in result["warnings"]
+    assert "Missing telegram_send entry" not in result["warnings"]
+
+
+def test_cmd_audit_run_pre_send_flags_missing_score_summary(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    run_id = "run-pre-send-missing-score"
+    saturday = "2026-04-04"
+    _write_action_log_fixture(
+        tmp_path,
+        [
+            {"ts": "2026-04-03T12:24:45", "run_id": run_id, "source": "python", "action": "run_init", "phase": None, "target_weekend": saturday, "detail": {"home_city": "Warsaw", "radius_km": 150, "cached_count": 0, "tier1": ["Radom|PL"]}},
+            {"ts": "2026-04-03T12:24:50", "run_id": run_id, "source": "skill", "action": "phase_start", "phase": "A", "target_weekend": saturday, "detail": {}},
+            {"ts": "2026-04-03T12:24:51", "run_id": run_id, "source": "skill", "action": "skip", "phase": "A", "target_weekend": saturday, "detail": {"reason": "all_queries_in_done_q"}},
+            {"ts": "2026-04-03T12:24:52", "run_id": run_id, "source": "skill", "action": "phase_start", "phase": "B", "target_weekend": saturday, "detail": {}},
+            {"ts": "2026-04-03T12:24:53", "run_id": run_id, "source": "skill", "action": "skip", "phase": "B", "target_weekend": saturday, "detail": {"reason": "no_aggregator_urls"}},
+            {"ts": "2026-04-03T12:24:54", "run_id": run_id, "source": "skill", "action": "phase_start", "phase": "C", "target_weekend": saturday, "detail": {}},
+            {"ts": "2026-04-03T12:24:55", "run_id": run_id, "source": "skill", "action": "skip", "phase": "C", "target_weekend": saturday, "detail": {"reason": "all_cities_covered"}},
+            {"ts": "2026-04-03T12:24:56", "run_id": run_id, "source": "skill", "action": "phase_start", "phase": "D", "target_weekend": saturday, "detail": {}},
+            {"ts": "2026-04-03T12:24:57", "run_id": run_id, "source": "skill", "action": "skip", "phase": "D", "target_weekend": saturday, "detail": {"reason": "all_confirmed"}},
+        ],
+    )
+    result = json.loads(_run_cmd("audit-run", ["--run-id", run_id, "--stage", "pre_send"], tmp_path, monkeypatch))
+    assert result["ok"] is False
+    assert result["stage"] == "pre_send"
+    assert "Missing score_summary entry" in result["errors"]
+
+
+def test_audit_run_uses_last_telegram_send_after_failed_resend(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    run_id = "run-send-retry-fail"
+    saturday = "2026-04-04"
+    _write_action_log_fixture(
+        tmp_path,
+        [
+            {
+                "ts": "2026-04-03T12:24:45",
+                "run_id": run_id,
+                "source": "python",
+                "action": "run_init",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"home_city": "Warsaw", "radius_km": 150, "cached_count": 0, "tier1": ["Radom|PL"]},
+            },
+            {
+                "ts": "2026-04-03T12:24:50",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "A",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:51",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "A",
+                "target_weekend": saturday,
+                "detail": {"reason": "all_queries_in_done_q"},
+            },
+            {
+                "ts": "2026-04-03T12:24:52",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "B",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:53",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "B",
+                "target_weekend": saturday,
+                "detail": {"reason": "no_aggregator_urls"},
+            },
+            {
+                "ts": "2026-04-03T12:24:54",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "C",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:55",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "C",
+                "target_weekend": saturday,
+                "detail": {"reason": "all_cities_covered"},
+            },
+            {
+                "ts": "2026-04-03T12:24:56",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "phase_start",
+                "phase": "D",
+                "target_weekend": saturday,
+                "detail": {},
+            },
+            {
+                "ts": "2026-04-03T12:24:57",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "D",
+                "target_weekend": saturday,
+                "detail": {"reason": "all_confirmed"},
+            },
+            {
+                "ts": "2026-04-03T12:25:00",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "score_summary",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"total_pool": 1, "city_events_selected": 1, "trip_options": 0},
+            },
+            {
+                "ts": "2026-04-03T12:25:01",
+                "run_id": run_id,
+                "source": "python",
+                "action": "message_formatted",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"city_events": 1, "trips": 0, "char_count": 250},
+            },
+            {
+                "ts": "2026-04-03T12:25:02",
+                "run_id": run_id,
+                "source": "python",
+                "action": "telegram_send",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {
+                    "success": False,
+                    "reason": "send_failed",
+                    "error_code": "telegram_network_blocked",
+                    "status_code": None,
+                    "error": "socket denied",
+                    "parts_sent": 0,
+                    "char_count": 250,
+                },
+            },
+            {
+                "ts": "2026-04-03T12:25:03",
+                "run_id": run_id,
+                "source": "python",
+                "action": "telegram_send",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {
+                    "success": False,
+                    "reason": "send_failed",
+                    "error_code": "telegram_network_blocked",
+                    "status_code": None,
+                    "error": "socket denied again",
+                    "parts_sent": 0,
+                    "char_count": 250,
+                },
+            },
+            {
+                "ts": "2026-04-03T12:25:05",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "run_complete",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {
+                    "events_sent": 1,
+                    "new_events": 0,
+                    "cached_events": 0,
+                    "searches_used": 0,
+                    "max_searches": 15,
+                    "fetches_used": 0,
+                    "max_fetches": 15,
+                    "validation_fetches_used": 0,
+                    "validation_fetch_limit": 5,
+                    "sent": False,
+                    "send_reason": "send_failed",
+                    "served_marked": False,
+                    "uncovered_tier1": [],
+                },
+            },
+        ],
+    )
+    result = json.loads(_run_cmd("audit-run", ["--run-id", run_id], tmp_path, monkeypatch))
+    assert result["ok"] is True
+
+
+def test_cmd_audit_run_accepts_valid_cached_only_run(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    run_id = "run-cached-only"
+    saturday = "2026-04-04"
+    _write_action_log_fixture(
+        tmp_path,
+        [
+            {
+                "ts": "2026-04-03T12:24:45",
+                "run_id": run_id,
+                "source": "python",
+                "action": "run_init",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"home_city": "Warsaw", "radius_km": 150, "cached_count": 2, "tier1": ["Radom|PL"]},
+            },
+            {
+                "ts": "2026-04-03T12:24:50",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "skip",
+                "phase": "search",
+                "target_weekend": saturday,
+                "detail": {"reason": "cached_only_requested"},
+            },
+            {
+                "ts": "2026-04-03T12:25:20",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "score_summary",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"total_pool": 2, "city_events_selected": 1, "trip_options": 1},
+            },
+            {
+                "ts": "2026-04-03T12:25:30",
+                "run_id": run_id,
+                "source": "python",
+                "action": "message_formatted",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"city_events": 1, "trips": 1, "char_count": 250},
+            },
+            {
+                "ts": "2026-04-03T12:25:35",
+                "run_id": run_id,
+                "source": "python",
+                "action": "telegram_send",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"success": True, "reason": "sent", "char_count": 250},
+            },
+            {
+                "ts": "2026-04-03T12:25:40",
+                "run_id": run_id,
+                "source": "python",
+                "action": "events_served",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {"count": 2},
+            },
+            {
+                "ts": "2026-04-03T12:25:45",
+                "run_id": run_id,
+                "source": "skill",
+                "action": "run_complete",
+                "phase": None,
+                "target_weekend": saturday,
+                "detail": {
+                    "events_sent": 2,
+                    "new_events": 0,
+                    "cached_events": 2,
+                    "searches_used": 0,
+                    "max_searches": 15,
+                    "fetches_used": 0,
+                    "max_fetches": 15,
+                    "validation_fetches_used": 0,
+                    "validation_fetch_limit": 5,
+                    "sent": True,
+                    "send_reason": "sent",
+                    "served_marked": True,
+                    "uncovered_tier1": ["Radom"],
+                },
+            },
+        ],
+    )
+    result = json.loads(_run_cmd("audit-run", ["--run-id", run_id], tmp_path, monkeypatch))
+    assert result["ok"] is True
+    assert result["summary"]["search_bypass_reason"] == "cached_only_requested"
+
+
+def test_cmd_audit_run_warns_on_implicit_phase_starts(tmp_path, monkeypatch):
+    _write_minimal_config(tmp_path)
+    run_id = "run-implicit"
+    saturday = "2026-04-04"
+
+    _run_cmd(
+        "log-action",
+        [
+            "--run-id", run_id,
+            "--action", "run_init",
+            "--target-weekend", saturday,
+            '--detail', '{"home_city":"Warsaw","radius_km":150,"cached_count":0,"tier1":["Radom|PL"]}',
+            "--source", "python",
+        ],
+        tmp_path, monkeypatch,
+    )
+    for phase, reason in (
+        ("A", "all_queries_in_done_q"),
+        ("B", "no_aggregator_urls"),
+    ):
+        _run_cmd(
+            "log-action",
+            [
+                "--run-id", run_id,
+                "--action", "skip",
+                "--phase", phase,
+                "--target-weekend", saturday,
+                "--detail", json.dumps({"reason": reason}),
+            ],
+            tmp_path, monkeypatch,
+        )
+    _run_cmd(
+        "log-search",
+        [
+            "--query", "Radom query",
+            "--target-weekend", saturday,
+            "--phase", "targeted",
+            "--cities", '["Radom"]',
+            "--run-id", run_id,
+        ],
+        tmp_path, monkeypatch,
+    )
+    _run_cmd(
+        "phase-summary",
+        ["--run-id", run_id, "--phase", "C", "--target-weekend", saturday],
+        tmp_path, monkeypatch,
+    )
+    _run_cmd(
+        "log-action",
+        [
+            "--run-id", run_id,
+            "--action", "skip",
+            "--phase", "D",
+            "--target-weekend", saturday,
+            '--detail', '{"reason":"all_confirmed"}',
+        ],
+        tmp_path, monkeypatch,
+    )
+    _run_cmd(
+        "run-complete",
+        [
+            "--run-id", run_id,
+            "--target-weekend", saturday,
+            "--events-sent", "0",
+            "--sent", "false",
+            "--send-reason", "telegram_not_configured",
+            "--served-marked", "false",
+        ],
+        tmp_path, monkeypatch,
+    )
+    result = json.loads(_run_cmd("audit-run", ["--run-id", run_id], tmp_path, monkeypatch))
+    assert result["ok"] is True
+    assert any("inserted implicitly by python" in warning for warning in result["warnings"])
+
+
+# --- cmd_cache_mark_served ---
+
+def test_cmd_cache_mark_served_returns_count(tmp_path, monkeypatch):
+    output = _run_cmd(
+        "cache-mark-served",
+        ["--date", "2026-03-28", "--run-id", "run-xyz"],
+        tmp_path, monkeypatch,
+    )
+    result = json.loads(output)
+    assert "marked" in result
+    log_file = tmp_path / "cache" / "action_log.jsonl"
+    entry = json.loads(log_file.read_text(encoding="utf-8").strip())
+    assert entry["action"] == "events_served"
+    assert entry["run_id"] == "run-xyz"
+
+
+def test_format_message_logs_run_id(tmp_path, monkeypatch):
+    output = tmp_path / "msg.txt"
+    _run_format_message(
+        ["--saturday", "2026-03-28", "--sunday", "2026-03-29",
+         "--output", str(output), "--run-id", "run-xyz"],
+        tmp_path, monkeypatch,
+    )
+    log_file = tmp_path / "cache" / "action_log.jsonl"
+    entry = json.loads(log_file.read_text(encoding="utf-8").strip())
+    assert entry["run_id"] == "run-xyz"
+    assert entry["action"] == "message_formatted"
+
+
+def test_format_message_accepts_json_files(tmp_path, monkeypatch):
+    output = tmp_path / "msg.txt"
+    city_events_path = _write_skill_tmp_payload(
+        tmp_path,
+        "city-events",
+        [{"event_name": "Spring Festival", "city": "Warsaw", "start_date": "2026-03-28"}],
+        encoding="utf-8-sig",
+    )
+    trips_path = _write_skill_tmp_payload(
+        tmp_path,
+        "trips",
+        [{"name": "Berlin Day Trip", "route": "Berlin -> Potsdam -> Berlin", "events": "Market"}],
+    )
+    _run_format_message(
+        ["--saturday", "2026-03-28", "--sunday", "2026-03-29",
+         "--city-events-file", str(city_events_path), "--trips-file", str(trips_path),
+         "--output", str(output)],
+        tmp_path, monkeypatch,
+    )
+    content = output.read_text(encoding="utf-8")
+    assert "Spring Festival" in content
+    assert "Berlin Day Trip" in content
+    assert not city_events_path.exists()
+    assert not trips_path.exists()
+
+
+def test_format_message_city_events_file_invalid_json_returns_error(tmp_path, monkeypatch):
+    output = tmp_path / "msg.txt"
+    payload_path = tmp_path / "bad-city-events.json"
+    payload_path.write_text("{bad", encoding="utf-8")
+    result = json.loads(
+        _run_cmd(
+            "format-message",
+            ["--saturday", "2026-03-28", "--sunday", "2026-03-29",
+             "--city-events-file", str(payload_path), "--output", str(output)],
+            tmp_path, monkeypatch,
+        )
+    )
+    assert "error" in result
+    assert "Invalid JSON in --city-events-file" in result["error"]
+
+
+def test_format_message_keeps_tmp_files_when_later_command_logic_fails(tmp_path, monkeypatch):
+    import weekend_scout.telegram as telegram_module
+
+    output = tmp_path / "msg.txt"
+    city_events_path = _write_skill_tmp_payload(
+        tmp_path,
+        "city-events",
+        [{"event_name": "Spring Festival", "city": "Warsaw", "start_date": "2026-03-28"}],
+    )
+    trips_path = _write_skill_tmp_payload(
+        tmp_path,
+        "trips",
+        [{"name": "Berlin Day Trip", "route": "Berlin -> Potsdam -> Berlin", "events": "Market"}],
+    )
+    monkeypatch.setattr(telegram_module, "format_scout_message", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    result = _run_format_message(
+        ["--saturday", "2026-03-28", "--sunday", "2026-03-29",
+         "--city-events-file", str(city_events_path), "--trips-file", str(trips_path),
+         "--output", str(output)],
+        tmp_path, monkeypatch,
+    )
+
+    assert result["error_code"] == "unexpected_exception"
+    assert "format-message failed: boom" in result["error"]
+    assert city_events_path.exists()
+    assert trips_path.exists()
+    failures = _read_python_failures(tmp_path)
+    assert failures[-1]["command"] == "format-message"
+    assert failures[-1]["error_code"] == "unexpected_exception"
+
+
+def test_format_message_mixed_cleanup_deletes_only_skill_tmp_files(tmp_path, monkeypatch):
+    output = tmp_path / "msg.txt"
+    city_events_path = _write_skill_tmp_payload(
+        tmp_path,
+        "city-events",
+        [{"event_name": "Spring Festival", "city": "Warsaw", "start_date": "2026-03-28"}],
+    )
+    trips_path = _write_json_file(
+        tmp_path / "cache" / "trips.json",
+        [{"name": "Berlin Day Trip", "route": "Berlin -> Potsdam -> Berlin", "events": "Market"}],
+    )
+    _run_format_message(
+        ["--saturday", "2026-03-28", "--sunday", "2026-03-29",
+         "--city-events-file", str(city_events_path), "--trips-file", str(trips_path),
+         "--output", str(output)],
+        tmp_path, monkeypatch,
+    )
+    assert not city_events_path.exists()
+    assert trips_path.exists()
+
+
+# --- cmd_send ---
+
+def test_cmd_send_missing_token_returns_sent_false(tmp_path, monkeypatch):
+    msg_file = tmp_path / "msg.txt"
+    msg_file.write_text("Hello", encoding="utf-8")
+    output = _run_cmd("send", ["--file", str(msg_file)], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert result == {
+        "sent": False,
+        "reason": "telegram_not_configured",
+        "error_code": "telegram_not_configured",
+        "status_code": None,
+        "error": "Missing config: telegram_bot_token, telegram_chat_id",
+        "parts_sent": 0,
+    }
+
+
+def test_cmd_send_logs_run_id(tmp_path, monkeypatch):
+    import weekend_scout.telegram as telegram_module
+
+    msg_file = tmp_path / "msg.txt"
+    msg_file.write_text("Hello", encoding="utf-8")
+    monkeypatch.setattr(
+        telegram_module,
+        "send_telegram",
+        lambda config, message: {
+            "sent": False,
+            "reason": "send_failed",
+            "error_code": "telegram_http_error",
+            "status_code": 403,
+            "error": "Forbidden",
+            "parts_sent": 0,
+        },
+    )
+    _run_cmd("send", ["--file", str(msg_file), "--run-id", "run-xyz"], tmp_path, monkeypatch)
+    log_file = tmp_path / "cache" / "action_log.jsonl"
+    entry = json.loads(log_file.read_text(encoding="utf-8").strip())
+    assert entry["run_id"] == "run-xyz"
+    assert entry["action"] == "telegram_send"
+    assert entry["detail"]["reason"] == "send_failed"
+    assert entry["detail"]["error_code"] == "telegram_http_error"
+    assert entry["detail"]["status_code"] == 403
+
+
+def test_run_scoped_command_failure_mirrors_action_log(tmp_path, monkeypatch):
+    output = _run_cmd(
+        "send",
+        ["--file", str(tmp_path / "missing.txt"), "--run-id", "run-err"],
+        tmp_path,
+        monkeypatch,
+    )
+    result = json.loads(output)
+    assert result["error_code"] == "message_file_not_found"
+    failures = _read_python_failures(tmp_path)
+    assert failures[-1]["command"] == "send"
+    assert failures[-1]["failure_id"] == result["failure_id"]
+    log_file = tmp_path / "cache" / "action_log.jsonl"
+    entries = [
+        json.loads(line)
+        for line in log_file.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert entries[-1]["action"] == "command_failed"
+    assert entries[-1]["detail"]["error_code"] == "message_file_not_found"
+    assert entries[-1]["detail"]["failure_id"] == result["failure_id"]
+
+
+# --- cmd_run ---
+
+def test_cmd_run_returns_json(tmp_path, monkeypatch):
+    output = _run_cmd("run", [], tmp_path, monkeypatch)
+    result = json.loads(output)
+    assert "message" in result
