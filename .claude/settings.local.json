@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install:*)",
+      "Bash(python -m pytest tests/ -v)",
+      "Bash(python -m weekend_scout --help)",
+      "Bash(python -m pytest tests/ -q)",
+      "Bash(python -m pytest tests/test_config.py -v)",
+      "Bash(python -m pytest tests/test_distance.py tests/test_cities.py -v)",
+      "Bash(python -m weekend_scout download-data)",
+      "Bash(python -m pytest tests/test_cities.py -v)",
+      "Bash(python -m weekend_scout config)",
+      "Bash(python -c \":*)",
+      "Bash(python -m pytest tests/test_cache.py -v)",
+      "Bash(python -m weekend_scout save --events '[{\"\"event_name\"\":\"\"Test Fest\"\",\"\"city\"\":\"\"Warsaw\"\",\"\"start_date\"\":\"\"2026-04-04\"\",\"\"category\"\":\"\"festival\"\",\"\"description\"\":\"\"A test\"\",\"\"confidence\"\":\"\"likely\"\"}]')",
+      "Bash(python -m weekend_scout cache-query --date 2026-04-04)",
+      "Bash(python -m weekend_scout log-search --query \"imprezy plenerowe Warszawa\" --target-weekend 2026-04-04 --cities '[\"\"Warsaw\"\"]' --phase broad --result-count 5)",
+      "Bash(python -m weekend_scout init --city Warsaw --radius 150)",
+      "Bash(python -m weekend_scout cache-mark-served --date 2026-04-04)",
+      "Bash(python:*)",
+      "WebFetch(domain:www.geonames.org)",
+      "WebSearch",
+      "WebFetch(domain:download.geonames.org)",
+      "WebFetch(domain:rali.iro.umontreal.ca)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
+    ]
+  }
+}
