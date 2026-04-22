@@ -206,6 +206,51 @@ def test_install_script_with_break_system_packages_appends_pip_flag(monkeypatch)
     assert ["/usr/bin/python3", "-m", "pip", "install", ".", "--break-system-packages"] in commands
 
 
+def test_install_script_runtime_only_skips_skill_copy(monkeypatch):
+    import install.install_skill as install_skill
+
+    commands: list[tuple[list[str], Path | None]] = []
+
+    def fake_run(cmd, check=False, cwd=None, capture_output=False, text=False):
+        commands.append((cmd, cwd))
+        return SimpleNamespace(returncode=0, stderr="", stdout="")
+
+    monkeypatch.setattr(
+        install_skill,
+        "detect_platforms",
+        lambda: (_ for _ in ()).throw(AssertionError("detect_platforms should not be called")),
+    )
+    monkeypatch.setattr(install_skill.subprocess, "run", fake_run)
+    monkeypatch.setattr(install_skill.sys, "argv", ["install_skill.py", "--with-pip", "--runtime-only"])
+    monkeypatch.setattr(install_skill.sys, "executable", "C:/Python311/python.exe")
+
+    install_skill.main()
+
+    command_only = [cmd for cmd, _ in commands]
+    assert ["C:/Python311/python.exe", "-m", "pip", "--version"] in command_only
+    assert ["C:/Python311/python.exe", "-m", "pip", "install", "."] in command_only
+    assert ["C:/Python311/python.exe", "-m", "weekend_scout", "download-data"] in command_only
+    assert not any("install-skill" in cmd for cmd in command_only)
+    assert (["C:/Python311/python.exe", "-m", "weekend_scout", "download-data"], Path.home()) in commands
+
+
+def test_install_script_runtime_only_rejects_platform(monkeypatch, capsys):
+    import install.install_skill as install_skill
+
+    monkeypatch.setattr(
+        install_skill.sys,
+        "argv",
+        ["install_skill.py", "--with-pip", "--runtime-only", "--platform", "openclaw"],
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        install_skill.main()
+
+    assert excinfo.value.code == 2
+    err = capsys.readouterr().err
+    assert "--runtime-only cannot be combined with --platform" in err
+
+
 def test_install_script_with_dev_and_break_system_packages_appends_pip_flag(monkeypatch):
     import install.install_skill as install_skill
 
@@ -669,7 +714,8 @@ def test_install_script_bootstraps_from_clean_clone_help():
     )
 
     assert result.returncode == 0, result.stderr
-    assert "Install the Weekend Scout skill to your agent platform." in result.stdout
+    assert "Install the Weekend Scout skill or Python runtime." in result.stdout
+    assert "--runtime-only" in result.stdout
     assert "--with-pip" in result.stdout
 
 
@@ -773,6 +819,22 @@ def test_core_runtime_skills_are_short_and_reference_driven():
         assert "phase_start missing" not in content
         assert "Do not use for codebase maintenance or skill edits." in content
         assert "weekend-scout-maintenance" not in content
+
+
+def test_root_skill_is_bundle_bootstrap_dispatcher():
+    content = _read_text(Path("SKILL.md"))
+
+    assert "stable bundle entrypoint" in content
+    assert "--with-pip --runtime-only" in content
+    assert "pyproject.toml" in content
+    assert ".claude/skills/weekend-scout/SKILL.md" in content
+    assert ".agents/skills/weekend-scout/SKILL.md" in content
+    assert ".openclaw/skills/weekend-scout/SKILL.md" in content
+    assert "Do **not** manually edit cache files" in content
+    assert "Do **not** send the user to README-style manual setup as the primary path." in content
+    assert "Output Format" not in content
+    assert "Skills Directory" not in content
+    assert "ClawHub" not in content
 
 
 def test_openclaw_needs_setup_stops_with_fixed_setup_message():

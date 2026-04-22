@@ -1,9 +1,9 @@
 ---
 name: weekend-scout
 description: >
-  Discovers next-weekend outdoor events, festivals, and fairs near the user's
-  city, builds ranked local picks and road-trip options, and prepares a
-  delivery-ready digest through platform-specific agent workflows.
+  Bootstrap or update the Weekend Scout Python runtime from the current bundle,
+  then dispatch to the matching bundled platform-specific runtime skill for
+  scouting next-weekend outdoor events, local picks, and road trips.
 author: Dmitry Nikolaenya
 version: 1.0.0
 tags:
@@ -15,75 +15,74 @@ tags:
 ---
 # Weekend Scout
 
-## Overview
+Use this repo-root skill as the stable bundle entrypoint. Weekend Scout scouts
+next-weekend outdoor events near the configured city, ranks local picks and
+road trips, and relies on run-scoped session caching plus a persistent SQLite
+cache managed through the CLI.
 
-Weekend Scout is a multi-platform agent skill plus Python CLI for scouting
-outdoor events, festivals, and fairs happening next weekend near the user's
-city.
+Do not treat this root file as the full scouting workflow. Its job is limited
+to bootstrapping the Python runtime from this bundle and dispatching to the
+matching bundled runtime `SKILL.md`.
 
-It uses a layered caching system: run-scoped candidate sessions preserve
-discovery state while the agent is working, canonicalized events are saved into
-a persistent SQLite cache for future weekends and reruns, and deterministic CLI
-helpers prepare grouped digest input before delivery.
+## Bootstrap
 
-This repository ships separate runtime `SKILL.md` files for Claude Code,
-Codex, and OpenClaw. The repo-root `SKILL.md` exists so directories such as
-Skills Directory can index the repository from the root while still pointing
-to the canonical platform-specific skill files.
+1. Resolve `bundle_root`.
+   Prefer `{baseDir}` when the host provides it. Otherwise resolve the
+   directory containing this `SKILL.md`.
+2. Resolve a Python command by trying `python`, then `python3`.
+   If neither exists, stop and report that Python 3.10+ is required.
+3. Read the bundle package version from `pyproject.toml`.
+4. Check the installed `weekend-scout` package version with the chosen
+   interpreter via `importlib.metadata`.
+5. If the package is missing or the version differs from the bundle version,
+   run:
+   `"<python_cmd>" "{bundle_root}/install/install_skill.py" --with-pip --runtime-only`
+6. If bootstrap fails because of an externally managed environment, stop and
+   show the exact retry command with `--break-system-packages`. Do **not**
+   auto-retry with that flag.
+7. If bootstrap succeeds, or the installed version already matches the bundle,
+   continue in the same invocation.
 
-## Instructions
+## Dispatch
 
-Do not treat this root file as the single canonical runtime prompt for every
-platform. Weekend Scout's actual runtime instructions are platform-dependent.
-
-1. Determine which platform is being used.
-2. Use this root file only as a platform-neutral repository entry point and
-   router.
-3. Load the matching generated runtime skill from this repository.
-4. Follow that platform file, not this root summary, for the actual scout
-   workflow.
-
-### Platform Map
+1. Identify the host only when it is explicit from the active environment,
+   active skill path, or tool/runtime surface.
+   Treat the active workspace-installed bundle case as OpenClaw only when the
+   current session clearly is OpenClaw. Otherwise use Claude Code or Codex
+   only when that host is equally explicit.
+2. Use exactly one bundled runtime file:
 
 | Platform | Canonical runtime skill |
 |----------|-------------------------|
-| Claude Code | `.claude/skills/weekend-scout/SKILL.md` |
-| Codex | `.agents/skills/weekend-scout/SKILL.md` |
 | OpenClaw | `.openclaw/skills/weekend-scout/SKILL.md` |
+| Codex | `.agents/skills/weekend-scout/SKILL.md` |
+| Claude Code | `.claude/skills/weekend-scout/SKILL.md` |
 
-### Source Of Truth
+3. Before dispatching, confirm that the chosen nested `SKILL.md` exists.
+4. Follow the chosen nested runtime skill and its adjacent `references/`
+   directory exactly as shipped.
+5. If the host is not clear, stop and list the available bundled runtime paths
+   instead of guessing.
 
-- Runtime skill generation source: `skill_template/weekend-scout.template.md`
-- Generated outputs: `.claude/skills/`, `.agents/skills/`,
-  `.openclaw/skills/`, `weekend_scout/skill_data/`
-- Product and workflow design: `docs/weekend-scout-design-v2.md`
-- Installation and user-facing setup: `README.md`
+## Guardrails
 
-## Execution Guardrails
-
-- Use the defined `python -m weekend_scout ...` CLI commands as the supported
-  interface for config, discovery logging, session reads, cache saves, message
-  formatting, and delivery.
-- Do not manually edit cache files, transport payloads, YAML config, or SQLite
-  data as a substitute for the CLI workflow.
-- Treat the generated platform-specific `SKILL.md` plus its bundled references
-  as the authoritative runtime contract for command order, payload shape, and
+- Keep this root skill as the permanent bundle entrypoint. Do **not**
+  self-replace it, overwrite the installed workspace bundle, or promote a
+  shared/global skill copy as the primary path.
+- Keep later invocations cheap: if the installed package version already
+  matches the bundle version, skip installation and dispatch immediately.
+- Use only `python -m weekend_scout ...` CLI commands for config, discovery,
+  cache, digest preparation, formatting, and delivery.
+- Do **not** manually edit cache files, transport payloads, YAML config, or
+  SQLite data as a substitute for the CLI workflow.
+- Treat the chosen nested runtime `SKILL.md` plus its bundled references as
+  the sole authority for scout workflow, command order, payload shape, and
   failure handling.
 
-## Output Format
+## Failure Handling
 
-When this root file is invoked directly, respond with:
-
-- a short explanation that Weekend Scout is multi-platform
-- the matching platform-specific `SKILL.md` path for the current environment
-- the next file or doc to open if the user is installing or reviewing the
-  skill
-
-## Notes
-
-- The root `SKILL.md` is intentionally platform-neutral so the repo can be
-  indexed without privileging one platform over another.
-- The actual event-scouting behavior lives in the generated platform files and
-  their bundled references.
-- If the workflow changes, update the template-generated platform skills first
-  and keep this root file aligned as a routing and metadata document.
+- If the bootstrap command fails, surface the exact command you ran plus the
+  installer's own guidance. Do **not** invent an alternative recovery flow.
+- If the chosen nested runtime file is missing, report the exact missing path
+  and stop.
+- Do **not** send the user to README-style manual setup as the primary path.

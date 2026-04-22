@@ -599,7 +599,7 @@ Report to user:
 Weekend-Scout/
     CLAUDE.md                              Project guide for Claude Code
     README.md                              User-facing documentation
-    SKILL.md                               Repo-root metadata/routing entry for Skills Directory
+    SKILL.md                               Repo-root bundle bootstrap/dispatcher entrypoint
     LICENSE                                MIT
     pyproject.toml                         Package metadata and dependencies
 

@@ -10,9 +10,10 @@ Usage:
     python install/install_skill.py --platform claude-code # advanced: copy only for one platform
     python install/install_skill.py --platform all         # advanced: copy only for all platforms
     python install/install_skill.py --with-pip             # recommended bootstrap install
+    python install/install_skill.py --with-pip --runtime-only  # install/update runtime only, skip skill-copy side effects
     python install/install_skill.py --with-pip --break-system-packages  # explicit PEP 668 override
     python install/install_skill.py --with-pip --dev       # developer install (editable)
-    python install/install_skill.py --uninstall           # remove installed skill files and package
+    python install/install_skill.py --uninstall            # remove installed skill files and package
 """
 
 from __future__ import annotations
@@ -455,7 +456,7 @@ def print_uninstall_summary(platform_results: list[dict[str, str]], package_resu
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Install the Weekend Scout skill to your agent platform."
+        description="Install the Weekend Scout skill or Python runtime."
     )
     parser.add_argument(
         "--platform",
@@ -469,6 +470,14 @@ def main() -> None:
         "--with-pip",
         action="store_true",
         help="Recommended bootstrap flow: install the Python package via pip before copying the skill.",
+    )
+    parser.add_argument(
+        "--runtime-only",
+        action="store_true",
+        help=(
+            "Install or update the Python runtime only and skip copying any skill files. "
+            "Requires --with-pip or --dev and cannot be combined with --platform."
+        ),
     )
     parser.add_argument(
         "--break-system-packages",
@@ -491,11 +500,19 @@ def main() -> None:
         parser.error("--uninstall cannot be combined with --with-pip")
     if args.uninstall and args.dev:
         parser.error("--uninstall cannot be combined with --dev")
+    if args.uninstall and args.runtime_only:
+        parser.error("--uninstall cannot be combined with --runtime-only")
+    if args.runtime_only and args.platform:
+        parser.error("--runtime-only cannot be combined with --platform")
+    if args.runtime_only and not (args.with_pip or args.dev):
+        parser.error("--runtime-only requires --with-pip or --dev")
 
     repo_root = REPO_ROOT
 
     if args.uninstall:
         platforms = resolve_uninstall_platforms(args.platform)
+    elif args.runtime_only:
+        platforms = []
     else:
         platforms = resolve_install_platforms(args.platform)
 
@@ -532,9 +549,10 @@ def main() -> None:
         print("  Package installed.")
         _ensure_python_symlink()
 
-        # Delegate skill copying to the installed package so it reads from
-        # its own skill_data/ directory (works after the clone is deleted).
-        install_via_package_cli(platforms)
+        if not args.runtime_only:
+            # Delegate skill copying to the installed package so it reads from
+            # its own skill_data/ directory (works after the clone is deleted).
+            install_via_package_cli(platforms)
     else:
         runtime_ok, runtime_message = check_existing_runtime(sys.executable)
         if not runtime_ok:
@@ -567,6 +585,16 @@ def main() -> None:
         print("WARNING: GeoNames download failed. Data will be downloaded on first run.")
 
     print("\n" + "=" * 50)
+    if args.runtime_only:
+        print("Weekend Scout runtime installed successfully!")
+        if args.dev:
+            print("\nDeveloper/editable runtime install complete. Keep this repo for the editable package.")
+        else:
+            print("\nThe Python package is installed for this interpreter from the current bundle.")
+        print("Bundled skill files were not copied to any shared/global skill directory.")
+        print("=" * 50)
+        return
+
     print("Weekend Scout installed successfully!")
     if do_pip and not args.dev:
         print("\nThe package is installed for this Python interpreter. You can safely delete this folder.")
