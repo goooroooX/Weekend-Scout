@@ -199,3 +199,4 @@
 | 13.1 | Add --research-only skill argument for mid-week cache-building runs | DONE (2026-04-10) | Stops before Step 5; full discovery + scoring, no format/send; scheduling pattern documented in README |
 | 13.2 | Remove retired MVP design doc and normalize docs history ordering | DONE (2026-04-17) | Deleted the retired MVP design doc, cleaned surviving references, and reordered `docs/design_changes.md` newest-first |
 | 13.3 | Fix Windows bash backslash-mangling of cache_dir paths | DONE (2026-04-17) | `init`/`init-skill` now emit `cache_dir` as forward-slash POSIX form, `_load_json_argument` rejects drive-letter paths with no separator, and platform-transport reference tells the skill to use `cache_dir` verbatim |
+| 13.4 | Add repo-root SKILL.md for Skills Directory routing | DONE (2026-04-22) | Root file stays platform-neutral, explains the multi-platform layout, and routes readers to the generated runtime skill for their platform |
