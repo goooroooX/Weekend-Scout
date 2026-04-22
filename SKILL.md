@@ -1,9 +1,10 @@
 ---
 name: weekend-scout
 description: >
-  Bootstrap or update the Weekend Scout Python runtime from the current bundle,
-  then dispatch to the matching bundled platform-specific runtime skill for
-  scouting next-weekend outdoor events, local picks, and road trips.
+  Weekend Scout discovers next-weekend outdoor events, festivals, fairs, and
+  road-trip ideas near the user's city and nearby cities. It builds home-city
+  picks and road-trip options, formats the digest, sends it to Telegram. This 
+  skill bootstraps the matching platform runtime from the current bundle.
 author: Dmitry Nikolaenya
 version: 1.0.0
 tags:
